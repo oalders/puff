@@ -64,10 +64,16 @@ sub _read_file ( $class, $self, $file ) {
 
     if ( exists $data->{'rule-paths'} ) {
         my $base = $file->absolute->parent;
-        $self->{rule_paths} = [ map { $base->child($_)->stringify } @{ $list->('rule-paths') } ];
+        $self->{rule_paths}
+            = [ map { path($_)->is_absolute ? $_ : $base->child($_)->stringify } @{ $list->('rule-paths') } ];
     }
 
-    $self->{unsafe_fixes} = $data->{'unsafe-fixes'} ? 1 : 0 if exists $data->{'unsafe-fixes'};
+    if ( exists $data->{'unsafe-fixes'} ) {
+        my $value = $data->{'unsafe-fixes'};
+        die "unsafe-fixes must be true or false in config file '$file'\n"
+            unless ref $value && ref $value eq 'JSON::PP::Boolean';
+        $self->{unsafe_fixes} = $value ? 1 : 0;
+    }
 
     if ( exists $data->{rules} ) {
         my $rules = $data->{rules};
@@ -130,7 +136,8 @@ key and file.
 Defaults: C<select> C<["S"]>, C<extend-select> and C<ignore> empty,
 C<exclude> C<local blib .build .git>, C<unsafe-fixes> false. Entries in the
 file's C<exclude> are added to the default list (the defaults always apply).
-C<rule-paths> are resolved relative to the config file's directory.
+Relative C<rule-paths> are resolved against the config file's directory;
+absolute ones are used as they are. C<unsafe-fixes> must be a TOML boolean.
 C<[rules.CODE]> tables become C<rule_options>.
 
 =head2 Merging command-line values

@@ -10,8 +10,11 @@ my $RESERVED = 'P001';
 
 sub load ( $class, %args ) {
     my @candidates = Module::Pluggable::Object->new(
-        search_path => ['Puff::Rule'],
-        require     => 1,
+        search_path      => ['Puff::Rule'],
+        require          => 1,
+        on_require_error => sub ( $module, $error ) {
+            die "Cannot load rule $module: $error";
+        },
     )->plugins;
 
     for my $dir ( @{ $args{rule_paths} // [] } ) {
@@ -32,7 +35,9 @@ sub load ( $class, %args ) {
         next if $seen{$candidate}++;
         next if $candidate eq 'Puff::Rule' || !$candidate->isa('Puff::Rule');
         my $code = $candidate->code;
-        die "Rule $candidate has invalid code '$code' (expected letters followed by three digits)\n"
+        die "Rule $candidate has invalid code '"
+            . ( $code // 'undef' )
+            . "' (expected letters followed by three digits)\n"
             unless defined $code && $code =~ $CODE_RE;
         die "Rule $candidate uses code $code, which is reserved for the puff engine\n"
             if $code eq $RESERVED;
@@ -57,6 +62,11 @@ sub instantiate ( $class, $classes, %args ) {
     my @select  = ( @{ $args{select} // [] }, @{ $args{extend_select} // [] } );
     my @ignore  = @{ $args{ignore} // [] };
     my $options = $args{rule_options} // {};
+
+    my @codes = ( $RESERVED, map { $_->code } @$classes );
+    for my $selector (@select) {
+        die "Unknown rule selector: $selector\n" unless grep { index( $_, $selector ) == 0 } @codes;
+    }
 
     my @rules;
     for my $rule_class ( sort { $a->code cmp $b->code } @$classes ) {
@@ -107,7 +117,11 @@ returned sorted by code.
 
 C<instantiate> enables the rules whose code starts with any C<select> or
 C<extend_select> prefix and with no C<ignore> prefix, and returns objects
-sorted by code. It dies if C<rule_options> names an option a selected rule
-does not declare.
+sorted by code. It dies if a C<select> or C<extend_select> entry is not a
+prefix of any loaded rule's code (or of C<P001>) (C<Unknown rule selector:
+X>), or if C<rule_options> names an option a selected rule does not declare.
+An C<ignore> entry that matches nothing is allowed.
+
+C<load> also dies if a C<Puff::Rule::*> module on C<@INC> fails to compile.
 
 =cut

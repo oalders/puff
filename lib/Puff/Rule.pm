@@ -19,6 +19,7 @@ sub check ( $self, $elem, $doc ) { return }
 sub fix ( $self, $violation, $fix ) { return 0 }
 
 sub option ( $self, $name ) {
+    die 'rule ' . $self->code . " has no option $name\n" unless exists $self->options->{$name};
     my $configured = $self->{options};
     return $configured->{$name} if exists $configured->{$name};
     return $self->options->{$name};
@@ -33,7 +34,7 @@ sub violation ( $self, $elem, %args ) {
         element => $elem,
         line    => $loc->[0],
         column  => $loc->[1],
-        message => $args{message},
+        message => $args{message} // $self->summary,
         fixable => $fixable ? 1 : 0,
     );
 }
@@ -171,7 +172,7 @@ The default C<fix> returns false.
     my $value = $self->option('name');
 
 The value configured for C<name> in C<[rules.CODE]>, else the default from
-L</options>.
+L</options>. Dies if C<name> is not a key of L</options>.
 
 =head2 violation
 
@@ -184,7 +185,8 @@ column from the rule and the element's location. Arguments:
 
 =item message
 
-The text shown after the code in the report.
+The text shown after the code in the report. Default: the rule's
+L</summary>.
 
 =item fixable
 

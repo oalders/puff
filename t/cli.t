@@ -270,7 +270,8 @@ subtest 'errors exit 2' => sub {
     like( $err, qr/^Unrecognized command: frobnicate$/m, 'error on STDERR' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S999' );
-    is( $exit, 0, 'selecting nothing finds nothing' );
+    is( $exit, 2, 'selecting an unknown rule exits 2' );
+    like( $err, qr/^Unknown rule selector: S999$/m, 'and says so' );
 };
 
 subtest 'CRLF files are linted but not fixed' => sub {

@@ -36,9 +36,15 @@ is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T'], ign
     [qw( T001 T003 )], 'ignore removes' );
 is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T00'], ignore => ['T003'] ) ],
     [qw( T001 T002 )], 'prefix select' );
-is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['X'], extend_select => ['T003'] ) ],
-    ['T003'], 'extend_select' );
-is( [ Puff::Rules->instantiate( \@classes, select => ['X'] ) ], [], 'nothing selected' );
+is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T001'], extend_select => ['T003'] ) ],
+    [ 'T001', 'T003' ], 'extend_select' );
+like( dies { Puff::Rules->instantiate( \@classes, select => ['X'] ) },
+    qr/\AUnknown rule selector: X\n/, 'select matching no rule dies' );
+like( dies { Puff::Rules->instantiate( \@classes, select => ['T'], extend_select => ['T9'] ) },
+    qr/\AUnknown rule selector: T9\n/, 'extend_select matching no rule dies' );
+ok( lives { Puff::Rules->instantiate( \@classes, select => [ 'T', 'P001' ] ) }, 'P001 is a known code' );
+ok( lives { Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['Z'] ) },
+    'ignore matching no rule is fine' );
 
 my ($one) = Puff::Rules->instantiate( \@classes, select => ['T001'], rule_options => { T001 => { foo => 5 } } );
 is( $one->option('foo'), 5, 'rule option passed' );
@@ -63,6 +69,13 @@ $res->mkpath;
 rule_file( $res, 'B::Res', 'P001' );
 like( dies { Puff::Rules->load( rule_paths => ["$res"] ) }, qr/B::Res.*P001.*reserved/, 'P001 reserved' );
 
+my $nocode = $tmp->child('nocode');
+$nocode->mkpath;
+$nocode->child('N.pm')->spew_utf8("package B::NoCode;\nuse parent 'Puff::Rule';\nsub code { undef }\n1;\n");
+my $warned = warnings { like( dies { Puff::Rules->load( rule_paths => ["$nocode"] ) },
+    qr/B::NoCode has invalid code 'undef'/, 'undef code named in message' ) };
+is( $warned, [], 'no uninitialized warning' );
+
 # Module::Pluggable discovery
 my $lib = $tmp->child('lib');
 $lib->child(qw( Puff Rule Fake ))->mkpath;
@@ -78,5 +91,17 @@ unshift @INC, "$lib";
 is( [ grep {/\AQ/} map { $_->code } Puff::Rules->load( rule_paths => [] ) ], ['Q001'], 'pluggable discovery' );
 
 like( dies { Puff::Rules->load( rule_paths => ["$tmp/nope"] ) }, qr/not a directory/, 'missing rule path' );
+
+# A built-in rule that does not compile is an error, not a warning.
+my $broken = $tmp->child('broken-lib');
+$broken->child(qw( Puff Rule Fake2 ))->mkpath;
+$broken->child(qw( Puff Rule Fake2 Broken.pm ))->spew_utf8("package Puff::Rule::Fake2::Broken;\nsub {\n");
+{
+    local @INC = ( "$broken", @INC );
+    my $err;
+    my $w = warnings { $err = dies { Puff::Rules->load } };
+    like( $err, qr/Puff::Rule::Fake2::Broken/, 'broken built-in rule dies, naming it' );
+    is( $w, [], 'and does not just warn' );
+}
 
 done_testing;

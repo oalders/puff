@@ -100,7 +100,9 @@ sub fix   ($self, $violation, $fix) { ...; return 1 }   # return false to declin
   error (see "Applying fixes"). A violation from a
   rule whose `fix_safety` is `none` has no fix.
 - `$self->option('name')` returns the configured value, falling back to the
-  default.
+  default. It dies (`rule CODE has no option NAME`) when `name` is not
+  declared in `options`.
+- `violation`'s `message` defaults to the rule's `summary`.
 - `violation(..., fixable => 0)` marks one violation as having no fix even
   though its rule has fixes (for example `CORE::rand`), so that reports
   don't promise a fix that will be declined.
@@ -115,7 +117,12 @@ sub fix   ($self, $violation, $fix) { ...; return 1 }   # return false to declin
   error (exit 2) that names the modules involved.
 - `--select` and `--ignore` match by prefix: `S` matches `S001`; `S00`
   matches `S001` through `S009`. A rule runs if it matches `select` (or
-  `extend-select`) and does not match `ignore`.
+  `extend-select`) and does not match `ignore`. A `select` or
+  `extend-select` entry that is not a prefix of any loaded rule's code (or
+  of `P001`) is a fatal error (`Unknown rule selector: X`, exit 2); an
+  unmatched `ignore` entry is allowed.
+- A `Puff::Rule::*` module on @INC that fails to compile is a fatal
+  startup error, not a warning.
 - **`P001`** ("suppression comment must list codes") is built into the
   engine rather than being a rule class. It is always on, cannot be
   selected, ignored or suppressed, has no fix, and is listed by
@@ -128,7 +135,10 @@ sub fix   ($self, $violation, $fix) { ...; return 1 }   # return false to declin
   spaces. The comment may be on its own or at the end of a line of code.
 - `# puff: ignore-file S001` anywhere in the file suppresses those codes for
   the whole file.
-- A suppression code may be a prefix, as in `--ignore`.
+- A suppression code may be a prefix, as in `--ignore`. Only words
+  matching `/\A[A-Z]+[0-9]*\z/` count as codes; other words are ignored.
+  `ignore`/`ignore-file` must be followed by whitespace or the end of the
+  comment (`# puff: ignore-foo S002` is not a suppression).
 - A bare `# puff: ignore` or `# puff: ignore-file` (with no codes)
   suppresses nothing and is reported as `P001`.
 - Suppressed violations are neither reported nor fixed.
@@ -151,6 +161,9 @@ unsafe-fixes  = false
   directory being searched: an entry with no `/` matches any path segment
   with that name; an entry containing `/` matches a path prefix. The
   defaults above always apply.
+- Relative `rule-paths` entries are resolved against the config file's
+  directory; absolute ones are used as they are. `unsafe-fixes` must be a
+  TOML boolean; anything else is a config error (exit 2).
 - **`rule-paths` runs code.** Running puff in a repository with a
   `.puff.toml` that sets `rule-paths` loads and executes the Perl modules
   in that directory, just as running its tests would. `--no-config` turns
@@ -318,6 +331,14 @@ violation if there are exactly 2 arguments.
    - Otherwise, if S has no leading or trailing whitespace: replace ARG
      with `'<', ARG`.
    - Otherwise decline.
+   - As implemented, the fix also declines when the filename part F is
+     empty (a mode with no filename), starts with `&` or is `-`, and, for
+     double quotes, when the string starts with an escape (after leading
+     whitespace), when F starts with an escape, or when S or F ends with a
+     complete escape sequence followed only by whitespace (`\t`, `\n`,
+     `\x20`, `\x{20}`, `\040`, `\o{40}`, `\N{...}`, `\cX`, ...): such
+     escapes can be whitespace that two-argument open strips at runtime
+     and three-argument open keeps.
 2. ARG is a single `PPI::Token::Symbol` starting with `$` that isn't
    followed by a subscript or `->`: replace ARG with `'<', ARG`.
 3. Anything else: decline.
@@ -356,6 +377,19 @@ otherwise it declines:
     `readdir`, `closedir`, `rewinddir`, `telldir` or `seekdir`: rewritten
     to `$var`.
 - NAME doesn't appear as `*NAME` or `\*NAME` anywhere in the file.
+- As implemented, the fix also declines (and the violation is reported
+  with `fixable` 0) when: the open is not the first token of its
+  statement, or the statement has a modifier (`if`, `for`, ...); NAME is
+  used inside the open's own statement (`open(...) and print NAME`); the
+  file opens another bareword handle whose name differs from NAME only in
+  case (both would become the same variable); a use is in a different
+  named sub from the open, or after a `package` statement that follows
+  the open; NAME appears package-qualified (`main::NAME`) or inside any
+  string, heredoc or quote-like token; `print NAME`, `printf NAME` or
+  `say NAME` has nothing to print after the handle (`print NAME;`,
+  `print NAME if $x`, `{ print NAME }`), since `print {$var};` does not
+  compile; `print NAME` is followed by an operator or a list (`print(NAME
+  ...)`, `print NAME => ...`); or no free variable name is found.
 
 The variable name is `lc NAME`, unless the decoded file text already
 matches `[\$\@\%]\{?NAME\b` for that name (in code or inside strings), in

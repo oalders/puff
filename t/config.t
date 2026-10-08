@@ -58,6 +58,22 @@ like( dies { Puff::Config->load( path => 'missing.toml', cli => {} ) }, qr/not f
 $tmp->child('broken.toml')->spew_utf8("select = [\n");
 like( dies { Puff::Config->load( path => 'broken.toml', cli => {} ) }, qr/Invalid config file/, 'invalid toml dies' );
 
+$tmp->child('strbool.toml')->spew_utf8(qq{unsafe-fixes = "false"\n});
+like( dies { Puff::Config->load( path => 'strbool.toml', cli => {} ) },
+    qr/unsafe-fixes must be true or false/, 'unsafe-fixes string dies' );
+$tmp->child('intbool.toml')->spew_utf8(qq{unsafe-fixes = 1\n});
+like( dies { Puff::Config->load( path => 'intbool.toml', cli => {} ) },
+    qr/unsafe-fixes must be true or false/, 'unsafe-fixes integer dies' );
+$tmp->child('falsebool.toml')->spew_utf8(qq{unsafe-fixes = false\n});
+ok( !Puff::Config->load( path => 'falsebool.toml', cli => {} )->unsafe_fixes, 'unsafe-fixes false' );
+
+$tmp->child('sub')->mkpath;
+my $abs_rules = $tmp->child('elsewhere')->absolute->stringify;
+$tmp->child( 'sub', 'paths.toml' )->spew_utf8(qq{rule-paths = ["rel", "$abs_rules"]\n});
+is( Puff::Config->load( path => 'sub/paths.toml', cli => {} )->rule_paths,
+    [ $tmp->child( 'sub', 'rel' )->absolute->stringify, $abs_rules ],
+    'relative rule-paths join the config dir; absolute ones are kept' );
+
 $tmp->child('.puff.toml')->remove;
 $c = Puff::Config->load( path => undef, cli => {} );
 is( $c->select, ['S'], 'missing default file gives defaults' );

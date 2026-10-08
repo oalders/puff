@@ -32,6 +32,19 @@ is $s->problems,
     ],
     'P001 problems';
 
+$s = sup("foo(); # puff: ignore-foo S002\nbar(); # puff: ignorez S002\n");
+ok !$s->is_suppressed( 'S002', 1 ), 'ignore-foo is not a suppression';
+ok !$s->is_suppressed( 'S002', 2 ), 'ignorez is not a suppression';
+is $s->problems, [], 'and not a P001 either';
+
+$s = sup("foo(); # puff: ignore S002 because, of reasons\n");
+ok $s->is_suppressed( 'S002', 1 ), 'listed code still works with trailing words';
+ok !$s->is_suppressed( 'because', 1 ), 'lower-case words are not codes';
+
+$s = sup("foo(); # puff: ignore all of it\n");
+is $s->problems, [ { line => 1, column => 8, message => 'suppression comment must list codes' } ],
+    'no valid codes is P001';
+
 $s = sup(qq{my \$s = "# puff: ignore S001";\n});
 ok !$s->is_suppressed( 'S001', 1 ), 'string content ignored';
 is $s->problems, [], 'no problems from string';

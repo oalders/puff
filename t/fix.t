@@ -77,6 +77,10 @@ package My::Fixable {
     our @ISA = ('My::Rule');
     sub fix_safety {'unsafe'}
 }
+package My::Summary {
+    our @ISA = ('My::Rule');
+    sub summary {'the summary'}
+}
 package My::NoFix {
     our @ISA = ('My::Rule');
     sub fix_safety {'none'}
@@ -85,6 +89,7 @@ package My::NoFix {
 subtest 'Puff::Rule' => sub {
     is( My::Rule->new( options => { x => 2 } )->option('x'), 2, 'configured' );
     is( My::Rule->new->option('x'), 1, 'default' );
+    like( dies { My::Rule->new->option('y') }, qr/\Arule X001 has no option y\n/, 'undeclared option dies' );
 
     my $rule = My::Rule->new;
     my $v    = $rule->violation( $fh, message => 'm' );
@@ -96,6 +101,7 @@ subtest 'Puff::Rule' => sub {
     is( $v->rule,    $rule,  'rule' );
     is( $v->element, $fh,    'element' );
     ok( !$v->fixable, "base fix_safety none: not fixable" );
+    is( My::Summary->new->violation($fh)->message, 'the summary', 'message defaults to summary' );
     ok( My::Fixable->new->violation( $fh, message => "m" )->fixable, "fixable by default when fix_safety declared" );
     ok( !My::Fixable->new->violation( $fh, message => "m", fixable => 0 )->fixable, "explicit 0" );
     ok( !My::NoFix->new->violation( $fh, message => 'm', fixable => 1 )->fixable,

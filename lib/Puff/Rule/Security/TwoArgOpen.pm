@@ -5,6 +5,10 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call call_args );
 
+# A whole escape sequence at the end of a "..." string: it may stand for
+# whitespace (\x20, \040, \x{20}, \o{40}, \N{SPACE}, \t, ...).
+my $TRAILING_ESCAPE = qr/\\(?:x\{[^}]*\}|x[0-9a-fA-F]{0,2}|o\{[^}]*\}|[0-7]{1,3}|N\{[^}]*\}|c.|.)\s*\z/s;
+
 sub code       {'S002'}
 sub summary    {'Use three-argument open'}
 sub applies_to {'PPI::Token::Word'}
@@ -27,8 +31,9 @@ sub explanation {
         `&`, ends with `|`, is `-`, has a filename starting with `&` or equal
         to `-`, has a mode but no filename, is a "..." string starting with a
         variable (the mode could be inside it), or is a "..." string with an
-        escape such as \t or \n at the start or end of the mode or filename
-        (whitespace that two-argument open strips at runtime). Declined calls
+        escape such as \t, \n, \x20, \040 or \x{20} at the start or end of
+        the mode or filename (whitespace that two-argument open strips at
+        runtime). Declined calls
         are reported as not fixable.
 
         The fix is unsafe because it changes behaviour:
@@ -83,12 +88,12 @@ sub _replacement ($arg) {
 
     # An escape such as \t or \n at either end is whitespace that two-arg
     # open strips at runtime and three-arg open keeps.
-    return if $double && ( $s =~ /\A\s*\\/ || $s =~ /\\.\s*\z/s );
+    return if $double && ( $s =~ /\A\s*\\/ || $s =~ $TRAILING_ESCAPE );
 
     if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/s ) {
         my ( $mode, $file ) = ( $1, $2 );
         return if $file eq '' || $file =~ /\A&/ || $file eq '-';
-        return if $double && $file =~ /\A\\/;
+        return if $double && ( $file =~ /\A\\/ || $file =~ $TRAILING_ESCAPE );
         my $quoted = $double && $file =~ /\A\$[A-Za-z_]\w*\z/ ? $file : "$q$file$q";
         return "'$mode', $quoted";
     }

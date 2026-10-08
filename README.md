@@ -59,7 +59,10 @@ column. A marker at the end of the line says what a fix would do:
 | `--no-config` | Ignore config files. |
 
 `CODES` is a comma-separated list, and the option can be repeated. A code can
-be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`.
+be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. A
+`select` or `extend-select` entry that matches no rule is an error
+(`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
+rules off. An `ignore` entry that matches nothing is allowed.
 
 ### Exit codes
 
@@ -181,9 +184,9 @@ does not silently do nothing.
 | `select` | `["S"]` | Rule codes or prefixes to enable. |
 | `extend-select` | `[]` | More codes or prefixes to enable. |
 | `ignore` | `[]` | Codes or prefixes to disable. Wins over `select`. |
-| `rule-paths` | `[]` | Directories of extra rule modules, relative to the config file. See below. |
+| `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["local", "blib", ".build", ".git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
-| `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. |
+| `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
 | `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. No built-in rule has options yet. |
 
 `exclude` entries are compared with the path relative to the directory being
@@ -216,7 +219,10 @@ Silence a rule for the whole file with a comment anywhere in it:
     # puff: ignore-file S002
 
 List several codes separated by spaces or commas. Codes are prefixes, so
-`# puff: ignore S` silences every `S` rule. Only real comments count, not
+`# puff: ignore S` silences every `S` rule. A code is capital letters
+optionally followed by digits; other words in the comment (`# puff: ignore
+S002 legacy code`) are ignored. `ignore` must be followed by a space or the
+end of the comment: `# puff: ignore-foo S002` is not a suppression. Only real comments count, not
 text inside a string. A suppressed violation is neither reported nor fixed.
 
 A suppression comment that lists no codes suppresses nothing and is itself
@@ -258,8 +264,9 @@ as `open(FH, '<', $file)`. It does not fix a second argument that:
 - has a mode but no filename, or a filename that starts with `&` or is `-`;
 - is a `"..."` string that starts with a variable (the mode could be inside
   it);
-- has an escape such as `\t` or `\n` at the start or end of the mode or
-  filename, since two-argument open strips that whitespace at runtime.
+- has an escape such as `\t`, `\n`, `\x20`, `\040` or `\x{20}` at the start
+  or end of the mode or filename, since two-argument open strips that
+  whitespace at runtime.
 
 **S003** reports `open`, `opendir`, `sysopen` and `socket` with a bareword
 first argument other than `STDIN`, `STDOUT`, `STDERR`, `DATA`, `ARGV`,
@@ -356,7 +363,8 @@ The points to know:
 
 - `applies_to` limits which elements `check` sees. Name the narrowest PPI
   class you can.
-- `check` returns violations built with `$self->violation`. Pass
+- `check` returns violations built with `$self->violation`. The message
+  defaults to the rule's `summary`. Pass
   `fixable => 0` for a violation that has no fix, so the report does not
   offer one.
 - `fix` records edits on the `$fix` object and returns true, or returns false

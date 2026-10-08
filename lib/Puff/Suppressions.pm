@@ -3,6 +3,7 @@ package Puff::Suppressions;
 use v5.36;
 
 my $MESSAGE = 'suppression comment must list codes';
+my $CODE    = qr/\A[A-Z]+[0-9]*\z/;
 
 sub new ( $class, $doc ) {
     $doc->index_locations;
@@ -13,9 +14,9 @@ sub new ( $class, $doc ) {
 
         # PPI merges consecutive own-line comments into one token
         for my $text ( split /\n/, $comment->content ) {
-            if ( $text =~ /\A(\s*)\#\s*puff:\s*(ignore-file|ignore)\b(.*)\z/ ) {
+            if ( $text =~ /\A(\s*)\#\s*puff:\s*(ignore-file|ignore)(?=\s|\z)(.*)\z/ ) {
                 my ( $indent, $kind, $rest ) = ( $1, $2, $3 );
-                my @codes = grep { length } split /[\s,]+/, $rest;
+                my @codes = grep {/$CODE/} split /[\s,]+/, $rest;
                 if ( !@codes ) {
                     push @problems, { line => $line, column => $column + length($indent), message => $MESSAGE };
                 }
@@ -49,8 +50,10 @@ __END__
 =head1 DESCRIPTION
 
 Collects C<# puff: ignore CODES> (this line) and C<# puff: ignore-file CODES>
-(whole file) from C<PPI::Token::Comment> tokens only. Codes are prefixes. A
-bare comment with no codes suppresses nothing and is returned by C<problems>
-for reporting as P001.
+(whole file) from C<PPI::Token::Comment> tokens only. C<ignore> and
+C<ignore-file> must be followed by whitespace or the end of the comment
+(C<ignore-foo> is not a suppression). Codes are prefixes: words matching
+C</\A[A-Z]+[0-9]*\z/>; other words are ignored. A comment with no codes
+suppresses nothing and is returned by C<problems> for reporting as P001.
 
 =cut
