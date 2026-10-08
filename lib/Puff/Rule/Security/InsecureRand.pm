@@ -112,13 +112,11 @@ sub _has_secure_import ($doc) {
     my $includes = $doc->find('PPI::Statement::Include') || [];
     for my $inc (@$includes) {
         next unless $inc->type eq 'use' && ( $inc->module // '' ) eq 'Math::Random::Secure';
-        for my $arg ( $inc->schildren ) {
-            if ( $arg->isa('PPI::Token::QuoteLike::Words') ) {
-                return 1 if grep { $_ eq 'rand' } $arg->literal;
-            }
-            elsif ( $arg->isa('PPI::Token::Quote') ) {
-                return 1 if $arg->string eq 'rand';
-            }
+        for my $words ( @{ $inc->find('PPI::Token::QuoteLike::Words') || [] } ) {
+            return 1 if grep { $_ eq 'rand' } $words->literal;
+        }
+        for my $quote ( @{ $inc->find('PPI::Token::Quote') || [] } ) {
+            return 1 if $quote->string eq 'rand';
         }
     }
     return 0;
