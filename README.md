@@ -268,6 +268,7 @@ reported as `P001`:
 | B001 | UselessRegexModifiers | Modifiers on a match against a lone qr// object are ignored | unsafe |  |
 | B002 | AggregateAssignRef | Array or hash assigned a `[...]` or `{...}` reference | unsafe |  |
 | B003 | LeadingZeros | Number with a leading zero is octal | safe |  |
+| B004 | IndirectObject | Indirect object syntax | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -459,6 +460,14 @@ after a `mode` or `perm` key, and an operand of a bitwise operator
 option is on. The safe fix rewrites the literal as `oct('0755')`, which
 compiles to the same constant. Based on
 Perl::Critic::Policy::ValuesAndExpressions::ProhibitLeadingZeros.
+
+**B004** is selected by default. It reports indirect object syntax such as
+`new Foo(...)` or `bootstrap Foo $VERSION`, where Perl has to guess that a
+method call was meant. A lowercase non-builtin word followed by a class name
+(or, for `new`, a `$variable`) is reported. The unsafe fix rewrites it as
+`Foo->new(...)`; it is unsafe because an imported function with that name
+would be called today. Based on Perl::Critic::Policy::Dynamic::NoIndirect,
+which compiles the code under indirect.pm; this rule reads the source.
 
 **M001** is not selected by default; turn it on with `--select M`. It reports
 `use Moose` or `use Mouse` in a package that never calls `->make_immutable`,
