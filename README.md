@@ -259,6 +259,7 @@ reported as `P001`:
 | S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
 | S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | S009 | WorldWritable | Do not make files world-writable | none | [732](https://cwe.mitre.org/data/definitions/732.html) |
+| S010 | PredictableToken | Do not hash the time, PID or `rand` to make a token | none | [340](https://cwe.mitre.org/data/definitions/340.html), [338](https://cwe.mitre.org/data/definitions/338.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -378,6 +379,14 @@ symbolic modes such as `'o+w'`), and `umask` with a constant mask that does
 not mask other-write (`umask 0`). Sticky-bit modes such as `01777` are
 allowed. Modes passed to `mkdir`, `sysopen` and `make_path` are not reported,
 since the umask filters them. There is no fix.
+
+**S010** reports md5 and sha* digest functions (`md5_hex`, `sha256_hex` and
+the rest) whose arguments use `time`, `localtime`, `gmtime`, `times`,
+`gettimeofday`, `rand`, `srand` or `$$`, as in
+`md5_hex( time . $$ . rand )`. That is how several CPAN session modules made
+guessable session IDs. Use `random_bytes` from Crypt::PRNG or
+Crypt::SysRandom for tokens; suppress the violation for cache keys. There is
+no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
