@@ -101,10 +101,13 @@ sub root ($self)          { return $self->{root} }
 # outside the root, which anchors /entries to the searched directory).
 sub is_excluded ( $self, $relpath, $base = '' ) {
     my @segments  = _segments($relpath);
-    my @from_root = ( _segments( $base // '' ), @segments );
+    my @base      = _segments( $base // '' );
+    my @from_root = ( @base, @segments );
     for my $entry ( @{ $self->{exclude} } ) {
         if ( $entry =~ m{\A/} ) {
-            return 1 if _has_prefix( [ _segments($entry) ], \@from_root );
+            my @entry = _segments($entry);
+            next if _has_prefix( \@entry, \@base );    # the user asked for this directory
+            return 1 if _has_prefix( \@entry, \@from_root );
         }
         elsif ( $entry !~ m{/} ) {
             return 1 if grep { $_ eq $entry } @segments;
@@ -183,7 +186,9 @@ when that starts with the entry's segments. So C</local> excludes
 C<./local/lib/X.pm> but not C<t/local/http.t>. The defaults are anchored
 this way. When the directory being searched is outside the root (C<$base>
 undef), anchored entries are anchored to that directory instead, so
-C<puff check /elsewhere/proj> still skips C<proj/local>.
+C<puff check /elsewhere/proj> still skips C<proj/local>. An anchored entry
+that covers the searched directory itself is ignored: C<puff check local>
+checks everything under C<local>.
 
 =item C<vendor>
 

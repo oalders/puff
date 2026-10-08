@@ -239,7 +239,7 @@ subtest 'exclude' => sub {
     unlike( $out, qr{notes\.txt},      'non-Perl file skipped' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001', './local', 't' );
-    unlike( $out, qr{lib/Rand\.pm},    'files under a named ./local are still skipped' );
+    like( $out, qr{^local/lib/Rand\.pm:}m, 'files under a named ./local are checked' );
     like( $out,   qr{^t/local/x\.t:}m, 'searching t/ checks t/local' );
 
     $dir->child('.puff.toml')->spew_utf8('');

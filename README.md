@@ -197,9 +197,9 @@ The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
 
 - An entry starting with `/` is anchored to the project root. The defaults
-  are anchored, so `/local` skips `./local/...` (including when you name
-  `local` itself on the command line) but `t/local/http.t` is still
-  checked. When you search a directory outside the project root (for
+  are anchored, so `/local` skips `./local/...` but `t/local/http.t` is still
+  checked. An anchored entry does not apply to a directory you name
+  yourself: `puff check local` checks everything under `local`. When you search a directory outside the project root (for
   example `puff check /other/proj`, or `--config ci/puff.toml .`), anchored
   entries are anchored to that directory instead.
 - An entry without a `/` matches any path segment with that name, at any
