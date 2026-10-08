@@ -26,6 +26,7 @@ my $fh  = word( $doc, 'FH' );
 
 subtest 'Puff::Fix helpers' => sub {
     my $fix = Puff::Fix->new( source => $src );
+    ref_is( $fix->source, $src, 'source' );
     $fix->replace( $fh, 'my $fh' );
     is( $fix->edits, [ { start => 5, end => 7, text => 'my $fh' } ], 'replace' );
 

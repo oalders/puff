@@ -6,7 +6,8 @@ sub new ( $class, %args ) {
     return bless { source => $args{source}, edits => [] }, $class;
 }
 
-sub edits ($self) { $self->{edits} }
+sub edits  ($self) { $self->{edits} }
+sub source ($self) { $self->{source} }
 
 sub _check_no_heredoc ( $elem, $what ) {
     my $has = $elem->isa('PPI::Token::HereDoc')
@@ -62,6 +63,7 @@ Records C<< {start, end, text} >> edits (character offsets) for one fix.
 C<replace>, C<insert_before>, C<insert_after> and C<delete> take a PPI
 element and die with a message mentioning "heredoc" when the element is or
 contains a C<PPI::Token::HereDoc>; the engine treats that as the rule
-declining. C<replace_range> takes raw offsets and does no such check.
+declining. C<replace_range> takes raw offsets (use C<< $fix->source->start_of($elem) >> to
+find them) and does no such check.
 
 =cut

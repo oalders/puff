@@ -238,6 +238,17 @@ subtest 'rule whose check dies on the fixed text' => sub {
     is( summary($result), [ [ 'T001', 1, 1 ] ], 'violations of the original lint' );
 };
 
+subtest 'S002 and S003 fix the same open' => sub {
+    require Puff::Rule::Security::TwoArgOpen;
+    require Puff::Rule::Security::BarewordFilehandle;
+    my $engine = engine( 'unsafe', qw( Puff::Rule::Security::TwoArgOpen Puff::Rule::Security::BarewordFilehandle ) );
+    my $result = run_engine( $engine, qq{open(FH, "<\$f"); my \@l = <FH>; close FH;\n} );
+    is( $result->{error},       undef, 'no error' );
+    is( $result->{new_text},    qq{open(my \$fh, '<', \$f); my \@l = <\$fh>; close \$fh;\n}, 'both fixes applied' );
+    is( summary($result),       [], 'nothing left' );
+    is( $result->{fixed_count}, 2,  'two fixed' );
+};
+
 subtest 'builtin_rules_info' => sub {
     is( [ Puff::Engine->builtin_rules_info ],
         [ { code => 'P001', summary => 'suppression comment must list codes' } ], 'P001 listed' );
