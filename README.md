@@ -265,6 +265,7 @@ reported as `P001`:
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
+| B001 | UselessRegexModifiers | Modifiers on a match against a lone qr// object are ignored | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
@@ -275,6 +276,7 @@ user can guess where a rule lives:
 | --- | --- | --- |
 | `S` | Security; selected by default | `S` (flake8-bandit) |
 | `Q` | Quotes | `Q` (flake8-quotes) |
+| `B` | Likely bugs | `B` (flake8-bugbear) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `P` | puff's own checks; always on | none |
 
@@ -424,6 +426,16 @@ names with `::` or `-`, v-strings, quote-like operator names such as `s` and
 **Q003** is not selected by default either. It reports `''` and `""`, which
 are easy to misread, and the safe fix rewrites them as `q{}`. An empty hash
 key such as `$h{''}` is left alone, since `$h{q{}}` is harder to read.
+
+**B001** is not selected by default; turn it on with `--select B`. It reports
+pattern modifiers such as `/i`, `/m`, `/s` and `/x` on a match, substitution
+or `split` whose whole pattern is one variable that the file only assigns a
+`qr//` to. Perl ignores them (since 5.10, silently), so `$str =~ /$re/i` is
+still case-sensitive. Put the modifiers in the `qr//`. The unsafe fix deletes
+the ignored modifiers, which keeps the current behaviour. It is unsafe because
+the rule sees only this file's assignments. Based on
+Perl::Critic::Policy::Bangs::ProhibitUselessRegexModifiers, which checks only
+`/m` and `/s`.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
