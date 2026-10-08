@@ -260,7 +260,10 @@ uses in the same block. It does not fix:
 - an open that is not at the start of its own statement, is part of a
   condition, or has a statement modifier;
 - a handle used in the open's own statement (`open(...) and print FH`);
-- a name opened more than once in the file;
+- a name opened more than once in the file, or opened alongside another
+  handle whose name differs only in case (`LOG` and `Log`);
+- `print FH`, `printf FH` or `say FH` with nothing to print after the handle
+  (`print FH;`, `print FH if $x;`, `{ print FH }`);
 - a name used before the open, outside the open's block, in a different named
   sub, or after a `package` statement;
 - any other use of the name: passed to a sub, `select`, file tests, `write`,

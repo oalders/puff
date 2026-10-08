@@ -47,7 +47,10 @@ sub explanation {
         when the open is not at the start of its own statement, is part of a
         condition or has a statement modifier (`if`, `for`, ...); when the
         handle is used in the open's own statement (`open(...) and print FH`);
-        when the file opens the same name more than once; when the name is used before
+        when the file opens the same name more than once, or another handle
+        whose name differs only in case (LOG and Log); when `print FH`,
+        `printf FH` or `say FH` has nothing to print after the handle
+        (`print FH;`, `print FH if $x`, `{ print FH }`); when the name is used before
         the open, outside the open's block, in a different named sub, after a
         package statement, or in any other way (passed to a sub, select,
         file tests, write, `*FH` globs, a package-qualified name, or the name
@@ -117,9 +120,12 @@ sub _edits ( $word, $handle ) {
     my $text = $doc->serialize;
     return if $text =~ /\*\{?\s*(?:\w*::)*\Q$name\E\b/;
 
-    my @opens = grep { $FIXABLE{ $_->content } && _same_name( scalar _handle($_), $name ) }
-        @{ $doc->find('PPI::Token::Word') || [] };
+    my @calls = grep { _handle($_) } @{ $doc->find('PPI::Token::Word') || [] };
+    my @opens = grep { $FIXABLE{ $_->content } && _handle($_)->content eq $name } @calls;
     return unless @opens == 1;
+
+    # open(LOG, ...) and open(Log, ...) would both become my $log
+    return if grep { my $other = _handle($_)->content; $other ne $name && lc $other eq lc $name } @calls;
 
     my $var      = _var_name( $text, $name ) // return;
     my $open_sub = _enclosing_sub($word);
@@ -165,10 +171,6 @@ sub _edits ( $word, $handle ) {
     return \@edits;
 }
 
-sub _same_name ( $handle, $name ) {
-    return $handle && $handle->content eq $name;
-}
-
 sub _same_element ( $x, $y ) {
     return ( refaddr($x) // 0 ) == ( refaddr($y) // 0 );
 }
@@ -189,9 +191,12 @@ sub _word_use ( $token, $var ) {
     my $prev = $token->sprevious_sibling;
     my $next = $token->snext_sibling;
 
-    # print FH ...
+    # print FH LIST; without a LIST, `print {$fh};` would not compile
     if ( $prev && _is_print($prev) ) {
-        return if $next && ( $next->isa('PPI::Token::Operator') || $next->isa('PPI::Structure::List') );
+        return unless $next;
+        return if $next->isa('PPI::Token::Operator') || $next->isa('PPI::Structure::List');
+        return if $next->isa('PPI::Token::Structure');
+        return if $next->isa('PPI::Token::Word') && $MODIFIER{ $next->content };
         return "{\$$var}";
     }
 
