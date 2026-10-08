@@ -160,7 +160,8 @@ unsafe-fixes  = false
 - `exclude` entries match whole path segments. An entry starting with `/`
   is anchored to the project root (the directory holding the config file,
   or the cwd when there is none): the defaults are anchored, so
-  `./local/...` is skipped but `t/local/http.t` is checked. An entry with
+  `./local/...` is skipped but `t/local/http.t` is checked. A searched
+  directory outside the project root is its own anchor for these entries. An entry with
   no `/` matches any path segment with that name; any other entry matches
   a path prefix relative to the directory being searched. The defaults
   above always apply.

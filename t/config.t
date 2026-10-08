@@ -85,7 +85,8 @@ ok( !$c->is_excluded('t/local/http.t'),  'default local not matched below the ro
 ok( !$c->is_excluded('locally/b.pm'),    'segment match is exact' );
 ok( $c->is_excluded( 'lib/X.pm', 'local' ),   'searching local/: child is under the anchored local' );
 ok( !$c->is_excluded( 'lib/X.pm', 't' ),      'searching t/: not under local' );
-ok( !$c->is_excluded( 'local/x.t', undef ),   'searched dir outside the root: anchored entries do not apply' );
+ok( $c->is_excluded( 'local/x.t', undef ),    'searched dir outside the root: anchored to the searched dir' );
+ok( !$c->is_excluded( 't/local/x.t', undef ),  'outside the root: still anchored, not any depth' );
 push @{ $c->exclude }, 'vendor', '/t/corpus';
 ok( $c->is_excluded('a/vendor/b.pm'),          'user entry without / matches any segment' );
 ok( $c->is_excluded( 'vendor/b.pm', undef ),   'user segment entry applies outside the root too' );

@@ -199,7 +199,9 @@ directory when there is none. `exclude` entries match whole path segments:
 - An entry starting with `/` is anchored to the project root. The defaults
   are anchored, so `/local` skips `./local/...` (including when you name
   `local` itself on the command line) but `t/local/http.t` is still
-  checked.
+  checked. When you search a directory outside the project root (for
+  example `puff check /other/proj`, or `--config ci/puff.toml .`), anchored
+  entries are anchored to that directory instead.
 - An entry without a `/` matches any path segment with that name, at any
   depth (`vendor` skips `vendor/` and `lib/vendor/`).
 - Any other entry matches a path prefix relative to the directory being

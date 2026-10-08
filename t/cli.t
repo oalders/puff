@@ -246,6 +246,30 @@ subtest 'exclude' => sub {
     is( $exit, 1, 'a file named explicitly is checked whatever its name' );
 };
 
+subtest 'default excludes when the searched dir is outside the root' => sub {
+    my ( $keep, $dir ) = project(
+        'local/lib/Rand.pm' => 'S001/basic.pl',
+        'blib/lib/Rand.pm'  => 'S001/basic.pl',
+        'lib/x.pl'          => 'S001/basic.pl',
+    );
+    my $elsewhere = $keep->child('elsewhere');
+    $elsewhere->mkpath;
+    my ( $out, $err, $exit ) = puff( $elsewhere, 'check', '--select', 'S001', $dir->stringify );
+    like( $out,   qr{lib/x\.pl:}m,          'project files checked from another cwd' ) or diag $err;
+    unlike( $out, qr{/(?:local|blib)/lib/}, 'local/ and blib/ skipped from another cwd' );
+
+    $dir->child('ci')->mkpath;
+    $dir->child( 'ci', 'puff.toml' )->spew_utf8('');
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001', '--config', 'ci/puff.toml', '.' );
+    like( $out,   qr{lib/x\.pl:}m,           'checked with a config in a subdirectory' ) or diag $err;
+    unlike( $out, qr{^(?:local|blib)/}m,     'local/ and blib/ skipped with --config ci/puff.toml' );
+
+    $dir->child('t')->mkpath;
+    ( $out, $err, $exit ) = puff( $dir->child('t'), 'check', '--select', 'S001', '..' );
+    like( $out,   qr{lib/x\.pl:}m,              'parent dir checked' ) or diag $err;
+    unlike( $out, qr{\.\./(?:local|blib)/}, 'local/ and blib/ skipped when searching ..' );
+};
+
 subtest 'extensionless perl scripts' => sub {
     my ( $keep, $dir ) = project();
     $dir->child('bin')->mkpath;
