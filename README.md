@@ -267,6 +267,7 @@ reported as `P001`:
 | S014 | ExtensionRegex | Anchor a file extension check with `\z` | unsafe | [184](https://cwe.mitre.org/data/definitions/184.html) |
 | S015 | PathPrefix | Directory containment checked with a bare prefix test | unsafe | [22](https://cwe.mitre.org/data/definitions/22.html) |
 | S016 | RequireRuntimePath | Do not require or do a file name computed at runtime | none | [829](https://cwe.mitre.org/data/definitions/829.html) |
+| S017 | HTMLEscapeQuote | Escape ' in a hand-written HTML escaper | unsafe | [79](https://cwe.mitre.org/data/definitions/79.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -466,6 +467,13 @@ whatever file the value names. It is not reported when the same sub checks a
 name against an anchored module-name pattern such as `/\A\w+(?:::\w+)*\z/`.
 Check the name against an allowlist and load it with Module::Runtime's
 `require_module`. There is no fix.
+
+**S017** reports a hand-written HTML escaper whose substitutions, in one sub
+or at the top level of a file, escape `<` and `"` but never match `'`. Its
+output is not safe inside a single-quoted attribute. The unsafe fix adds
+`s/'/&#39;/g` after the `"` substitution, with the same target, delimiters
+and modifiers; an escaper that uses a character class and a lookup table
+(`s/([&<>"])/$ESCAPE{$1}/g`) is reported but not fixed.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
