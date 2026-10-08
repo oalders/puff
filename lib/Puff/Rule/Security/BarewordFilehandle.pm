@@ -23,6 +23,7 @@ sub code       {'S003'}
 sub summary    {'Use a lexical filehandle instead of a bareword'}
 sub applies_to {'PPI::Token::Word'}
 sub fix_safety {'unsafe'}
+sub cwe        {1108}
 
 sub explanation {
     return <<~'END';

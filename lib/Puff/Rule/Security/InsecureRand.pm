@@ -18,6 +18,7 @@ sub code       {'S001'}
 sub summary    {'rand/srand is not cryptographically secure'}
 sub applies_to {'PPI::Token::Word'}
 sub fix_safety {'unsafe'}
+sub cwe        {338}
 
 sub explanation {
     return <<~'END';

@@ -178,11 +178,13 @@ subtest 'rules and rule' => sub {
     is( $exit, 0, 'rule exits 0' );
     like( $out, qr{\AS002: Use three-argument open\n}, 'code and summary' );
     like( $out, qr{^Fix safety: unsafe$}m,             'fix safety' );
+    like( $out, qr{^CWE: CWE-78, CWE-73$}m,            'CWE ids' );
     like( $out, qr{^Two-argument open takes the mode}m, 'explanation' );
 
     ( $out, $err, $exit ) = puff( $dir, 'rule', 'P001' );
     is( $exit, 0, 'rule P001 exits 0' );
     like( $out, qr{\AP001: suppression comment must list codes\n}, 'P001 summary' );
+    unlike( $out, qr{^CWE:}m, 'no CWE line for a rule without CWE ids' );
 
     ( $out, $err, $exit ) = puff( $dir, 'rule', 'X999' );
     is( $exit, 2, 'unknown rule exits 2' );

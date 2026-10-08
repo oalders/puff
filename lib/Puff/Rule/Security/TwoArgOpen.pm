@@ -13,6 +13,7 @@ sub code       {'S002'}
 sub summary    {'Use three-argument open'}
 sub applies_to {'PPI::Token::Word'}
 sub fix_safety {'unsafe'}
+sub cwe        { ( 78, 73 ) }
 
 sub explanation {
     return <<~'END';

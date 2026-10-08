@@ -14,6 +14,7 @@ sub explanation {''}
 sub applies_to  {'PPI::Element'}
 sub fix_safety  {'none'}
 sub options     { {} }
+sub cwe         { () }
 
 sub check ( $self, $elem, $doc ) { return }
 sub fix ( $self, $violation, $fix ) { return 0 }
@@ -120,6 +121,12 @@ C<safe>, C<unsafe> or C<none> (the default). C<safe> fixes are applied by
 C<--fix>; C<unsafe> fixes also need C<--unsafe-fixes>; a C<none> rule has no
 fix and its violations are never fixable. Use C<unsafe> for any fix that can
 change what the program does.
+
+=head2 cwe
+
+The CWE (Common Weakness Enumeration, L<https://cwe.mitre.org/>) ids this
+rule detects, as a list of numbers: C<sub cwe { ( 78, 73 ) }>. C<puff rule>
+prints them. Default: an empty list.
 
 =head2 options
 

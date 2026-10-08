@@ -21,6 +21,7 @@ sub execute ( $self, $opt, $args ) {
 
     print "$info->{code}: $info->{summary}\n";
     print "Fix safety: $info->{fix_safety}\n";
+    print 'CWE: ', join( ', ', map {"CWE-$_"} @{ $info->{cwe} } ), "\n" if @{ $info->{cwe} };
     if ( $info->{class} && length( my $text = $info->{class}->explanation ) ) {
         print "\n$text";
         print "\n" unless $text =~ /\n\z/;
@@ -38,6 +39,7 @@ __END__
 
 =head1 DESCRIPTION
 
-Prints the rule's code, summary, fix safety and explanation.
+Prints the rule's code, summary, fix safety, CWE ids (if any) and
+explanation.
 
 =cut

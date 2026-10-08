@@ -248,14 +248,14 @@ reported as `P001`:
 
 ## Rules
 
-| Code | Name | Summary | Fix safety |
-| --- | --- | --- | --- |
-| S001 | InsecureRand | `rand`/`srand` is not cryptographically secure | unsafe |
-| S002 | TwoArgOpen | Use three-argument open | unsafe |
-| S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe |
-| Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |
-| A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |
-| P001 | (built in) | Suppression comment must list codes | none |
+| Code | Name | Summary | Fix safety | CWE |
+| --- | --- | --- | --- | --- |
+| S001 | InsecureRand | `rand`/`srand` is not cryptographically secure | unsafe | [338](https://cwe.mitre.org/data/definitions/338.html) |
+| S002 | TwoArgOpen | Use three-argument open | unsafe | [78](https://cwe.mitre.org/data/definitions/78.html), [73](https://cwe.mitre.org/data/definitions/73.html) |
+| S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe | [1108](https://cwe.mitre.org/data/definitions/1108.html) |
+| Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
+| A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
+| P001 | (built in) | Suppression comment must list codes | none |  |
 
 Rule codes follow ruff's prefixes where ruff has an equivalent, so a ruff
 user can guess where a rule lives:
@@ -424,6 +424,8 @@ The points to know:
   (exit `2`) and writes none of its fixes. The edits are text offsets into
   the file, so you can change part of an element with `replace_range`.
 - Use `fix_safety => 'unsafe'` for any fix that can change behaviour.
+- If the rule detects a known weakness, return its CWE numbers from `cwe`
+  (`sub cwe { ( 78, 73 ) }`); `puff rule CODE` prints them.
 - Rules that ship with puff go under `lib/Puff/Rule/` and are found
   automatically.
 
