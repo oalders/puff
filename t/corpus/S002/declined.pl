@@ -11,3 +11,8 @@ open(X, ">" . $f); # expect: S002
 open(X, $h->{f}); # expect: S002
 open(X, qq{<$f}); # expect: S002
 open(X, " file "); # expect: S002
+open(FH, "\t>$f"); # expect: S002
+open(FH, "<$f\n"); # expect: S002
+open(FH, "< \t$f"); # expect: S002
+open(FH, ">"); # expect: S002
+open(FH, "<"); # expect: S002

@@ -25,8 +25,11 @@ sub explanation {
         argument that is a single '...' or "..." string or a single scalar
         variable, and declines when the string is empty, starts with `|` or
         `&`, ends with `|`, is `-`, has a filename starting with `&` or equal
-        to `-`, or is a "..." string starting with a variable (the mode could
-        be inside it). Declined calls are reported as not fixable.
+        to `-`, has a mode but no filename, is a "..." string starting with a
+        variable (the mode could be inside it), or is a "..." string with an
+        escape such as \t or \n at the start or end of the mode or filename
+        (whitespace that two-argument open strips at runtime). Declined calls
+        are reported as not fixable.
 
         The fix is unsafe because it changes behaviour:
         - two-argument open trims whitespace around the filename and
@@ -78,9 +81,14 @@ sub _replacement ($arg) {
     return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/ || $s eq '-';
     return if $double && $s =~ /\A\s*[\$\@]/;
 
-    if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/s && length $2 ) {
+    # An escape such as \t or \n at either end is whitespace that two-arg
+    # open strips at runtime and three-arg open keeps.
+    return if $double && ( $s =~ /\A\s*\\/ || $s =~ /\\.\s*\z/s );
+
+    if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/s ) {
         my ( $mode, $file ) = ( $1, $2 );
-        return if $file =~ /\A&/ || $file eq '-';
+        return if $file eq '' || $file =~ /\A&/ || $file eq '-';
+        return if $double && $file =~ /\A\\/;
         my $quoted = $double && $file =~ /\A\$[A-Za-z_]\w*\z/ ? $file : "$q$file$q";
         return "'$mode', $quoted";
     }
