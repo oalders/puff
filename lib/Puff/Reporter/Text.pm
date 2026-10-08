@@ -34,7 +34,8 @@ sub report ( $self, $run, $out, $err ) {
         }
     }
 
-    printf {$out} "Found %s.\n", _n( $total, 'violation' );
+    my $checked = grep { !defined $_->{error} } @files;
+    printf {$out} "Found %s (checked %s).\n", _n( $total, 'violation' ), _n( $checked, 'file' );
     print {$out} "$enabled fixable with --fix\n"               if $enabled;
     print {$out} "$unsafe more fixable with --unsafe-fixes\n" if $unsafe;
     if ( $self->{mode} eq 'fix' ) {
@@ -89,7 +90,8 @@ remaining violation, sorted by file, line and column:
 C<[*]> marks a violation that C<--fix> would fix with the current settings
 (C<fix_mode> is C<safe> or C<unsafe>: the fixes C<--fix> applies); C<[**]>
 marks one with an unsafe fix that is not enabled. Then C<Found N
-violations.>, C<M fixable with --fix> and C<K more fixable with
+violations (checked F files).>, where F counts the files read without an
+error, C<M fixable with --fix> and C<K more fixable with
 --unsafe-fixes> when those are non-zero, and in C<fix> mode C<Fixed N
 violations in M files.>
 

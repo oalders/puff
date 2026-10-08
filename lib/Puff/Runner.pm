@@ -11,13 +11,16 @@ my $SHEBANG_BYTES = 256;
 
 sub new ( $class, %args ) {
     return bless {
-        config => $args{config},
-        engine => $args{engine},
-        mode   => $args{mode} // 'lint',    # lint, fix or diff
+        config   => $args{config},
+        engine   => $args{engine},
+        mode     => $args{mode} // 'lint',    # lint, fix or diff
+        progress => $args{progress},          # called as ($done, $total) after each file
     }, $class;
 }
 
-sub run ( $self, @paths ) {
+# The files a run of @paths would check, in order: a path string for each,
+# or { file, error } for a path that does not exist.
+sub files ( $self, @paths ) {
     @paths = ('.') unless @paths;
     my ( @files, %seen );
     my $first = sub ($file) { !$seen{ path($file)->realpath }++ };    # a.pl and $PWD/a.pl are one file
@@ -33,8 +36,17 @@ sub run ( $self, @paths ) {
             push @files, { file => $p->stringify, error => 'No such file or directory' };
         }
     }
+    return @files;
+}
 
-    my @results = map { ref $_ ? $_ : $self->_process($_) } @files;
+sub run ( $self, @paths ) {
+    my @files    = $self->files(@paths);
+    my $progress = $self->{progress};
+    my @results;
+    for my $file (@files) {
+        push @results, ref $file ? $file : $self->_process($file);
+        $progress->( scalar @results, scalar @files ) if $progress;
+    }
     return { files => \@results, exit_code => $self->exit_code( \@results ) };
 }
 
@@ -171,6 +183,11 @@ is checked once.
 C<mode> is C<lint> (report only), C<fix> (write fixed files, only when the
 text changed) or C<diff> (compute a unified diff, write nothing). The
 engine's C<fix_mode> decides which fixes are worked out.
+
+C<files> takes the same paths and returns the files C<run> would check, in
+order: a path string for each, or C<< { file => $path, error => $message } >>
+for a path that does not exist. A C<progress> code ref passed to C<new> is
+called as C<< $progress->($done, $total) >> after each file is checked.
 
 C<run> returns C<< { files => [...], exit_code => N } >>. Each file entry
 has C<file>, C<violations> (remaining), C<fixed_count>, and when relevant

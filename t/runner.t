@@ -48,6 +48,21 @@ sub runner ( $mode, $engine_class = 'Puff::Engine' ) {
 }
 
 my $dir = tempdir();
+
+subtest 'progress' => sub {
+    $dir->child('one.pl')->spew_utf8("foo;\n");
+    $dir->child('two.pl')->spew_utf8("1;\n");
+    my @calls;
+    my $runner = Puff::Runner->new(
+        config   => $config,
+        engine   => Puff::Engine->new( rules => [ FlagWord->new ], fix_mode => 'none' ),
+        progress => sub (@args) { push @calls, \@args },
+    );
+    is( [ $runner->files("$dir") ], [ map { $dir->child($_)->stringify } qw( one.pl two.pl ) ], 'files' );
+    $runner->run("$dir");
+    is( \@calls, [ [ 1, 2 ], [ 2, 2 ] ], 'called after each file with (done, total)' );
+    $dir->child($_)->remove for qw( one.pl two.pl );
+};
 $dir->child('bad.pl')->spew_utf8("foo;\n");
 $dir->child('good.pl')->spew_utf8("foo;\n");
 

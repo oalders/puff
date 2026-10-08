@@ -57,7 +57,7 @@ subtest 'check lints and exits 1' => sub {
     like( $out, qr{^rand\.pl:4:7: S001 \S.* \[\*\*\]$}m,        'S001 line with unsafe-fix marker' );
     like( $out, qr{^lib/two_arg\.pl:5:1: S002 Use three-argument open \[\*\*\]$}m, 'S002 line' );
     like( $out, qr{^bin/bareword\.pl:5:1: S003 \S.* \[\*\*\]$}m,  'S003 line' );
-    like( $out, qr{^Found \d+ violations\.$}m,                    'summary' );
+    like( $out, qr{^Found \d+ violations \(checked 4 files\)\.$}m,  'summary counts the files' );
     like( $out, qr{^\d+ more fixable with --unsafe-fixes$}m,      'unsafe fixes mentioned' );
     unlike( $out, qr{fixable with --fix}, 'no safe fixes available' );
 
@@ -121,7 +121,7 @@ subtest 'check --fix --unsafe-fixes rewrites files' => sub {
 
     ( $out, $err, $exit ) = puff( $dir, 'check', 'rand.pl', 'bin' );
     is( $exit, 0, 'second check of the fully fixed files exits 0' ) or diag $out, $err;
-    like( $out, qr{^Found 0 violations\.$}m, 'no violations' );
+    like( $out, qr{^Found 0 violations \(checked 2 files\)\.$}m, 'no violations' );
 
     # S002's corpus still has bareword handles (S003), so fix it with S002 alone.
     $dir = project( 'lib/two_arg.pl' => 'S002/fixed.pl' );
@@ -276,6 +276,19 @@ subtest 'default excludes when the searched dir is outside the root' => sub {
     ( $out, $err, $exit ) = puff( $dir->child('t'), 'check', '--select', 'S001', '..' );
     like( $out,   qr{lib/x\.pl:}m,              'parent dir checked' ) or diag $err;
     unlike( $out, qr{\.\./(?:local|blib)/}, 'local/ and blib/ skipped when searching ..' );
+};
+
+subtest 'check --show-files lists files and checks nothing' => sub {
+    my $dir = project( %FILES, 'local/lib/Rand.pm' => 'S001/basic.pl', 'lib/notes.txt' => 'S001/basic.pl' );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--show-files' );
+    is( $exit, 0,  'exit 0 although the files have violations' );
+    is( $err,  q{}, 'nothing on STDERR' );
+    is( [ sort split /\n/, $out ], [qw( bin/bareword.pl lib/declined.pl lib/two_arg.pl rand.pl )], 'one Perl file per line; local/ and notes.txt left out' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--show-files', './local', 'missing.pl' );
+    is( $exit, 2, 'a missing path exits 2' );
+    is( $out, "local/lib/Rand.pm\n", 'a named ./local is searched' );
+    like( $err, qr{^missing\.pl: error: No such file or directory$}m, 'missing path on STDERR' );
 };
 
 subtest 'extensionless perl scripts' => sub {

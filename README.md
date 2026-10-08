@@ -38,7 +38,7 @@ Lint a project:
     $ puff check
     lib/Demo.pm:5:5: S002 Use three-argument open [**]
     lib/Demo.pm:5:5: S003 Bareword filehandle FH; use a lexical filehandle [**]
-    Found 2 violations.
+    Found 2 violations (checked 1 file).
     2 more fixable with --unsafe-fixes
 
 Each line is `file:line:column: CODE message`, sorted by file, line and
@@ -47,6 +47,11 @@ column. A marker at the end of the line says what a fix would do:
 - `[*]`: `--fix` will fix it with the current settings.
 - `[**]`: it has an unsafe fix that is not enabled. Add `--unsafe-fixes`.
 - no marker: no fix is offered for this violation.
+
+The `Found` line counts the violations and the files checked; to see which
+files those are, run `puff check --show-files`. On a terminal, a run that
+takes more than half a second shows a `Checking N/M files` counter on STDERR
+while it works.
 
 ### Options for `check`
 
@@ -59,6 +64,7 @@ column. A marker at the end of the line says what a fix would do:
 | `--unsafe-fixes` | Also apply unsafe fixes (with `--fix` or `--diff`). `--no-unsafe-fixes` turns off `unsafe-fixes = true` from the config. |
 | `--diff` | Print the fixes as a unified diff and write nothing. Wins over `--fix`. |
 | `--output-format text\|json` | Output format; default `text`. |
+| `--show-files` | List the files that would be checked, one per line, and check nothing. |
 | `--config PATH` | Read this config file instead of `./.puff.toml`. |
 | `--no-config` | Ignore config files. |
 
@@ -117,7 +123,7 @@ rules are all unsafe, so plain `--fix` changes nothing for them:
     $ puff check --fix
     lib/Demo.pm:5:5: S002 Use three-argument open [**]
     lib/Demo.pm:5:5: S003 Bareword filehandle FH; use a lexical filehandle [**]
-    Found 2 violations.
+    Found 2 violations (checked 1 file).
     2 more fixable with --unsafe-fixes
     Fixed 0 violations in 0 files.
 
@@ -245,7 +251,7 @@ reported as `P001`:
 
     $ puff check p.pl
     p.pl:1:1: P001 suppression comment must list codes
-    Found 1 violation.
+    Found 1 violation (checked 1 file).
 
 ## Rules
 
@@ -620,8 +626,8 @@ the example works):
     1;
 
 Put the module in a directory and point `rule-paths` at it (a relative path
-is relative to the config file; an absolute path also works). This also enables the `X` rules, because only `S` is enabled by
-default:
+is relative to the config file; an absolute path also works). This also
+enables the `X` rules, because only `S` and `B` are enabled by default:
 
     # .puff.toml
     rule-paths    = ["xt/puff-rules"]
@@ -651,7 +657,7 @@ Given this `lib/a.pl`:
     $ puff check
     lib/a.pl:1:1: X001 Use TODO instead of FIXME [*]
     lib/a.pl:2:15: X001 Use TODO instead of FIXME [*]
-    Found 2 violations.
+    Found 2 violations (checked 1 file).
     2 fixable with --fix
 
 The points to know:
