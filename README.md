@@ -264,6 +264,7 @@ reported as `P001`:
 | S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | none | [502](https://cwe.mitre.org/data/definitions/502.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
+| Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
@@ -419,6 +420,9 @@ that Perl would quote by itself: the only key in a `{...}` subscript
 text is a plain ASCII identifier. The safe fix removes the quotes. Numbers,
 names with `::` or `-`, v-strings, quote-like operator names such as `s` and
 `y`, and multi-key slices keep their quotes.
+
+**Q003** is not selected by default either. It reports `''` and `""`, which
+are easy to misread, and the safe fix rewrites them as `q{}`.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
