@@ -3,10 +3,9 @@ package Puff::Rule::Security::StringEval;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( is_builtin_call call_args );
+use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
 
 # An unescaped $ or @: the string interpolates something.
-my $INTERPOLATES = qr/(?<!\\)(?:\\\\)*[\$\@]/;
 
 sub code       {'S004'}
 sub summary    {'Do not eval a string built at runtime'}
@@ -43,20 +42,8 @@ sub check ( $self, $elem, $doc ) {
     return if $next && $next->isa('PPI::Structure::Block');
 
     my $args = call_args($elem);
-    return if @$args == 1 && @{ $args->[0] } == 1 && _is_constant_string( $args->[0][0] );
+    return if @$args == 1 && @{ $args->[0] } == 1 && is_constant_string( $args->[0][0] );
     return $self->violation( $elem, message => 'String eval of a runtime value (CWE-95); use block eval or a dispatch table' );
-}
-
-sub _is_constant_string ($elem) {
-    return 1 if $elem->isa('PPI::Token::Quote::Single') || $elem->isa('PPI::Token::Quote::Literal');
-    if ( $elem->isa('PPI::Token::Quote::Double') || $elem->isa('PPI::Token::Quote::Interpolate') ) {
-        return $elem->string !~ $INTERPOLATES;
-    }
-    if ( $elem->isa('PPI::Token::HereDoc') ) {
-        return 1 if ( $elem->{_mode} // '' ) eq 'literal';
-        return join( q{}, $elem->heredoc ) !~ $INTERPOLATES;
-    }
-    return 0;
 }
 
 1;

@@ -257,6 +257,7 @@ reported as `P001`:
 | S005 | TLSVerifyDisabled | Do not turn off TLS certificate verification | none | [295](https://cwe.mitre.org/data/definitions/295.html) |
 | S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
 | S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
+| S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -361,6 +362,14 @@ the directories with:
     tmp-directories = ["/tmp", "/var/tmp", "/dev/shm", "/scratch"]
 
 There is no fix.
+
+**S008** reports a command that reaches the shell as one string built at
+runtime: `system`, `exec` or `readpipe` with a single argument that is not a
+constant string (`system("tar xf $file")`, `system($cmd)`), backticks and
+`qx{...}` that interpolate, and three-argument `open` with mode `-|` or `|-`
+and one non-constant command string. The list forms (`system('tar', 'xf',
+$file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
+reported. There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

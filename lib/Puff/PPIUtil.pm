@@ -4,7 +4,9 @@ use v5.36;
 
 use Exporter qw( import );
 
-our @EXPORT_OK = qw( is_builtin_call call_args );
+our @EXPORT_OK = qw( is_builtin_call call_args is_constant_string );
+
+my $INTERPOLATES = qr/(?<!\\)(?:\\\\)*[\$\@]/;
 
 my %STOP_WORD = map { $_ => 1 } qw( or and xor not if unless while until for foreach );
 
@@ -59,6 +61,18 @@ sub call_args ($word) {
     return \@args;
 }
 
+sub is_constant_string ($elem) {
+    return 1 if $elem->isa('PPI::Token::Quote::Single') || $elem->isa('PPI::Token::Quote::Literal');
+    if ( $elem->isa('PPI::Token::Quote::Double') || $elem->isa('PPI::Token::Quote::Interpolate') ) {
+        return $elem->string !~ $INTERPOLATES;
+    }
+    if ( $elem->isa('PPI::Token::HereDoc') ) {
+        return 1 if ( $elem->{_mode} // '' ) eq 'literal';
+        return join( q{}, $elem->heredoc ) !~ $INTERPOLATES;
+    }
+    return 0;
+}
+
 1;
 
 # ABSTRACT: PPI helpers for recognising built-in calls and their arguments
@@ -73,6 +87,7 @@ C<is_builtin_call($word)> says whether a C<PPI::Token::Word> is used as a
 function call rather than a method, hash key, sub name, subscript or part of
 a C<package>/C<use>/C<no> statement. C<call_args($word)> returns the call's
 arguments as an arrayref of arrayrefs of significant PPI elements, split on
-top-level commas.
+top-level commas. C<is_constant_string($elem)> is true for a quote or heredoc
+with nothing interpolated.
 
 =cut
