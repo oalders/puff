@@ -260,6 +260,7 @@ reported as `P001`:
 | S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | S009 | WorldWritable | Do not make files world-writable | none | [732](https://cwe.mitre.org/data/definitions/732.html) |
 | S010 | PredictableToken | Do not hash the time, PID or `rand` to make a token | none | [340](https://cwe.mitre.org/data/definitions/340.html), [338](https://cwe.mitre.org/data/definitions/338.html) |
+| S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -387,6 +388,16 @@ the rest) whose arguments use `time`, `localtime`, `gmtime`, `times`,
 guessable session IDs. Use `random_bytes` from Crypt::PRNG or
 Crypt::SysRandom for tokens; suppress the violation for cache keys. There is
 no fix.
+
+**S011** reports `eq` and `ne` where one side looks like a secret and the
+other is not a constant, so the comparison time leaks how much of a guess was
+right. Names ending in password, passwd, secret, csrf, nonce or hmac (or
+starting with hmac_) always count. Names ending in token, sig, signature,
+digest, mac or hash count only in files that use hmac functions or a
+Crypt/Authen/OAuth/JWT/Session/HMAC module or package, since elsewhere they
+are usually parser tokens, sigils and data structures. It is a name
+heuristic; suppress it where the value is not secret. Use a constant-time
+comparison such as String::Compare::ConstantTime's `equals`. There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

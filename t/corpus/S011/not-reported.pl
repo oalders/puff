@@ -1,0 +1,11 @@
+my ( $sig, $token, $x, $y, $self );
+die if $sig eq '';
+die if $token eq 'none';
+die if $token ne "(";
+die if $sig eq undef;
+die if $x eq $y;
+die if $self->{name} eq $x;
+die if $self->signature_type eq $x;
+die if $x eq $self->{tokenizer};
+die if $token eq COMMA;
+die if $token eq $x;
