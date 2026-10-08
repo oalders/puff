@@ -263,6 +263,7 @@ reported as `P001`:
 | S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
 | S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | unsafe | [502](https://cwe.mitre.org/data/definitions/502.html) |
 | S013 | SQLInjection | Variable interpolated or concatenated into SQL | none | [89](https://cwe.mitre.org/data/definitions/89.html) |
+| S014 | ExtensionRegex | Anchor a file extension check with `\z` | unsafe | [184](https://cwe.mitre.org/data/definitions/184.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -441,6 +442,12 @@ constants, and numeric functions such as `int` are allowed, and a
 `## SQL safe ($var)` comment marks a variable as checked. Use placeholders.
 The options `quoting-methods`, `safe-functions` and `upper-case-keywords`
 tune it. There is no fix.
+
+**S014** reports a match or `qr//` whose whole pattern is a file extension
+(`\.(pl|cgi)`, `\.pm`, or `\Q$ext\E` where the variable name contains `ext` or
+`suffix`) that has no end anchor, or ends in `$` or `\Z`, which also match
+before a trailing newline. A suffix passed to `basename` or `fileparse` is
+not reported. The unsafe fix anchors the pattern with `\z`.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

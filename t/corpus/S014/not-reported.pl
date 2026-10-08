@@ -1,0 +1,13 @@
+use File::Basename qw( basename fileparse );
+my ( $file, $ext, $name, $path );
+print 'ok' if $file =~ /\.(pl|cgi)\z/;
+print 'ok' if $file =~ /\.pm$/m;
+print 'ok' if $file =~ /^\.git/;
+print 'ok' if $file =~ /\._/;
+print 'ok' if $file =~ /\Q$name\E/;
+print 'ok' if $file =~ /foo\.pm$/;
+print 'ok' if $file =~ / \. pm $ /x;
+my $base = basename( $path, qr/\.pm/ );
+my @parts = fileparse( $path, qr{\Q$ext\E} );
+$file =~ s/\.pm$//;
+my @bits = split /\./, $file;
