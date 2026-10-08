@@ -83,12 +83,12 @@ $lib->child(qw( Puff Rule Fake Found.pm ))->spew_utf8(<<'PM');
 package Puff::Rule::Fake::Found;
 use v5.36;
 use parent 'Puff::Rule';
-sub code {'Q001'}
+sub code {'Z001'}
 1;
 PM
 $lib->child(qw( Puff Rule Fake NotARule.pm ))->spew_utf8("package Puff::Rule::Fake::NotARule;\n1;\n");
 unshift @INC, "$lib";
-is( [ grep {/\AQ/} map { $_->code } Puff::Rules->load( rule_paths => [] ) ], ['Q001'], 'pluggable discovery' );
+is( [ grep {/\AZ/} map { $_->code } Puff::Rules->load( rule_paths => [] ) ], ['Z001'], 'pluggable discovery' );
 
 like( dies { Puff::Rules->load( rule_paths => ["$tmp/nope"] ) }, qr/not a directory/, 'missing rule path' );
 

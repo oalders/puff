@@ -111,8 +111,8 @@ Every fix is either safe or unsafe.
 - An unsafe fix can change behaviour, so you should review it.
 
 `puff check --fix` applies safe fixes only. `puff check --fix --unsafe-fixes`
-(or `unsafe-fixes = true` in the config) applies both. All the current rules
-are unsafe, so plain `--fix` changes nothing for them:
+(or `unsafe-fixes = true` in the config) applies both. The default security
+rules are all unsafe, so plain `--fix` changes nothing for them:
 
     $ puff check --fix
     lib/Demo.pm:5:5: S002 Use three-argument open [**]
@@ -253,6 +253,7 @@ reported as `P001`:
 | S001 | InsecureRand | `rand`/`srand` is not cryptographically secure | unsafe |
 | S002 | TwoArgOpen | Use three-argument open | unsafe |
 | S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe |
+| Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |
 | P001 | (built in) | Suppression comment must list codes | none |
 
 `puff rule CODE` prints the full explanation of a rule. When a fix is
@@ -303,6 +304,11 @@ uses in the same block. It does not fix:
 - any other use of the name: passed to a sub, `select`, file tests, `write`,
   `*FH` globs, a package-qualified name, or the name appearing inside any
   string (it could be a string eval or a symbolic reference).
+
+**Q001** is not selected by default; turn it on with `--select Q` or
+`extend-select = ["Q"]`. It reports a `"..."` string whose text has no
+backslash, `$`, `@`, `'` or `"`, and the safe fix rewrites `"coffee"` as
+`'coffee'`. `qq{...}` and heredocs are left alone.
 
 ## Writing a rule
 
