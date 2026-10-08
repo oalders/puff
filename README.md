@@ -191,7 +191,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, B005, M001 and S007 have options; `puff rule CODE` describes them. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, B005, B006, M001 and S007 have options; `puff rule CODE` describes them. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -270,6 +270,7 @@ reported as `P001`:
 | B003 | LeadingZeros | Number with a leading zero is octal | safe |  |
 | B004 | IndirectObject | Indirect object syntax | unsafe |  |
 | B005 | TryTinySemicolon | Try::Tiny try/catch is not ended with a semicolon | unsafe |  |
+| B006 | UnusedVariable | Lexical variable is declared but never used | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -482,6 +483,18 @@ option adds your own Try::Tiny wrappers; the `try` feature and
 Syntax::Keyword::Try need no semicolon and are not affected. Based on
 Perl::Critic::Policy::TryTiny::RequireBlockTermination.
 
+**B006** is selected by default. It reports a `my` or `state` variable that
+is never mentioned after its declaration in the same scope, counting
+interpolation into strings, regexes and heredocs. Subroutine arguments
+(`my ( $self, $c ) = @_;`) are allowed unless you turn off
+`allow-unused-subroutine-arguments`, and `allow-if-computed-by` lists guard
+functions and classes whose result is kept only to be destroyed later. The
+unsafe fix replaces an unused list member with `undef` when the values come
+from a builtin such as `split` or `caller`, `@_` or a regex match, and
+deletes a declaration that has no assignment. Based on
+Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter, limited to
+statement-level declarations.
+
 **M001** is not selected by default; turn it on with `--select M`. It reports
 `use Moose` or `use Mouse` in a package that never calls `->make_immutable`,
 so every `new` builds the constructor at runtime. Each package is checked on
@@ -579,7 +592,7 @@ three digits and must be unique; `P001` is reserved. Then:
 Given this `lib/a.pl`:
 
     # FIXME: tidy up
-    my $x = 1;    # FIXME later
+    print 1;      # FIXME later
 
 `puff check` reports both comments:
 

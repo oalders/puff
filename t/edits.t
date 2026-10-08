@@ -45,7 +45,7 @@ subtest 'overlapping replaces' => sub {
 subtest 'insert vs replace' => sub {
     my %expect = ( 3 => 'defer', 2 => 'ok', 5 => 'ok' );
     for my $x ( sort keys %expect ) {
-        my ( $new, $acc, $def ) = Puff::Edits::apply(
+        my ( $new, undef, $def ) = Puff::Edits::apply(
             $t,
             [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( $x, 'i', [ $x, $x, '+' ] ) ]
         );
@@ -75,7 +75,7 @@ subtest 'identical edits are dropped' => sub {
 };
 
 subtest 'all or nothing' => sub {
-    my ( $new, $acc, $def ) = Puff::Edits::apply(
+    my ( $new, undef, $def ) = Puff::Edits::apply(
         $t,
         [
             fix( 2, 'a', [ 2, 5, 'X' ] ),

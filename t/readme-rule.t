@@ -29,7 +29,7 @@ sub puff ( $dir, @args ) {
 my $dir    = tempdir();
 my $config = sprintf qq{rule-paths = ["%s"]\nextend-select = ["X"]\n}, $RULE->parent;
 $dir->child('.puff.toml')->spew_utf8($config);
-$dir->child('a.pl')->spew_utf8("# FIXME: tidy\nmy \$x = 1;    # FIXME later\n");
+$dir->child('a.pl')->spew_utf8("# FIXME: tidy\nprint 1;      # FIXME later\n");
 my $readme = $root->child('README.md')->slurp_utf8;
 
 my ( $out, $exit ) = puff( $dir, 'check', 'a.pl' );
@@ -43,7 +43,7 @@ like( $out, qr{^X001: Use TODO instead of FIXME\nFix safety: safe\n}, 'rule head
 
 ( $out, $exit ) = puff( $dir, 'check', '--fix', 'a.pl' );
 is( $exit, 0, 'clean after the safe fix' );
-is( $dir->child('a.pl')->slurp_utf8, "# TODO: tidy\nmy \$x = 1;    # TODO later\n", 'comments rewritten' );
+is( $dir->child('a.pl')->slurp_utf8, "# TODO: tidy\nprint 1;      # TODO later\n", 'comments rewritten' );
 
 $dir->child('b.pl')->spew_utf8("# NOTE: x\n# KEEP this\n");
 $dir->child('.puff.toml')->spew_utf8( $config . qq{[rules.X001]\nkeyword = "KEEP"\n} );
