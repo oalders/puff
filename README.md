@@ -261,7 +261,7 @@ reported as `P001`:
 | S009 | WorldWritable | Do not make files world-writable | none | [732](https://cwe.mitre.org/data/definitions/732.html) |
 | S010 | PredictableToken | Do not hash the time, PID or `rand` to make a token | none | [340](https://cwe.mitre.org/data/definitions/340.html), [338](https://cwe.mitre.org/data/definitions/338.html) |
 | S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
-| S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | none | [502](https://cwe.mitre.org/data/definitions/502.html) |
+| S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | unsafe | [502](https://cwe.mitre.org/data/definitions/502.html) |
 | S013 | SQLInjection | Variable interpolated or concatenated into SQL | none | [89](https://cwe.mitre.org/data/definitions/89.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
@@ -425,8 +425,12 @@ comparison such as String::Compare::ConstantTime's `equals`. There is no fix.
 `fd_retrieve` (fully qualified, or called as functions in a file that loads
 Storable), and setting `$Storable::Eval` or the LoadBlessed, LoadCode,
 UseCode or EvalCode variables of YAML, YAML::XS or YAML::Syck to a true
-constant. Use JSON for data that crosses a trust boundary, and suppress the
-violation where the program reads back only what it wrote. There is no fix.
+constant, and YAML or YAML::XS `Load` and `LoadFile`, which bless objects by
+default, unless the file sets that module's `$LoadBlessed` to a false
+constant (a `local` counts in its own block). Use JSON for data that crosses
+a trust boundary, and suppress the violation where the program reads back
+only what it wrote. The unsafe fix wraps a YAML `Load(...)` call as
+`do { local $YAML::XS::LoadBlessed = 0; Load(...) }`; Storable is not fixed.
 
 **S013** reports a variable or function call that is interpolated, concatenated
 or passed through `sprintf %s` into a string that starts like an SQL
