@@ -266,6 +266,7 @@ reported as `P001`:
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
 | B001 | UselessRegexModifiers | Modifiers on a match against a lone qr// object are ignored | unsafe |  |
+| B002 | AggregateAssignRef | Array or hash assigned a `[...]` or `{...}` reference | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
@@ -436,6 +437,15 @@ keeps the current behaviour. It is unsafe because the rule sees only this
 file's assignments. Based on
 Perl::Critic::Policy::Bangs::ProhibitUselessRegexModifiers, which checks only
 `/m` and `/s`.
+
+**B002** is selected by default. It reports assigning a `[...]` or `{...}`
+constructor to an array, hash, dereferenced array or hash, or slice:
+`my @names = [ 'ann', 'bob' ]` stores one arrayref, not two names. Write
+`( ... )` for a list, or `( [ ... ] )` when one reference is what you mean. The
+unsafe fix turns the brackets or braces into parens, and is offered only when
+the constructor is the whole right side. Based on
+Perl::Critic::Policy::ValuesAndExpressions::ProhibitArrayAssignAref from
+Perl::Critic::Pulp, extended to hashes.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
