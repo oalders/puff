@@ -14,7 +14,8 @@ is( $c->select,        ['S'], 'default select' );
 is( $c->extend_select, [],    'default extend' );
 is( $c->ignore,        [],    'default ignore' );
 is( $c->rule_paths,    [],    'default rule_paths' );
-is( $c->exclude,       [qw( local blib .build .git )], 'default exclude' );
+is( $c->exclude,       [qw( /local /blib /.build /.git )], 'default exclude is anchored' );
+is( $c->root, $tmp->realpath->stringify, 'root is the cwd without a config file' );
 ok( !$c->unsafe_fixes, 'default unsafe' );
 is( $c->rule_options, {}, 'default rule_options' );
 
@@ -35,7 +36,7 @@ ok( $c->unsafe_fixes, 'unsafe from file' );
 is( $c->rule_options, { S001 => { foo => 1 } }, 'rule options' );
 is( $c->rule_paths,   [ Path::Tiny->cwd->child('xt/rules')->stringify ], 'rule-paths relative to config dir' )
     or diag $c->rule_paths;
-is( $c->exclude, [qw( local blib .build .git t/corpus )], 'exclude adds to defaults' );
+is( $c->exclude, [qw( /local /blib /.build /.git t/corpus )], 'exclude adds to defaults' );
 
 $c = Puff::Config->load( path => undef, no_config => 1, cli => {} );
 is( $c->select, ['S'], 'no_config ignores file' );
@@ -78,9 +79,19 @@ $tmp->child('.puff.toml')->remove;
 $c = Puff::Config->load( path => undef, cli => {} );
 is( $c->select, ['S'], 'missing default file gives defaults' );
 
-ok( $c->is_excluded('local/lib/X.pm'), 'local at start' );
-ok( $c->is_excluded('a/local/b.pm'),   'local in middle' );
-ok( !$c->is_excluded('locally/b.pm'),  'segment match is exact' );
+ok( $c->is_excluded('local/lib/X.pm'),   'default local at the root' );
+ok( $c->is_excluded('./local/lib/X.pm'), 'default local at the root, ./ spelling' );
+ok( !$c->is_excluded('t/local/http.t'),  'default local not matched below the root' );
+ok( !$c->is_excluded('locally/b.pm'),    'segment match is exact' );
+ok( $c->is_excluded( 'lib/X.pm', 'local' ),   'searching local/: child is under the anchored local' );
+ok( !$c->is_excluded( 'lib/X.pm', 't' ),      'searching t/: not under local' );
+ok( !$c->is_excluded( 'local/x.t', undef ),   'searched dir outside the root: anchored entries do not apply' );
+push @{ $c->exclude }, 'vendor', '/t/corpus';
+ok( $c->is_excluded('a/vendor/b.pm'),          'user entry without / matches any segment' );
+ok( $c->is_excluded( 'vendor/b.pm', undef ),   'user segment entry applies outside the root too' );
+ok( $c->is_excluded('t/corpus/x.pl'),          'user /entry anchored at the root' );
+ok( !$c->is_excluded('xt/t/corpus/x.pl'),      'user /entry not matched deeper' );
+ok( $c->is_excluded( 'corpus/x.pl', 't' ),     'user /entry from a subdirectory search' );
 $c = Puff::Config->load( path => undef, cli => {} );
 push @{ $c->exclude }, 't/corpus';
 ok( $c->is_excluded('t/corpus/x.pl'),  'prefix matches' );
@@ -88,6 +99,14 @@ ok( $c->is_excluded('t/corpus'),       'prefix equals path' );
 ok( !$c->is_excluded('xt/corpus/x.pl'), 'prefix not mid-segment' );
 ok( !$c->is_excluded('t/corpusx/x.pl'), 'prefix at segment boundary' );
 ok( !$c->is_excluded('a/t/corpus/x.pl'), 'prefix anchored at start' );
+
+subtest 'root is the config file directory' => sub {
+    my $proj = $tmp->child('proj');
+    $proj->child('sub')->mkpath;
+    $proj->child('.puff.toml')->spew_utf8('');
+    my $c = Puff::Config->load( path => $proj->child('.puff.toml')->stringify, cli => {} );
+    is( $c->root, $proj->realpath->stringify, 'root' );
+};
 
 chdir $orig;
 done_testing;

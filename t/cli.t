@@ -218,6 +218,7 @@ subtest 'config file' => sub {
 subtest 'exclude' => sub {
     my ( $keep, $dir ) = project(
         'local/lib/Rand.pm' => 'S001/basic.pl',
+        't/local/x.t'       => 'S001/basic.pl',
         'vendor/x.pl'       => 'S001/basic.pl',
         'lib/ok.pm'         => 'S002/not-reported.pl',
         'lib/notes.txt'     => 'S001/basic.pl',
@@ -225,12 +226,21 @@ subtest 'exclude' => sub {
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001' );
     is( $exit, 1, 'vendor/x.pl still checked' );
     like( $out,   qr{^vendor/x\.pl:}m, 'vendor reported' );
-    unlike( $out, qr{local/},          'local/ skipped' );
+    unlike( $out, qr{^local/}m,        'local/ skipped' );
+    like( $out,   qr{^t/local/x\.t:}m,  't/local/ checked: default excludes are anchored to the root' );
     unlike( $out, qr{notes\.txt},      'non-Perl file skipped' );
 
-    $dir->child('.puff.toml')->spew_utf8(qq{exclude = ["vendor/x.pl"]\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001', './local', 't' );
+    unlike( $out, qr{lib/Rand\.pm},    'files under a named ./local are still skipped' );
+    like( $out,   qr{^t/local/x\.t:}m, 'searching t/ checks t/local' );
+
+    $dir->child('.puff.toml')->spew_utf8('');
+    ( $out, $err, $exit ) = puff( $dir->child('t'), 'check', '--select', 'S001', '--config', '../.puff.toml' );
+    like( $out, qr{^local/x\.t:}m, 'root is the config dir: t/local is checked from inside t/' ) or diag $err;
+
+    $dir->child('.puff.toml')->spew_utf8(qq{exclude = ["vendor/x.pl", "/t"]\n});
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001' );
-    is( $exit, 0, 'config exclude adds to the defaults' ) or diag $out;
+    is( $exit, 0, 'config exclude adds to the defaults; /t is anchored' ) or diag $out;
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001', 'lib/notes.txt' );
     is( $exit, 1, 'a file named explicitly is checked whatever its name' );

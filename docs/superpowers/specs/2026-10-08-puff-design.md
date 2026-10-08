@@ -150,17 +150,20 @@ select        = ["S"]          # default ["S"]
 extend-select = []
 ignore        = []
 rule-paths    = ["xt/puff-rules"]
-exclude       = ["local", "blib", ".build", ".git"]   # path-segment names or relative path prefixes
+exclude       = ["/local", "/blib", "/.build", "/.git"]   # /root-anchored, segment names, or relative prefixes
 unsafe-fixes  = false
 
 [rules.S001]
 # rule options (no MVP rule has any)
 ```
 
-- `exclude` entries are compared against the path relative to the
-  directory being searched: an entry with no `/` matches any path segment
-  with that name; an entry containing `/` matches a path prefix. The
-  defaults above always apply.
+- `exclude` entries match whole path segments. An entry starting with `/`
+  is anchored to the project root (the directory holding the config file,
+  or the cwd when there is none): the defaults are anchored, so
+  `./local/...` is skipped but `t/local/http.t` is checked. An entry with
+  no `/` matches any path segment with that name; any other entry matches
+  a path prefix relative to the directory being searched. The defaults
+  above always apply.
 - Relative `rule-paths` entries are resolved against the config file's
   directory; absolute ones are used as they are. `unsafe-fixes` must be a
   TOML boolean; anything else is a config error (exit 2).

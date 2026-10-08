@@ -185,15 +185,23 @@ does not silently do nothing.
 | `extend-select` | `[]` | More codes or prefixes to enable. |
 | `ignore` | `[]` | Codes or prefixes to disable. Wins over `select`. |
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
-| `exclude` | `["local", "blib", ".build", ".git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
+| `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
 | `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. No built-in rule has options yet. |
 
-`exclude` entries are compared with the path relative to the directory being
-searched. An entry without a `/` matches any path segment with that name
-(`local` skips `local/` and `lib/local/`). An entry with a `/` matches a path
-prefix (`t/corpus` skips `t/corpus/x.pl` but not `xt/corpus/x.pl`). A file
-named on the command line is never excluded.
+The project root is the directory holding the config file, or the current
+directory when there is none. `exclude` entries match whole path segments:
+
+- An entry starting with `/` is anchored to the project root. The defaults
+  are anchored, so `/local` skips `./local/...` (including when you name
+  `local` itself on the command line) but `t/local/http.t` is still
+  checked.
+- An entry without a `/` matches any path segment with that name, at any
+  depth (`vendor` skips `vendor/` and `lib/vendor/`).
+- Any other entry matches a path prefix relative to the directory being
+  searched (`t/corpus` skips `t/corpus/x.pl` but not `xt/corpus/x.pl`).
+
+A file named on the command line is never excluded.
 
 Command-line flags override the file. `--select` replaces `select`.
 `--extend-select` and `--ignore` are added to the configured lists.

@@ -45,11 +45,16 @@ sub exit_code ( $self, $results ) {
 }
 
 sub _find ( $self, $root ) {
+    my $config  = $self->{config};
+    my $project = path( $config->root );
+    my $real    = $root->realpath;
+    my $base    = $project->subsumes($real) ? $real->relative($project)->stringify : undef;
+
     my @found;
     my @queue = $root;
     while ( my $dir = shift @queue ) {
         for my $child ( sort { $a->basename cmp $b->basename } $dir->children ) {
-            next if $self->{config}->is_excluded( $child->relative($root)->stringify );
+            next if $config->is_excluded( $child->relative($root)->stringify, $base );
             if ( $child->is_dir ) {
                 push @queue, $child unless -l $child;
             }
@@ -124,8 +129,10 @@ __END__
 
 C<run> checks the given paths (default C<.>). Directories are searched
 recursively for C<*.pl>, C<*.pm>, C<*.t> and C<*.psgi> files, skipping
-anything the config's C<exclude> matches, relative to the directory being
-searched; symlinked directories are not followed. A file named explicitly
+anything the config's C<exclude> matches (see
+L<Puff::Config/is_excluded>: entries starting with C</>, including the
+defaults, are anchored to the project root, others are matched relative to
+the directory being searched); symlinked directories are not followed. A file named explicitly
 is always checked, whatever its name. A file reached twice (named twice,
 by different spellings of its path, or named and also found in a directory)
 is checked once.

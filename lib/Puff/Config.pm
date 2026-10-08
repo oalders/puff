@@ -5,7 +5,7 @@ use v5.36;
 use Path::Tiny qw( path );
 use TOML::Tiny qw( from_toml );
 
-my @DEFAULT_EXCLUDE = qw( local blib .build .git );
+my @DEFAULT_EXCLUDE = qw( /local /blib /.build /.git );
 my %KNOWN_KEY       = map { $_ => 1 } qw( select extend-select ignore rule-paths exclude unsafe-fixes rules );
 
 sub load ( $class, %args ) {
@@ -32,6 +32,7 @@ sub load ( $class, %args ) {
         }
     }
     $class->_read_file( \%self, $file ) if $file;
+    $self{root} = ( $file ? $file->absolute->parent : path('.') )->realpath->stringify;
 
     $self{select} = [ @{ $cli->{select} } ] if defined $cli->{select};
     push @{ $self{extend_select} }, @{ $cli->{extend_select} // [] };
@@ -93,19 +94,34 @@ sub rule_paths ($self)    { return $self->{rule_paths} }
 sub exclude ($self)       { return $self->{exclude} }
 sub unsafe_fixes ($self)  { return $self->{unsafe_fixes} }
 sub rule_options ($self)  { return $self->{rule_options} }
+sub root ($self)          { return $self->{root} }
 
-sub is_excluded ( $self, $relpath ) {
-    my @segments = grep { length && $_ ne '.' } split m{/}, $relpath;
+# $relpath is relative to the directory being searched; $base is that
+# directory relative to the root ('' for the root itself, undef when it is
+# outside the root).
+sub is_excluded ( $self, $relpath, $base = '' ) {
+    my @segments = _segments($relpath);
+    my @from_root = defined $base ? ( _segments($base), @segments ) : ();
     for my $entry ( @{ $self->{exclude} } ) {
-        if ( $entry !~ m{/} ) {
-            return 1 if grep { $_ eq $entry } @segments;
-            next;
+        if ( $entry =~ m{\A/} ) {
+            next unless defined $base;
+            return 1 if _has_prefix( [ _segments($entry) ], \@from_root );
         }
-        my @prefix = grep { length && $_ ne '.' } split m{/}, $entry;
-        next if !@prefix || @prefix > @segments;
-        return 1 unless grep { $prefix[$_] ne $segments[$_] } 0 .. $#prefix;
+        elsif ( $entry !~ m{/} ) {
+            return 1 if grep { $_ eq $entry } @segments;
+        }
+        else {
+            return 1 if _has_prefix( [ _segments($entry) ], \@segments );
+        }
     }
     return 0;
+}
+
+sub _segments ($path) { return grep { length && $_ ne '.' } split m{/}, $path }
+
+sub _has_prefix ( $prefix, $segments ) {
+    return 0 if !@$prefix || @$prefix > @$segments;
+    return !grep { $prefix->[$_] ne $segments->[$_] } 0 .. $#$prefix;
 }
 
 1;
@@ -124,7 +140,8 @@ __END__
         cli       => { select => ['S'], ignore => ['S002'], unsafe_fixes => 1 },
     );
     say for @{ $config->select };
-    say 'skip' if $config->is_excluded('local/lib/X.pm');
+    say 'skip' if $config->is_excluded('local/lib/X.pm');    # relative to root
+    say 'skip' if $config->is_excluded( 'lib/X.pm', 'local' );    # searching local/
 
 =head1 DESCRIPTION
 
@@ -134,7 +151,7 @@ Unknown top-level keys, and malformed values, die with a message naming the
 key and file.
 
 Defaults: C<select> C<["S"]>, C<extend-select> and C<ignore> empty,
-C<exclude> C<local blib .build .git>, C<unsafe-fixes> false. Entries in the
+C<exclude> C</local /blib /.build /.git>, C<unsafe-fixes> false. Entries in the
 file's C<exclude> are added to the default list (the defaults always apply).
 Relative C<rule-paths> are resolved against the config file's directory;
 absolute ones are used as they are. C<unsafe-fixes> must be a TOML boolean.
@@ -146,10 +163,37 @@ Defined C<cli> values override the file. A C<select> list I<replaces> the
 configured one; C<extend_select> and C<ignore> lists are I<appended> to the
 configured ones; C<unsafe_fixes> overrides.
 
-=head2 is_excluded($relpath)
+=head2 root
 
-An entry without C</> matches any path segment of that name. An entry with
-C</> matches a path prefix at a segment boundary, so C<t/corpus> matches
-C<t/corpus/x.pl> but not C<xt/corpus/x.pl>.
+The project root: the directory holding the config file that was read, or
+the current directory when none was. Resolved with C<realpath>.
+
+=head2 is_excluded($relpath, $base = '')
+
+C<$relpath> is a path relative to the directory being searched, and
+C<$base> is that directory relative to L</root> (C<''> for the root itself,
+C<undef> when the directory is outside the root). Entries match by
+segments, never mid-name:
+
+=over
+
+=item C</local>
+
+A leading C</> anchors the entry to the root: it matches C<$base/$relpath>
+when that starts with the entry's segments. So C</local> excludes
+C<./local/lib/X.pm> but not C<t/local/http.t>. The defaults are anchored
+this way. Anchored entries never match below a directory outside the root.
+
+=item C<vendor>
+
+An entry without C</> matches any segment of C<$relpath> with that name, at
+any depth.
+
+=item C<t/corpus>
+
+Any other entry matches a prefix of C<$relpath> at a segment boundary, so it
+matches C<t/corpus/x.pl> but not C<xt/corpus/x.pl>.
+
+=back
 
 =cut
