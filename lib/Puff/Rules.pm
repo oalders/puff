@@ -25,7 +25,7 @@ sub load ( $class, %args ) {
             my $text = path($file)->slurp_utf8;
             my @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
             my $abs = path($file)->absolute->stringify;
-            require $abs;
+            require $abs;    # puff: ignore S016 - rule-paths come from the user's own config
             push @candidates, @packages;
         }
     }

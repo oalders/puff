@@ -48,7 +48,7 @@ sub explanation {
         write, a cookie, a socket, an upload) use JSON, or YAML::XS / YAML::PP
         with blessing and code loading left off. When the data was written by
         the same program and nobody else can change it, suppress the
-        violation: `# puff: ignore[S012]`.
+        violation: `# puff: ignore S012`.
 
         The unsafe fix wraps a YAML `Load(...)` or `LoadFile(...)` call as
         `do { local $YAML::XS::LoadBlessed = 0; Load(...) }`. It is unsafe

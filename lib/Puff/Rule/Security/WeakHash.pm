@@ -35,7 +35,7 @@ sub explanation {
         password hash such as Crypt::Argon2 or Crypt::Bcrypt for passwords.
         When a protocol or file format requires MD5 or SHA-1, or the hash is a
         checksum or cache key with no security role, suppress the violation:
-        `# puff: ignore[S006]`. There is no fix.
+        `# puff: ignore S006`. There is no fix.
 
         Ruff's equivalent is S324.
         END

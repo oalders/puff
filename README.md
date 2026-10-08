@@ -199,9 +199,10 @@ directory when there is none. `exclude` entries match whole path segments:
 - An entry starting with `/` is anchored to the project root. The defaults
   are anchored, so `/local` skips `./local/...` but `t/local/http.t` is still
   checked. An anchored entry does not apply to a directory you name
-  yourself: `puff check local` checks everything under `local`. When you search a directory outside the project root (for
-  example `puff check /other/proj`, or `--config ci/puff.toml .`), anchored
-  entries are anchored to that directory instead.
+  yourself: `puff check local` checks everything under `local`. When you
+  search a directory outside the project root (for example
+  `puff check /other/proj`, or `--config ci/puff.toml .`), anchored entries
+  are anchored to that directory instead.
 - An entry without a `/` matches any path segment with that name, at any
   depth (`vendor` skips `vendor/` and `lib/vendor/`).
 - Any other entry matches a path prefix relative to the directory being
@@ -265,6 +266,7 @@ reported as `P001`:
 | S013 | SQLInjection | Variable interpolated or concatenated into SQL | none | [89](https://cwe.mitre.org/data/definitions/89.html) |
 | S014 | ExtensionRegex | Anchor a file extension check with `\z` | unsafe | [184](https://cwe.mitre.org/data/definitions/184.html) |
 | S015 | PathPrefix | Directory containment checked with a bare prefix test | unsafe | [22](https://cwe.mitre.org/data/definitions/22.html) |
+| S016 | RequireRuntimePath | Do not require or do a file name computed at runtime | none | [829](https://cwe.mitre.org/data/definitions/829.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -371,7 +373,7 @@ verification back on (`0` becomes `1`, `SSL_VERIFY_NONE` becomes
 - `crypt`.
 
 MD5 and SHA-1 are fine as checksums or cache keys, or where a protocol
-requires them; suppress the violation there with `# puff: ignore[S006]`.
+requires them; suppress the violation there with `# puff: ignore S006`.
 There is no fix.
 
 **S007** reports a string literal naming a file in `/tmp`, `/var/tmp` or
@@ -457,6 +459,13 @@ when the prefix variable's name contains root, dir, base, home, top, parent,
 folder or path. Such a test lets `/srv/www-private` pass for `/srv/www`. The
 unsafe fix rewrites the `index` and regex forms as
 `$path =~ m{\A\Q$root\E(?:/|\z|(?<=/))}`; the substr form is not fixed.
+
+**S016** reports `require` and `do` of a file name built from a variable
+(`require $file`, `require "$class.pm"`, `do "$repo/.env.pl"`), which runs
+whatever file the value names. It is not reported when the same sub checks a
+name against an anchored module-name pattern such as `/\A\w+(?:::\w+)*\z/`.
+Check the name against an allowlist and load it with Module::Runtime's
+`require_module`. There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

@@ -37,7 +37,7 @@ sub explanation {
 
         or Crypt::SysRandom's `random_bytes`. When the hash is a cache key or
         a unique file name with no security role, suppress the violation:
-        `# puff: ignore[S010]`. There is no fix.
+        `# puff: ignore S010`. There is no fix.
         END
 }
 

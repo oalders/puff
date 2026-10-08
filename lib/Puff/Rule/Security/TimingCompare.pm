@@ -51,7 +51,7 @@ sub explanation {
         or compare hashes of both sides. For passwords, verify with the
         password hashing module (Crypt::Argon2's argon2_verify, Crypt::Bcrypt's
         bcrypt_check), which also compares in constant time. Suppress the
-        violation where the value is not secret: `# puff: ignore[S011]`.
+        violation where the value is not secret: `# puff: ignore S011`.
         There is no fix.
         END
 }
