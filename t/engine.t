@@ -201,6 +201,43 @@ subtest 'unparseable source' => sub {
     is( summary($result), [ [ 'T007', 1, 1 ] ], 'violations of the original text' );
 };
 
+package T008 {    # check dies
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code {'T008'}
+    sub check ( $self, $elem, $doc ) { die "kaboom\n" }
+}
+
+package T009 {    # check dies only on what T001 produces
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code {'T009'}
+    sub check ( $self, $elem, $doc ) {
+        die "saw bar\n" if $elem->content eq 'bar';
+        return;
+    }
+}
+
+package main;
+
+subtest 'rule whose check dies' => sub {
+    my $result = run_engine( engine( 'none', qw( T008 T001 ) ), "foo;\n" );
+    is( $result->{error}, 'rule T008 failed: kaboom', 'error names the rule' );
+    is( summary($result), [ [ 'T001', 1, 1 ] ], 'other rules still report' );
+
+    $result = run_engine( engine( 'safe', qw( T008 T001 ) ), "foo;\n" );
+    is( $result->{new_text}, undef, 'no fixes on a partial lint' );
+    is( $result->{fixed_count}, 0, 'nothing fixed' );
+};
+
+subtest 'rule whose check dies on the fixed text' => sub {
+    my $result = run_engine( engine( 'safe', qw( T009 T001 ) ), "foo;\n" );
+    is( $result->{error},       'rule T009 failed: saw bar', 'error set' );
+    is( $result->{new_text},    undef,                       'original kept' );
+    is( $result->{fixed_count}, 0,                           'nothing fixed' );
+    is( summary($result), [ [ 'T001', 1, 1 ] ], 'violations of the original lint' );
+};
+
 subtest 'builtin_rules_info' => sub {
     is( [ Puff::Engine->builtin_rules_info ],
         [ { code => 'P001', summary => 'suppression comment must list codes' } ], 'P001 listed' );

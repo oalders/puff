@@ -36,10 +36,13 @@ sub process_source ( $self, $src, %args ) {
         return \%result;
     }
 
-    my $original = $self->_lint( $src, $doc );
+    my ( $original, $lint_error ) = $self->_lint( $src, $doc );
     $result{violations} = $original;
+    $result{error}      = $lint_error;
     my @fixable = grep { $self->_fixable_in_mode($_) } @$original;
-    if ( $self->{fix_mode} ne 'none' && @fixable ) {
+
+    # Never fix on the strength of a partial lint.
+    if ( $self->{fix_mode} ne 'none' && @fixable && !$lint_error ) {
         if ( $src->has_crlf ) {
             $result{fixes_skipped} = 'CRLF line endings: fixes not applied';
         }
@@ -72,7 +75,8 @@ sub _fix_loop ( $self, $src, $doc, $violations ) {
 
         $src = Puff::Source->from_string($text);
         $doc = _parse($text) or return ( undef, undef, PPI::Document->errstr );
-        $violations = $self->_lint( $src, $doc );
+        ( $violations, my $lint_error ) = $self->_lint( $src, $doc );
+        return ( undef, undef, $lint_error ) if $lint_error;
     }
     die 'unreachable';
 }
@@ -111,16 +115,23 @@ sub _parse ($text) {
 sub _lint ( $self, $src, $doc ) {
     my $suppressions = Puff::Suppressions->new($doc);
     my %found;    # class name => elements, shared between rules
-    my @violations;
+    my ( @violations, @errors );
     for my $rule ( @{ $self->{rules} } ) {
         my $applies = $rule->applies_to;
         my %seen;
         my @elems = grep { !$seen{ refaddr($_) }++ }
             map { @{ $found{$_} //= $doc->find($_) || [] } } ref $applies ? @$applies : $applies;
-        for my $elem (@elems) {
-            push @violations, grep { !$suppressions->is_suppressed( $_->code, $_->line ) }
-                $rule->check( $elem, $doc );
+        my @found;
+        my $ok = eval {
+            push @found, $rule->check( $_, $doc ) for @elems;
+            1;
+        };
+        if ( !$ok ) {
+            my $msg = ( $@ || 'unknown error' ) =~ s/\s+\z//r;
+            push @errors, sprintf( 'rule %s failed: %s', $rule->code, $msg );
+            next;
         }
+        push @violations, grep { !$suppressions->is_suppressed( $_->code, $_->line ) } @found;
     }
     for my $problem ( @{ $suppressions->problems } ) {
         push @violations, Puff::Violation->new(
@@ -133,8 +144,9 @@ sub _lint ( $self, $src, $doc ) {
             fixable => 0,
         );
     }
-    return [ sort { $a->line <=> $b->line || $a->column <=> $b->column || $a->code cmp $b->code }
-            @violations ];
+    my @sorted
+        = sort { $a->line <=> $b->line || $a->column <=> $b->column || $a->code cmp $b->code } @violations;
+    return ( \@sorted, @errors ? join( '; ', @errors ) : undef );
 }
 
 1;
@@ -169,6 +181,10 @@ false is a decline. It never writes files. It returns a hashref:
 Remaining L<Puff::Violation>s, sorted by line, column and code, with C<file>
 set. When the text was fixed, these come from the fixed text.
 
+C<element> on these violations is not valid after C<process_source>
+returns: the PPI document it belonged to is gone (and P001 violations have
+no element at all).
+
 =item new_text
 
 The fixed text, or undef if nothing changed or fixing failed.
@@ -183,7 +199,12 @@ below 0); 0 when C<new_text> is undef.
 
 The PPI error when the text (or the fixed text) does not parse, or
 C<fix loop did not converge> when the text still changes after 10 passes.
-The original text is kept in both cases.
+When a rule's C<check> dies, C<rule CODE failed: MESSAGE> (several joined
+with C<; >); that rule's violations for the file are dropped and the other
+rules still report. A rule failure in the original lint means no fixes are
+attempted; one while re-linting fixed text abandons fixing. In every error
+case the original text is kept and the violations are those of the
+original lint.
 
 =item fixes_skipped
 
