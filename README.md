@@ -191,7 +191,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001 and S007 have options; `puff rule CODE` describes them. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, M001 and S007 have options; `puff rule CODE` describes them. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -267,6 +267,7 @@ reported as `P001`:
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
 | B001 | UselessRegexModifiers | Modifiers on a match against a lone qr// object are ignored | unsafe |  |
 | B002 | AggregateAssignRef | Array or hash assigned a `[...]` or `{...}` reference | unsafe |  |
+| M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
@@ -278,6 +279,7 @@ user can guess where a rule lives:
 | `S` | Security; selected by default | `S` (flake8-bandit) |
 | `Q` | Quotes | `Q` (flake8-quotes) |
 | `B` | Likely bugs; selected by default | `B` (flake8-bugbear) |
+| `M` | Moose and Mouse classes | none |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `P` | puff's own checks; always on | none |
 
@@ -447,6 +449,16 @@ unsafe fix turns the brackets or braces into parens, and is offered only when
 the constructor is the whole right side. Based on
 Perl::Critic::Policy::ValuesAndExpressions::ProhibitArrayAssignAref from
 Perl::Critic::Pulp, extended to hashes.
+
+**M001** is not selected by default; turn it on with `--select M`. It reports
+`use Moose` or `use Mouse` in a package that never calls `->make_immutable`,
+so every `new` builds the constructor at runtime. Each package is checked on
+its own. `use Moose ()` and roles are not reported, and the `modules` option
+adds your own Moose::Exporter modules. The unsafe fix inserts
+`__PACKAGE__->meta->make_immutable;` before the `1;` that ends the package;
+it is unsafe because code that changes the class at runtime dies once the
+class is immutable. Based on Perl::Critic::Policy::Moose::RequireMakeImmutable,
+which checks the whole file at once.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
