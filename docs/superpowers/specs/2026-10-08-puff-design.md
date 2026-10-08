@@ -432,3 +432,33 @@ usually applied in the same pass.
   temporary directory, checking output, exit codes, `--diff`, `--fix`
   without unsafe fixes changing nothing, and `--fix --unsafe-fixes`
   rewriting files.
+
+## Design notes
+
+The reasons behind choices that aren't obvious from the rules above:
+
+- **Offsets come from a line-start table, not summed token lengths.** Heredoc
+  bodies aren't part of any token's content, so summed lengths drift.
+- **Files with CR or CRLF line endings are linted, not fixed.** PPI turns every
+  `\r`, `\r\n` and `\r\r\n` into `\n`, so its locations don't match the bytes
+  on disk.
+- **puff never runs `perl -c` on the code it checks.** It would execute `BEGIN`
+  blocks and `use` imports. "Doesn't parse" means PPI returned no document.
+- **S001 inserts the import before the first call, in that call's package.** An
+  import only affects code compiled after it, and only in the current package.
+  The rule declines in files with more than one package, because otherwise a
+  call could keep the insecure built-in while no longer being reported.
+- **S002 never defaults an expression to `'<'`.** `">" . $f` or `"$mode$f"` would
+  quietly become read-mode opens, so anything that isn't a literal with a
+  visible mode, or a plain scalar, is declined.
+- **S003 only renames when every use can be found.** The lexical takes effect
+  only from the next statement and only inside its block, so the open must be
+  a plain statement and every use must come after it in the same scope.
+- **Every MVP fix is unsafe, so plain `--fix` changes nothing.** This is
+  deliberate: each fix can change behaviour, and the output says how many
+  unsafe fixes are available.
+- **`rule-paths` loads code from the repository being checked.** Custom rules
+  were a goal. `--no-config` turns it off, and the README warns about it.
+- **There is no search of parent directories for the config file.** Without a
+  `.puff.toml`, the project root is the current directory. So
+  `puff check proj`, run from proj's parent, does not skip `proj/local`.
