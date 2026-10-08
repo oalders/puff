@@ -179,8 +179,12 @@ comma-separated and repeatable), `--fix`, `--unsafe-fixes`, `--diff`,
 `--output-format text|json`, `--config PATH`, `--no-config`.
 
 Files checked: `*.pl`, `*.pm`, `*.t`, `*.psgi`, found by recursing into
-directories. A file named explicitly on the command line is always checked,
-whatever its name.
+directories, plus files with no `.` in their name whose first line is a
+Perl shebang (`#!` followed by a path whose basename starts with `perl`, or
+`#!/usr/bin/env perl`, args and env options allowed). Only the first 256
+bytes are read; unreadable files, non-regular files (FIFOs, devices) and
+files containing a NUL byte are skipped silently. A file named explicitly
+on the command line is always checked, whatever its name.
 
 ## Commands
 

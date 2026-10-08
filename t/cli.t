@@ -246,6 +246,17 @@ subtest 'exclude' => sub {
     is( $exit, 1, 'a file named explicitly is checked whatever its name' );
 };
 
+subtest 'extensionless perl scripts' => sub {
+    my ( $keep, $dir ) = project();
+    $dir->child('bin')->mkpath;
+    $dir->child( 'bin', 'tool' )->spew_utf8("#!/usr/bin/env perl\nmy \$x = rand;\n");
+    $dir->child( 'bin', 'sh-tool' )->spew_utf8("#!/bin/sh\nmy \$x = rand;\n");
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001' );
+    like( $out,   qr{^bin/tool:2:}m, 'bin/tool with an env perl shebang is linted' );
+    unlike( $out, qr{sh-tool},       'bin/sh-tool is not' );
+    is( $exit, 1, 'exit 1' );
+};
+
 subtest 'errors exit 2' => sub {
     my ( $keep, $dir ) = project( 'rand.pl' => 'S001/basic.pl' );
     my ( $out, $err, $exit ) = puff( $dir, 'check', 'missing.pl' );

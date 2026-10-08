@@ -6,7 +6,8 @@ use Path::Tiny   qw( path );
 use Puff::Source ();
 use Text::Diff   qw( diff );
 
-my $PERL_FILE = qr/\.(?:pl|pm|t|psgi)\z/;
+my $PERL_FILE     = qr/\.(?:pl|pm|t|psgi)\z/;
+my $SHEBANG_BYTES = 256;
 
 sub new ( $class, %args ) {
     return bless {
@@ -61,9 +62,33 @@ sub _find ( $self, $root ) {
             elsif ( $child->basename =~ $PERL_FILE ) {
                 push @found, $child->stringify;
             }
+            elsif ( $child->basename !~ /\./ && _has_perl_shebang($child) ) {
+                push @found, $child->stringify;
+            }
         }
     }
     return @found;
+}
+
+# True when the first line (within the first $SHEBANG_BYTES bytes) is
+# "#!/path/perl...", or "#!/usr/bin/env perl" with any env options before
+# perl. Unreadable files and files with a NUL byte (binaries) are false.
+sub _has_perl_shebang ($file) {
+    return 0 unless -f $file;    # never open a FIFO or device: it could block
+    open my $fh, '<:raw', $file or return 0;
+    defined read( $fh, my $head, $SHEBANG_BYTES ) or return 0;
+    close $fh;
+    return 0 if $head =~ /\0/;
+    my ($line) = $head =~ /\A#!([^\n]*)/ or return 0;
+    my ( $interpreter, @args ) = split ' ', $line;
+    return 0 unless defined $interpreter;
+    my $name = $interpreter =~ s{\A.*/}{}r;
+    if ( $name eq 'env' ) {
+        shift @args while @args && ( $args[0] =~ /\A-/ || $args[0] =~ /=/ );
+        return 0 unless @args;
+        $name = $args[0] =~ s{\A.*/}{}r;
+    }
+    return $name =~ /\Aperl/ ? 1 : 0;
 }
 
 sub _process ( $self, $file ) {
@@ -128,7 +153,13 @@ __END__
 =head1 DESCRIPTION
 
 C<run> checks the given paths (default C<.>). Directories are searched
-recursively for C<*.pl>, C<*.pm>, C<*.t> and C<*.psgi> files, skipping
+recursively for C<*.pl>, C<*.pm>, C<*.t> and C<*.psgi> files, and for files
+with no C<.> in their name whose first line is a Perl shebang: C<#!>
+followed by a path whose basename starts with C<perl> (C</usr/bin/perl -w>,
+C</opt/perl/bin/perl5.36.0>), or C<env> followed by C<perl>
+(C<#!/usr/bin/env perl>, C<#!/usr/bin/env -S perl -w>). Only the first 256
+bytes are read; unreadable files and files containing a NUL byte are
+skipped silently. Directory searches skip
 anything the config's C<exclude> matches (see
 L<Puff::Config/is_excluded>: entries starting with C</>, including the
 defaults, are anchored to the project root, others are matched relative to

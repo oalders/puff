@@ -81,4 +81,39 @@ subtest 'diff headers for an absolute path' => sub {
     like( $diff, qr{^\+\+\+ b/\Q$rel\E}m, 'b/ header has no double slash' );
 };
 
+subtest 'extensionless files with a perl shebang are found' => sub {
+    my $tree = tempdir();
+    $tree->child('bin')->mkpath;
+    my %files = (
+        'tool'        => "#!/usr/bin/env perl\nfoo;\n",
+        'tool-args'   => "#!/usr/bin/env -S perl -w\nfoo;\n",
+        'tool-perl'   => "#!/usr/bin/perl -w\nfoo;\n",
+        'tool-perl5'  => "#! /opt/perl/bin/perl5.36.0\nfoo;\n",
+        'sh-tool'     => "#!/bin/sh\nfoo;\n",
+        'env-sh'      => "#!/usr/bin/env bash\nperl foo;\n",
+        'perlish'     => "#!/usr/bin/perlbrew-wrapper\nfoo;\n",
+        'notperl'     => "#!/usr/bin/superperl\nfoo;\n",
+        'no-shebang'  => "foo;\n",
+        'late'        => "\n#!/usr/bin/perl\nfoo;\n",
+        'binary'      => "\x7fELF\x00\x01perl\x00",
+        'empty'       => '',
+        'script.sh'   => "#!/usr/bin/perl\nfoo;\n",
+        'long'        => '#!/' . ( 'x' x 300 ) . "/perl\nfoo;\n",    # only 256 bytes are read
+    );
+    $tree->child( 'bin', $_ )->spew_raw( $files{$_} ) for keys %files;
+    $tree->child( 'bin', 'unreadable' )->spew_raw("#!/usr/bin/perl\nfoo;\n");
+    chmod 0000, $tree->child( 'bin', 'unreadable' );
+    require POSIX;
+    POSIX::mkfifo( $tree->child( 'bin', 'fifo' )->stringify, 0600 ) or die "mkfifo: $!";    # must not block
+
+    my @found = map { path($_)->basename } runner('lint')->_find($tree);
+    my @want  = sort qw( tool tool-args tool-perl tool-perl5 perlish );
+    is( [ sort @found ], \@want, 'only perl shebangs are picked up' );
+
+    my $run = runner('lint')->run("$tree");
+    is( $run->{exit_code}, 1, 'found files are linted (exit 1), unreadable and binary skipped silently' );
+    is( [ grep { defined $_->{error} } @{ $run->{files} } ], [], 'no errors' );
+    chmod 0600, $tree->child( 'bin', 'unreadable' );
+};
+
 done_testing;
