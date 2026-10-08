@@ -264,6 +264,7 @@ reported as `P001`:
 | S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | unsafe | [502](https://cwe.mitre.org/data/definitions/502.html) |
 | S013 | SQLInjection | Variable interpolated or concatenated into SQL | none | [89](https://cwe.mitre.org/data/definitions/89.html) |
 | S014 | ExtensionRegex | Anchor a file extension check with `\z` | unsafe | [184](https://cwe.mitre.org/data/definitions/184.html) |
+| S015 | PathPrefix | Directory containment checked with a bare prefix test | unsafe | [22](https://cwe.mitre.org/data/definitions/22.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -448,6 +449,14 @@ tune it. There is no fix.
 `suffix`) that has no end anchor, or ends in `$` or `\Z`, which also match
 before a trailing newline. A suffix passed to `basename` or `fileparse` is
 not reported. The unsafe fix anchors the pattern with `\z`.
+
+**S015** reports a prefix test used to check that a path is inside a
+directory: `index($path, $root) == 0` (or `!index`, `!= 0`),
+`substr($path, 0, length $root) eq $root`, and `$path =~ /^\Q$root\E/`,
+when the prefix variable's name contains root, dir, base, home, top, parent,
+folder or path. Such a test lets `/srv/www-private` pass for `/srv/www`. The
+unsafe fix rewrites the `index` and regex forms as
+`$path =~ m{\A\Q$root\E(?:/|\z|(?<=/))}`; the substr form is not fixed.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
