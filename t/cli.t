@@ -83,7 +83,7 @@ subtest 'check --diff --unsafe-fixes prints a diff and writes nothing' => sub {
         like( $out, qr{^--- a/rand\.pl$}m,    '--- header' );
         like( $out, qr{^\+\+\+ b/rand\.pl$}m, '+++ header' );
         like( $out, qr{^@@ }m,                'hunk header' );
-        like( $out, qr{^\+use Math::Random::Secure}m, 'added line' );
+        like( $out, qr{^\+use Crypt::PRNG qw\(rand\);$}m, 'added line' );
         like( $err, qr{^Would fix \d+ violations in 4 files\.$}m, 'summary on STDERR' );
         is( { map { $_ => $dir->child($_)->slurp_raw } keys %FILES }, \%before, 'files unchanged' );
     }

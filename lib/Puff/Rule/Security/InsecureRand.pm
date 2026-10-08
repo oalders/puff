@@ -5,7 +5,13 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call );
 
-my $IMPORT = 'use Math::Random::Secure qw(rand);';
+my $IMPORT = 'use Crypt::PRNG qw(rand);';
+
+# Modules whose rand is a secure drop-in, and the import tags that include it.
+my %SECURE_RAND = (
+    'Crypt::PRNG'          => { rand => 1, ':all' => 1 },
+    'Math::Random::Secure' => { rand => 1 },
+);
 my %WATCHED = map { $_ => 1 } qw( rand srand CORE::rand CORE::srand );
 
 sub code       {'S001'}
@@ -21,19 +27,27 @@ sub explanation {
         an attacker should not be able to guess. srand only makes this worse by
         fixing the seed.
 
-        The fix adds `use Math::Random::Secure qw(rand);` so that plain rand
-        calls use a cryptographically secure generator. The line is added once
-        per file, after the last use/no statement before the first rand call
-        (or before that call's statement), and only when the file has no
+        The fix adds `use Crypt::PRNG qw(rand);` so that plain rand calls use
+        a cryptographically secure generator. Crypt::PRNG's rand takes the same
+        argument and returns the same range as the built-in. The line is added
+        once per file, after the last use/no statement before the first rand
+        call (or before that call's statement), and only when the file has no
         package statement or a single `package NAME;` before that call;
         otherwise rand is reported as not fixable.
+
+        Plain rand is not reported when the file already imports rand from
+        Crypt::PRNG (by name or with `:all`) or from Math::Random::Secure.
+
+        When the random value becomes a key, token, salt or session id, prefer
+        random bytes over a float: `random_bytes` from Crypt::PRNG or
+        Crypt::SysRandom. Rewriting such code is left to you.
 
         srand, CORE::rand and CORE::srand are reported but not fixed: an import
         cannot override CORE::rand, and seeding a secure generator has no
         meaningful equivalent.
 
         The fix is unsafe because it changes which random number generator the
-        code uses and adds a dependency on Math::Random::Secure.
+        code uses and adds a dependency on Crypt::PRNG (from CryptX).
         END
 }
 
@@ -45,7 +59,7 @@ sub check ( $self, $elem, $doc ) {
         return if _has_secure_import($doc);
         return $self->violation(
             $elem,
-            message => 'rand is not cryptographically secure; use Math::Random::Secure',
+            message => 'rand is not cryptographically secure; use Crypt::PRNG, or random_bytes for keys and tokens',
             fixable => _import_position($doc) ? 1 : 0,
         );
     }
@@ -111,12 +125,13 @@ sub _top_level_statement ($elem) {
 sub _has_secure_import ($doc) {
     my $includes = $doc->find('PPI::Statement::Include') || [];
     for my $inc (@$includes) {
-        next unless $inc->type eq 'use' && ( $inc->module // '' ) eq 'Math::Random::Secure';
+        next unless $inc->type eq 'use';
+        my $wanted = $SECURE_RAND{ $inc->module // '' } or next;
         for my $words ( @{ $inc->find('PPI::Token::QuoteLike::Words') || [] } ) {
-            return 1 if grep { $_ eq 'rand' } $words->literal;
+            return 1 if grep { $wanted->{$_} } $words->literal;
         }
         for my $quote ( @{ $inc->find('PPI::Token::Quote') || [] } ) {
-            return 1 if $quote->string eq 'rand';
+            return 1 if $wanted->{ $quote->string };
         }
     }
     return 0;
@@ -134,10 +149,10 @@ __END__
 
 Reports calls to C<rand>, C<srand>, C<CORE::rand> and C<CORE::srand>
 (not methods, hash keys, sub names or C<package>/C<use>/C<no> statements).
-Plain C<rand> is not reported when the file already has
-C<use Math::Random::Secure> importing C<rand>.
+Plain C<rand> is not reported when the file already imports C<rand> from
+L<Crypt::PRNG> (by name or with C<:all>) or from L<Math::Random::Secure>.
 
-The unsafe fix inserts C<use Math::Random::Secure qw(rand);> once per file,
+The unsafe fix inserts C<use Crypt::PRNG qw(rand);> once per file,
 where it is compiled before the first C<rand> call. It declines when the file
 has more than one C<package> statement, a block-form C<package>, or a
 C<package> statement after the first call; in those files plain C<rand> is

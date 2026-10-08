@@ -285,12 +285,13 @@ following holds:
   expression (`$h{rand}`);
 - it is part of a `package`, `use` or `no` statement.
 
-**Skip.** If the file contains `use Math::Random::Secure` whose import
-list includes `rand` (a `qw(...)` list or a quoted string), plain `rand`
-calls are not reported at all.
+**Skip.** If the file contains `use Crypt::PRNG` whose import list includes
+`rand` or `:all`, or `use Math::Random::Secure` whose import list includes
+`rand` (a `qw(...)` list or a quoted string), plain `rand` calls are not
+reported at all.
 
 **Fix (unsafe).** Applies only to plain `rand`. Insert the line
-`use Math::Random::Secure qw(rand);` where it will be compiled before the
+`use Crypt::PRNG qw(rand);` where it will be compiled before the
 first `rand` call:
 - Find the top-level statement (a direct child of the document) that
   contains the first `rand` call: call it T.
@@ -300,8 +301,8 @@ first `rand` call:
   T and after the package statement, if there is one. If there's no such
   statement, insert after the package statement; if there's no package
   statement either, insert before T.
-- The inserted text is `"\nuse Math::Random::Secure qw(rand);"` when
-  inserting after a statement, and `"use Math::Random::Secure qw(rand);\n"`
+- The inserted text is `"\nuse Crypt::PRNG qw(rand);"` when
+  inserting after a statement, and `"use Crypt::PRNG qw(rand);\n"`
   when inserting before T. Every `rand` violation produces this same edit,
   so it is applied once.
 - `srand`, `CORE::rand` and `CORE::srand` are reported with `fixable => 0`.
@@ -444,6 +445,11 @@ The reasons behind choices that aren't obvious from the rules above:
   on disk.
 - **puff never runs `perl -c` on the code it checks.** It would execute `BEGIN`
   blocks and `use` imports. "Doesn't parse" means PPI returned no document.
+- **S001 imports Crypt::PRNG's `rand`.** It has the same `(;$)` prototype
+  and range as the built-in, so the fix needs no change at the call sites.
+  Crypt::SysRandom only offers `random_bytes`, which can't replace `rand`
+  mechanically; the explanation recommends `random_bytes` from either module
+  for keys and tokens.
 - **S001 inserts the import before the first call, in that call's package.** An
   import only affects code compiled after it, and only in the current package.
   The rule declines in files with more than one package, because otherwise a

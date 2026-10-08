@@ -259,7 +259,8 @@ reported as `P001`:
 declined, the violation is still reported, without a marker.
 
 **S001** reports `rand`, `srand`, `CORE::rand` and `CORE::srand`. The fix
-adds `use Math::Random::Secure qw(rand);` once per file. It does not fix:
+adds `use Crypt::PRNG qw(rand);` once per file; Crypt::PRNG's `rand` is a
+drop-in for the built-in. It does not fix:
 
 - `srand`, `CORE::rand` and `CORE::srand` (an import cannot override `CORE::`
   names);
@@ -267,7 +268,9 @@ adds `use Math::Random::Secure qw(rand);` once per file. It does not fix:
   `package NAME { ... }`, or a `package` after the first `rand` call.
 
 Plain `rand` is not reported at all when the file already imports `rand` from
-Math::Random::Secure.
+Crypt::PRNG (by name or with `:all`) or from Math::Random::Secure. Where the
+random value becomes a key, token or salt, use `random_bytes` from Crypt::PRNG
+or Crypt::SysRandom instead; puff leaves that rewrite to you.
 
 **S002** reports two-argument `open`. The fix rewrites `open(FH, "<$file")`
 as `open(FH, '<', $file)`. It does not fix a second argument that:

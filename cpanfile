@@ -14,5 +14,5 @@ recommends 'Test2::V0';
 
 on test => sub {
     requires 'Test2::V0';
-    recommends 'Math::Random::Secure';
+    recommends 'Crypt::PRNG';
 };
