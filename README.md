@@ -258,6 +258,7 @@ reported as `P001`:
 | S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
 | S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
 | S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
+| S009 | WorldWritable | Do not make files world-writable | none | [732](https://cwe.mitre.org/data/definitions/732.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -370,6 +371,13 @@ constant string (`system("tar xf $file")`, `system($cmd)`), backticks and
 and one non-constant command string. The list forms (`system('tar', 'xf',
 $file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
 reported. There is no fix.
+
+**S009** reports `chmod` with a constant world-writable mode (`chmod 0777,
+$dir`, `chmod 0666, $file`), the same through a `->chmod` method (including
+symbolic modes such as `'o+w'`), and `umask` with a constant mask that does
+not mask other-write (`umask 0`). Sticky-bit modes such as `01777` are
+allowed. Modes passed to `mkdir`, `sysopen` and `make_path` are not reported,
+since the umask filters them. There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

@@ -1,0 +1,14 @@
+my ( $f, $p, $mode );
+chmod 0755, $f;
+chmod 0644, $f;
+chmod 01777, $f;
+chmod $mode, $f;
+mkdir $f, 0777;
+$p->chmod(0600);
+$p->chmod('u+w');
+$p->chmod('go-w');
+umask 022;
+umask(077);
+umask $mode;
+my $old = umask;
+my %h = ( chmod => 0777 );
