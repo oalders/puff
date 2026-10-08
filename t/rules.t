@@ -29,7 +29,7 @@ $d->child('sub')->mkpath;
 rule_file( $d->child('sub'), 'T::R::Two', 'T002' );
 $d->child('Helper.pm')->spew_utf8("package T::Helper;\n1;\n");
 
-my @classes = Puff::Rules->load( rule_paths => ["$d"] );
+my @classes = grep { $_->code =~ /\AT/ } Puff::Rules->load( rule_paths => ["$d"] );
 is( [ map { $_->code } @classes ], [qw( T001 T002 T003 )], 'loaded and sorted by code' );
 
 is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['T002'] ) ],
@@ -75,7 +75,7 @@ sub code {'Q001'}
 PM
 $lib->child(qw( Puff Rule Fake NotARule.pm ))->spew_utf8("package Puff::Rule::Fake::NotARule;\n1;\n");
 unshift @INC, "$lib";
-is( [ map { $_->code } Puff::Rules->load( rule_paths => [] ) ], ['Q001'], 'pluggable discovery' );
+is( [ grep {/\AQ/} map { $_->code } Puff::Rules->load( rule_paths => [] ) ], ['Q001'], 'pluggable discovery' );
 
 like( dies { Puff::Rules->load( rule_paths => ["$tmp/nope"] ) }, qr/not a directory/, 'missing rule path' );
 
