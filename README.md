@@ -191,7 +191,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. Only A001 has options so far. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001 and S007 have options; `puff rule CODE` describes them. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -256,6 +256,7 @@ reported as `P001`:
 | S004 | StringEval | Do not `eval` a string built at runtime | none | [95](https://cwe.mitre.org/data/definitions/95.html) |
 | S005 | TLSVerifyDisabled | Do not turn off TLS certificate verification | none | [295](https://cwe.mitre.org/data/definitions/295.html) |
 | S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
+| S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -345,6 +346,17 @@ A value that is a variable is not reported. There is no fix.
 
 MD5 and SHA-1 are fine as checksums or cache keys, or where a protocol
 requires them; suppress the violation there with `# puff: ignore[S006]`.
+There is no fix.
+
+**S007** reports a string literal naming a file in `/tmp`, `/var/tmp` or
+`/dev/shm` (`"/tmp/report.$$"`, or `'/tmp/' . $name`), and calls to
+`mktemp`, `tmpnam` and `tempnam`. A directory on its own (`DIR => '/tmp'`) is
+not reported. Use File::Temp's `tempfile` or `File::Temp->new` instead. Change
+the directories with:
+
+    [rules.S007]
+    tmp-directories = ["/tmp", "/var/tmp", "/dev/shm", "/scratch"]
+
 There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
