@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "name": "puff",
+    "description": "puff (Perl linter/fixer) development: Perl toolchain, CPAN/MetaCPAN/GitHub egress, cpanm and temp files kept under /tmp/claude-1000."
+  },
+  "extends": ["oalders", "oalders-perl", "oalders-perl-net"],
+  "workdir": {
+    "access": "readwrite"
+  },
+  "environment": {
+    "set_vars": {
+      "PERL_CPANM_HOME": "/tmp/claude-1000/cpanm",
+      "TMPDIR": "/tmp/claude-1000"
+    }
+  }
+}
