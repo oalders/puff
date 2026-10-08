@@ -253,6 +253,9 @@ reported as `P001`:
 | S001 | InsecureRand | `rand`/`srand` is not cryptographically secure | unsafe | [338](https://cwe.mitre.org/data/definitions/338.html) |
 | S002 | TwoArgOpen | Use three-argument open | unsafe | [78](https://cwe.mitre.org/data/definitions/78.html), [73](https://cwe.mitre.org/data/definitions/73.html) |
 | S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe | [1108](https://cwe.mitre.org/data/definitions/1108.html) |
+| S004 | StringEval | Do not `eval` a string built at runtime | none | [95](https://cwe.mitre.org/data/definitions/95.html) |
+| S005 | TLSVerifyDisabled | Do not turn off TLS certificate verification | none | [295](https://cwe.mitre.org/data/definitions/295.html) |
+| S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -315,6 +318,34 @@ uses in the same block. It does not fix:
 - any other use of the name: passed to a sub, `select`, file tests, `write`,
   `*FH` globs, a package-qualified name, or the name appearing inside any
   string (it could be a string eval or a symbolic reference).
+
+**S004** reports `eval` (and `CORE::eval`) with a string argument, or with
+no argument (which evals `$_`). A single constant string with nothing
+interpolated, such as `eval 'use Foo; 1'`, is allowed. Block `eval { ... }` is
+never reported. There is no fix.
+
+**S005** reports turning TLS certificate verification off:
+
+- `verify_hostname => 0`, `verify_SSL => 0` and `SSL_verify_mode => 0` (or
+  `SSL_VERIFY_NONE`), with `0`, `''` or `'0'` as the value;
+- `insecure => 1` and `->insecure(1)` (Mojo::UserAgent);
+- assigning a false value to `$ENV{PERL_LWP_SSL_VERIFY_HOSTNAME}`.
+
+A value that is a variable is not reported. There is no fix.
+
+**S006** reports:
+
+- `use` or `require` of Digest::MD5, Digest::MD4, Digest::MD2, Digest::SHA1
+  or Digest::Perl::MD5;
+- importing a `sha1*` function from Digest::SHA, or calling one by its full
+  name;
+- `Digest->new('MD5')`, `Digest->new('SHA-1')` and similar;
+- `Digest::SHA->new` with no algorithm (it defaults to SHA-1) or with `1`;
+- `crypt`.
+
+MD5 and SHA-1 are fine as checksums or cache keys, or where a protocol
+requires them; suppress the violation there with `# puff: ignore[S006]`.
+There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

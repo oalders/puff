@@ -1,0 +1,12 @@
+my $v;
+my $ua = LWP::UserAgent->new( ssl_opts => { verify_hostname => 1 } );
+$ua->ssl_opts( verify_hostname => $v );
+my $t = HTTP::Tiny->new( verify_SSL => 1 );
+my %o = ( SSL_verify_mode => SSL_VERIFY_PEER );
+%o = ( SSL_verify_mode => 1 );
+$ENV{PERL_LWP_SSL_VERIFY_HOSTNAME} = 1;
+print $ENV{PERL_LWP_SSL_VERIFY_HOSTNAME};
+my $m = Mojo::UserAgent->new( insecure => 0 );
+$m->insecure(0);
+my $is = $m->insecure;
+print 'verify_hostname', "insecure";

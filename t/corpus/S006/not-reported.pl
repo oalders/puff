@@ -1,0 +1,12 @@
+use Digest::SHA qw(sha256_hex);
+use Digest::SHA;
+my ( $x, $y );
+my $h = Digest::SHA::sha256_hex($x);
+my $d = Digest->new('SHA-256');
+$d = Digest::SHA->new(256);
+$d = Digest::SHA->new('sha512');
+$d = Digest::SHA->new($y);
+$d = Digest->new($y);
+$x->crypt($y);
+my %o = ( crypt => 1 );
+print 'Digest::MD5';
