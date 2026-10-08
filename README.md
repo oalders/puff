@@ -1,1 +1,387 @@
 # puff
+
+puff is a linter and fixer for Perl, inspired by Python's ruff. Each rule has
+a short stable code (such as `S002`), can carry an automatic fix, and says how
+safe that fix is. Adding a rule takes one small module and a few fixture
+files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
+runs the code it checks.
+
+The rules so far are security rules. puff does not format code; use perltidy
+for that.
+
+## Install
+
+puff needs Perl 5.36 or newer.
+
+    cpanm --installdeps .
+
+To keep the dependencies inside the checkout, use
+`cpanm -L local --installdeps .` and run puff with
+`perl -Ilib -Ilocal/lib/perl5 bin/puff`.
+
+## Usage
+
+    puff check [paths...]        lint files and directories (default: .)
+    puff rules                   list every rule
+    puff rule CODE               explain one rule
+
+Directories are searched recursively for `*.pl`, `*.pm`, `*.t` and `*.psgi`
+files. A file named on the command line is always checked. Symlinked
+directories are not followed.
+
+Lint a project:
+
+    $ puff check
+    lib/Demo.pm:5:5: S002 Use three-argument open [**]
+    lib/Demo.pm:5:5: S003 Bareword filehandle FH; use a lexical filehandle [**]
+    Found 2 violations.
+    2 more fixable with --unsafe-fixes
+
+Each line is `file:line:column: CODE message`, sorted by file, line and
+column. A marker at the end of the line says what a fix would do:
+
+- `[*]`: `--fix` will fix it with the current settings.
+- `[**]`: it has an unsafe fix that is not enabled. Add `--unsafe-fixes`.
+- no marker: no fix is offered for this violation.
+
+### Options for `check`
+
+| Option | Meaning |
+| --- | --- |
+| `--select CODES` | Enable rules whose code starts with one of these prefixes. Replaces the configured `select`. |
+| `--extend-select CODES` | Enable these rules as well. |
+| `--ignore CODES` | Disable these rules. |
+| `--fix` | Write safe fixes to the files. |
+| `--unsafe-fixes` | Also apply unsafe fixes (with `--fix` or `--diff`). `--no-unsafe-fixes` turns off `unsafe-fixes = true` from the config. |
+| `--diff` | Print the fixes as a unified diff and write nothing. Wins over `--fix`. |
+| `--output-format text\|json` | Output format; default `text`. |
+| `--config PATH` | Read this config file instead of `./.puff.toml`. |
+| `--no-config` | Ignore config files. |
+
+`CODES` is a comma-separated list, and the option can be repeated. A code can
+be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`.
+
+### Exit codes
+
+- `0`: no violations remain.
+- `1`: violations remain (after fixing, if you asked for fixes), or `--diff`
+  would change something.
+- `2`: a usage, config or rule-loading error; a file that cannot be read or
+  parsed; or a fix that failed. The failing file is left unchanged, the
+  error goes to STDERR and other files are still processed. `2` wins over `1`.
+
+### JSON output
+
+`--output-format json` prints an array with one object per remaining
+violation:
+
+    $ puff check --output-format json
+    [
+       {
+          "code" : "S002",
+          "column" : 5,
+          "file" : "lib/Demo.pm",
+          "fix" : {
+             "applied" : false,
+             "available" : true,
+             "safety" : "unsafe"
+          },
+          "line" : 5,
+          "message" : "Use three-argument open"
+       }
+    ]
+
+`fix.safety` is the rule's fix safety, `fix.available` says whether a fix is
+offered for this violation, and `fix.applied` is always `false` because only
+violations that remain are listed. Errors still go to STDERR as text.
+`--diff` always prints a diff, whatever the output format.
+
+## Fix safety
+
+Every fix is either safe or unsafe.
+
+- A safe fix does not change what the program does.
+- An unsafe fix can change behaviour, so you should review it.
+
+`puff check --fix` applies safe fixes only. `puff check --fix --unsafe-fixes`
+(or `unsafe-fixes = true` in the config) applies both. All the current rules
+are unsafe, so plain `--fix` changes nothing for them:
+
+    $ puff check --fix
+    lib/Demo.pm:5:5: S002 Use three-argument open [**]
+    lib/Demo.pm:5:5: S003 Bareword filehandle FH; use a lexical filehandle [**]
+    Found 2 violations.
+    2 more fixable with --unsafe-fixes
+    Fixed 0 violations in 0 files.
+
+Look at what would change before writing anything:
+
+    $ puff check --diff --unsafe-fixes
+    --- a/lib/Demo.pm
+    +++ b/lib/Demo.pm
+    @@ -2,9 +2,9 @@
+     use v5.36;
+     
+     sub load ($file) {
+    -    open(FH, "<$file");
+    -    my @l = <FH>;
+    -    close(FH);
+    +    open(my $fh, '<', $file);
+    +    my @l = <$fh>;
+    +    close($fh);
+         return @l;
+     }
+     
+    Would fix 2 violations in 1 file.
+
+The diff goes to STDOUT and the `Would fix` line to STDERR.
+
+How fixes are applied:
+
+- puff computes the fixes for all violations, applies the ones that do not
+  overlap, re-parses the file, lints it again and repeats while the text
+  changes, up to 10 passes.
+- If the fixed text no longer parses, or the passes do not converge, the
+  file is left unchanged and puff reports an error (exit `2`).
+- A file is written once, only if its text changed.
+- puff never runs `perl -c` on your code.
+- Files with CRLF line endings are linted but not fixed. puff says so on
+  STDERR.
+- A rule may decline to fix a particular violation (see the table below). It
+  is still reported, without a marker.
+
+## Config reference
+
+puff reads `.puff.toml` from the current directory, if there is one. It does
+not search parent directories. Unknown keys are an error (exit `2`), so a typo
+does not silently do nothing.
+
+    select        = ["S"]
+    extend-select = []
+    ignore        = []
+    rule-paths    = ["xt/puff-rules"]
+    exclude       = ["fixtures"]
+    unsafe-fixes  = false
+
+    [rules.X001]
+    keyword = "FIXME"
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `select` | `["S"]` | Rule codes or prefixes to enable. |
+| `extend-select` | `[]` | More codes or prefixes to enable. |
+| `ignore` | `[]` | Codes or prefixes to disable. Wins over `select`. |
+| `rule-paths` | `[]` | Directories of extra rule modules, relative to the config file. See below. |
+| `exclude` | `["local", "blib", ".build", ".git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
+| `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. No built-in rule has options yet. |
+
+`exclude` entries are compared with the path relative to the directory being
+searched. An entry without a `/` matches any path segment with that name
+(`local` skips `local/` and `lib/local/`). An entry with a `/` matches a path
+prefix (`t/corpus` skips `t/corpus/x.pl` but not `xt/corpus/x.pl`). A file
+named on the command line is never excluded.
+
+Command-line flags override the file. `--select` replaces `select`.
+`--extend-select` and `--ignore` are added to the configured lists.
+`--unsafe-fixes` overrides `unsafe-fixes`.
+
+### `rule-paths` runs code
+
+**Warning:** when `rule-paths` is set, puff loads and executes every `.pm`
+file under those directories, with your privileges. Running puff in a
+repository whose `.puff.toml` sets `rule-paths` is as risky as running that
+repository's tests. Do not run puff on code you do not trust without
+`--no-config`, which ignores the config file and so does not load any rules
+from it.
+
+## Suppressions
+
+Silence a rule on one line with a comment on that line:
+
+    my $r = rand(10);    # puff: ignore S001
+
+Silence a rule for the whole file with a comment anywhere in it:
+
+    # puff: ignore-file S002
+
+List several codes separated by spaces or commas. Codes are prefixes, so
+`# puff: ignore S` silences every `S` rule. Only real comments count, not
+text inside a string. A suppressed violation is neither reported nor fixed.
+
+A suppression comment that lists no codes suppresses nothing and is itself
+reported as `P001`:
+
+    $ puff check p.pl
+    p.pl:1:1: P001 suppression comment must list codes
+    Found 1 violation.
+
+## Rules
+
+| Code | Name | Summary | Fix safety |
+| --- | --- | --- | --- |
+| S001 | InsecureRand | `rand`/`srand` is not cryptographically secure | unsafe |
+| S002 | TwoArgOpen | Use three-argument open | unsafe |
+| S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe |
+| P001 | (built in) | Suppression comment must list codes | none |
+
+`puff rule CODE` prints the full explanation of a rule. When a fix is
+declined, the violation is still reported, without a marker.
+
+**S001** reports `rand`, `srand`, `CORE::rand` and `CORE::srand`. The fix
+adds `use Math::Random::Secure qw(rand);` once per file. It does not fix:
+
+- `srand`, `CORE::rand` and `CORE::srand` (an import cannot override `CORE::`
+  names);
+- a file with more than one `package` statement, a block-form
+  `package NAME { ... }`, or a `package` after the first `rand` call.
+
+Plain `rand` is not reported at all when the file already imports `rand` from
+Math::Random::Secure.
+
+**S002** reports two-argument `open`. The fix rewrites `open(FH, "<$file")`
+as `open(FH, '<', $file)`. It does not fix a second argument that:
+
+- is anything but a single `'...'` or `"..."` string or a single scalar
+  variable;
+- is empty, starts with `|` or `&`, ends with `|`, or is `-`;
+- has a mode but no filename, or a filename that starts with `&` or is `-`;
+- is a `"..."` string that starts with a variable (the mode could be inside
+  it);
+- has an escape such as `\t` or `\n` at the start or end of the mode or
+  filename, since two-argument open strips that whitespace at runtime.
+
+**S003** reports `open`, `opendir`, `sysopen` and `socket` with a bareword
+first argument other than `STDIN`, `STDOUT`, `STDERR`, `DATA`, `ARGV`,
+`ARGVOUT` or `_`. The fix rewrites the handle as `my $name` and renames its
+uses in the same block. It does not fix:
+
+- `socket`;
+- an open that is not at the start of its own statement, is part of a
+  condition, or has a statement modifier;
+- a handle used in the open's own statement (`open(...) and print FH`);
+- a name opened more than once in the file;
+- a name used before the open, outside the open's block, in a different named
+  sub, or after a `package` statement;
+- any other use of the name: passed to a sub, `select`, file tests, `write`,
+  `*FH` globs, a package-qualified name, or the name appearing inside any
+  string (it could be a string eval or a symbolic reference).
+
+## Writing a rule
+
+A rule is a subclass of `Puff::Rule`. The full API is documented in
+`perldoc Puff::Rule`. This is a complete rule that rewrites `FIXME` comments
+as `TODO` (it is `t/lib-rules/NoFixme.pm`, and `t/readme-rule.t` runs it, so
+the example works):
+
+    package Local::Rule::NoFixme;
+
+    use v5.36;
+    use parent 'Puff::Rule';
+
+    sub code       {'X001'}
+    sub summary    {'Use TODO instead of FIXME'}
+    sub applies_to {'PPI::Token::Comment'}
+    sub fix_safety {'safe'}
+    sub options    { { keyword => 'FIXME' } }
+
+    sub explanation {
+        return <<~'END';
+            This project marks open work with TODO. A FIXME comment is reported
+            and the fix rewrites it as TODO. The word to look for can be changed
+            with the `keyword` option.
+            END
+    }
+
+    sub check ( $self, $elem, $doc ) {
+        my $keyword = $self->option('keyword');
+        return unless $elem->content =~ /\b\Q$keyword\E\b/;
+        return $self->violation( $elem, message => "Use TODO instead of $keyword" );
+    }
+
+    sub fix ( $self, $violation, $fix ) {
+        my $elem    = $violation->element;
+        my $keyword = $self->option('keyword');
+        return 0 unless $elem->content =~ /\b\Q$keyword\E\b/;
+
+        my $start = $fix->source->start_of($elem) + $-[0];
+        $fix->replace_range( $start, $start + length $keyword, 'TODO' );
+        return 1;
+    }
+
+    1;
+
+Put the module in a directory and point `rule-paths` at it, relative to the
+config file. This also enables the `X` rules, because only `S` is enabled by
+default:
+
+    # .puff.toml
+    rule-paths    = ["xt/puff-rules"]
+    extend-select = ["X"]
+
+    [rules.X001]
+    keyword = "FIXME"
+
+puff loads every `.pm` file under `rule-paths` and treats each package that
+inherits from `Puff::Rule` as a rule. A code must be letters followed by
+three digits and must be unique; `P001` is reserved. Then:
+
+    $ puff rules
+    S001   unsafe  rand/srand is not cryptographically secure
+    S002   unsafe  Use three-argument open
+    S003   unsafe  Use a lexical filehandle instead of a bareword
+    X001   safe    Use TODO instead of FIXME
+    P001   none    suppression comment must list codes
+
+    $ puff check
+    lib/a.pl:1:1: X001 Use TODO instead of FIXME [*]
+    lib/a.pl:2:12: X001 Use TODO instead of FIXME [*]
+    Found 2 violations.
+    2 fixable with --fix
+
+The points to know:
+
+- `applies_to` limits which elements `check` sees. Name the narrowest PPI
+  class you can.
+- `check` returns violations built with `$self->violation`. Pass
+  `fixable => 0` for a violation that has no fix, so the report does not
+  offer one.
+- `fix` records edits on the `$fix` object and returns true, or returns false
+  to decline. The edits are text offsets into the file, so you can change
+  part of an element with `replace_range`.
+- Use `fix_safety => 'unsafe'` for any fix that can change behaviour.
+- Rules that ship with puff go under `lib/Puff/Rule/` and are found
+  automatically.
+
+### Testing a rule: the corpus
+
+Each built-in rule is tested with fixture files under `t/corpus/CODE/`:
+
+- `NAME.pl` is a fixture. Put `# expect: CODE` on every line where the rule
+  must report a violation. Repeat the code (`# expect: S001 S001`) for a line
+  with two violations. Lines with no comment must report nothing.
+- `NAME.fixed.pl` is the text the fixer must produce from `NAME.pl` with
+  unsafe fixes on. If there is no `NAME.fixed.pl`, the fixer must leave the
+  file unchanged. This is how declined cases are covered.
+
+`t/lib/PuffTest.pm` provides `run_corpus($code)`, which finds the rule with
+that code and runs one subtest per fixture. For each file it checks that the
+reported lines match the `# expect:` comments, that fixing gives the
+`.fixed.pl` text (or no change), and that no fixable violation of that rule
+is left after fixing. A test file is three lines:
+
+    use v5.36;
+    use Test2::V0;
+    use lib 't/lib';
+    use PuffTest qw( run_corpus );
+
+    run_corpus('S001');
+
+    done_testing;
+
+Run the tests from the repository root:
+
+    prove -lr -Ilocal/lib/perl5 t
+
+`run_corpus` finds rules through `Puff::Rules->load`, so it only sees rules on
+`@INC` under `Puff::Rule::`, not ones loaded from `rule-paths`.
