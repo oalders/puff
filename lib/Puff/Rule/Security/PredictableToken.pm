@@ -5,9 +5,10 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call call_args );
 
-my $HASH_FUNCTION = qr/(?:\A|::)(?:md5|sha(?:1|224|256|384|512|512224|512256))(?:_hex|_base64)?\z/;
-my %GUESSABLE     = map { $_ => 1 } qw( time localtime gmtime times rand srand gettimeofday );
-my $PID_IN_STRING = qr/(?<!\\)(?:\\\\)*\$\$(?![\w{])/;
+my $HASH_FUNCTION = qr/(?:\A|::)(?:md[245]|sha(?:1|224|256|384|512|512224|512256)|digest_data)(?:_hex|_base64|_b64u?)?\z/;
+my %GUESSABLE     = map { $_ => 1 } qw( time localtime gmtime times rand srand gettimeofday clock_gettime refaddr );
+my $PID_IN_STRING = qr/(?<!\\)(?:\\\\)*\$(?:\$(?![\w{])|\{?(?:PID|PROCESS_ID)\b)/;
+my %PID_VARIABLE  = map { $_ => 1 } qw( $PID $PROCESS_ID $English::PID $English::PROCESS_ID );
 
 sub code       {'S010'}
 sub summary    {'Do not hash the time, PID or rand to make a token'}
@@ -23,10 +24,12 @@ sub explanation {
         Several CPAN session modules have had CVEs for exactly this, such as
         `md5_hex( time . $$ . rand )`.
 
-        The rule reports md5 and sha* functions (from Digest::MD5 or
-        Digest::SHA, with any `_hex` or `_base64` suffix) whose arguments use
-        `time`, `localtime`, `gmtime`, `times`, `gettimeofday`, `rand`,
-        `srand` or `$$`.
+        The rule reports md2, md4, md5 and sha* functions (from Digest::MD5,
+        Digest::SHA, Crypt::Digest and the like, with any `_hex`, `_base64`,
+        `_b64` or `_b64u` suffix) and Crypt::Digest's `digest_data*` whose
+        arguments use `time`, `localtime`, `gmtime`, `times`,
+        `gettimeofday`, `clock_gettime`, `rand`, `srand`, `refaddr`, `$$`
+        or English's `$PID` and `$PROCESS_ID`.
 
         Take the bytes from a CSPRNG instead:
 
@@ -51,8 +54,11 @@ sub check ( $self, $elem, $doc ) {
             if ( $token->isa('PPI::Token::Magic') && $token->content eq '$$' ) {
                 $found{'$$'} = 1;
             }
+            elsif ( $token->isa('PPI::Token::Symbol') && $PID_VARIABLE{ $token->content } ) {
+                $found{'$$'} = 1;
+            }
             elsif ( $token->isa('PPI::Token::Word') ) {
-                my $word = $token->content =~ s/\A(?:CORE|Time::HiRes)::(?=\w+\z)//r;
+                my $word = $token->content =~ s/\A(?:CORE|Time::HiRes|Scalar::Util)::(?=\w+\z)//r;
                 $found{$word} = 1 if $GUESSABLE{$word} && is_builtin_call($token);
             }
             elsif (( $token->isa('PPI::Token::Quote::Double') || $token->isa('PPI::Token::Quote::Interpolate') )
@@ -77,7 +83,9 @@ __END__
 
 =head1 DESCRIPTION
 
-Reports md5 and sha* digest functions whose arguments include the time, the
-process ID or C<rand>. There is no fix.
+Reports md2, md4, md5, sha* and C<digest_data> digest functions whose
+arguments include the time, the process ID, C<rand> or C<refaddr>. There is no
+fix. Covers L<Perl::Critic::Policy::Security::RandBytesFromHash>, except that
+a C<join> on its own is not reported.
 
 =cut

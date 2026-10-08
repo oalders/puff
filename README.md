@@ -394,13 +394,15 @@ not mask other-write (`umask 0`). Sticky-bit modes such as `01777` are
 allowed. Modes passed to `mkdir`, `sysopen` and `make_path` are not reported,
 since the umask filters them. There is no fix.
 
-**S010** reports md5 and sha* digest functions (`md5_hex`, `sha256_hex` and
-the rest) whose arguments use `time`, `localtime`, `gmtime`, `times`,
-`gettimeofday`, `rand`, `srand` or `$$`, as in
+**S010** reports md2, md4, md5 and sha* digest functions (`md5_hex`,
+`sha256_hex`, `sha256_b64u` and the rest) and Crypt::Digest's `digest_data*`
+whose arguments use `time`, `localtime`, `gmtime`, `times`, `gettimeofday`,
+`clock_gettime`, `rand`, `srand`, `refaddr`, `$$` or English's `$PID`, as in
 `md5_hex( time . $$ . rand )`. That is how several CPAN session modules made
 guessable session IDs. Use `random_bytes` from Crypt::PRNG or
 Crypt::SysRandom for tokens; suppress the violation for cache keys. There is
-no fix.
+no fix. It covers Perl::Critic::Policy::Security::RandBytesFromHash, except
+that a `join` on its own is not reported.
 
 **S011** reports `eq` and `ne` where one side looks like a secret and the
 other is not a constant, so the comparison time leaks how much of a guess was
