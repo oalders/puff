@@ -191,7 +191,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. No built-in rule has options yet. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. Only A001 has options so far. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -254,6 +254,7 @@ reported as `P001`:
 | S002 | TwoArgOpen | Use three-argument open | unsafe |
 | S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |
+| A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |
 | P001 | (built in) | Suppression comment must list codes | none |
 
 Rule codes follow ruff's prefixes where ruff has an equivalent, so a ruff
@@ -263,6 +264,7 @@ user can guess where a rule lives:
 | --- | --- | --- |
 | `S` | Security; selected by default | `S` (flake8-bandit) |
 | `Q` | Quotes | `Q` (flake8-quotes) |
+| `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `P` | puff's own checks; always on | none |
 
 `puff rule CODE` prints the full explanation of a rule. When a fix is
@@ -318,6 +320,17 @@ uses in the same block. It does not fix:
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
 backslash, `$`, `@`, `'` or `"`, and the safe fix rewrites `"coffee"` as
 `'coffee'`. `qq{...}` and heredocs are left alone.
+
+**A001** is not selected by default; turn it on with `--select A`. It reports
+`$a` and `$b` outside a block passed directly to `sort`, `reduce`,
+`reductions`, `pairgrep`, `pairfirst`, `pairmap` or `pairwise`, and outside a
+named sub the file uses as `sort NAME`. A sub stored in a variable
+(`my $cmp = sub { $a <=> $b }`) is reported; suppress it there. `$a[0]`, `@a`
+and `$main::a` are different variables and are not reported. There is no fix.
+To allow more functions that set `$a` and `$b`:
+
+    [rules.A001]
+    extra-pair-functions = ["pairfoo"]
 
 ## Writing a rule
 
