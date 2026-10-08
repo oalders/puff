@@ -10,3 +10,6 @@ my $m = Mojo::UserAgent->new( insecure => 0 );
 $m->insecure(0);
 my $is = $m->insecure;
 print 'verify_hostname', "insecure";
+my $ssh = Net::SSH::Perl->new( $host, strict_host_key_checking => 'yes' );
+my $any = Net::SSH::Any->new( $host, strict_hostkeycheck => 1 );
+my $o = Net::OpenSSH->new( $host, master_opts => [ -o => 'StrictHostKeyChecking=accept-new' ] );

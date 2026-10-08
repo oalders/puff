@@ -254,7 +254,7 @@ reported as `P001`:
 | S002 | TwoArgOpen | Use three-argument open | unsafe | [78](https://cwe.mitre.org/data/definitions/78.html), [73](https://cwe.mitre.org/data/definitions/73.html) |
 | S003 | BarewordFilehandle | Use a lexical filehandle instead of a bareword | unsafe | [1108](https://cwe.mitre.org/data/definitions/1108.html) |
 | S004 | StringEval | Do not `eval` a string built at runtime | none | [95](https://cwe.mitre.org/data/definitions/95.html) |
-| S005 | TLSVerifyDisabled | Do not turn off TLS certificate verification | none | [295](https://cwe.mitre.org/data/definitions/295.html) |
+| S005 | TLSVerifyDisabled | Do not turn off TLS certificate or SSH host key verification | unsafe | [295](https://cwe.mitre.org/data/definitions/295.html) |
 | S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
 | S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
 | S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
@@ -345,14 +345,18 @@ no argument (which evals `$_`). A single constant string with nothing
 interpolated, such as `eval 'use Foo; 1'`, is allowed. Block `eval { ... }` is
 never reported. There is no fix.
 
-**S005** reports turning TLS certificate verification off:
+**S005** reports turning TLS certificate or SSH host key verification off:
 
 - `verify_hostname => 0`, `verify_SSL => 0` and `SSL_verify_mode => 0` (or
   `SSL_VERIFY_NONE`), with `0`, `''` or `'0'` as the value;
 - `insecure => 1` and `->insecure(1)` (Mojo::UserAgent);
-- assigning a false value to `$ENV{PERL_LWP_SSL_VERIFY_HOSTNAME}`.
+- assigning a false value to `$ENV{PERL_LWP_SSL_VERIFY_HOSTNAME}`;
+- `strict_hostkeycheck => 0`, `strict_host_key_checking => 'no'`, and a
+  string holding `StrictHostKeyChecking=no`.
 
-A value that is a variable is not reported. There is no fix.
+A value that is a variable is not reported. The unsafe fix turns TLS
+verification back on (`0` becomes `1`, `SSL_VERIFY_NONE` becomes
+`SSL_VERIFY_PEER`, `insecure` gets `0`); SSH settings are not fixed.
 
 **S006** reports:
 
