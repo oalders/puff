@@ -270,6 +270,7 @@ reported as `P001`:
 | B003 | LeadingZeros | Number with a leading zero is octal | safe |  |
 | B004 | IndirectObject | Indirect object syntax | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
+| U001 | UseParent | use base instead of use parent | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
@@ -282,6 +283,7 @@ user can guess where a rule lives:
 | `Q` | Quotes | `Q` (flake8-quotes) |
 | `B` | Likely bugs; selected by default | `B` (flake8-bugbear) |
 | `M` | Moose and Mouse classes | none |
+| `U` | Upgrades to newer idioms | `UP` (pyupgrade) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `P` | puff's own checks; always on | none |
 
@@ -478,6 +480,13 @@ adds your own Moose::Exporter modules. The unsafe fix inserts
 it is unsafe because code that changes the class at runtime dies once the
 class is immutable. Based on Perl::Critic::Policy::Moose::RequireMakeImmutable,
 which checks the whole file at once.
+
+**U001** is not selected by default; turn it on with `--select U`. It reports
+`use base`, which carries on when a parent class fails to load. The unsafe fix
+rewrites it as `use parent`, adding `-norequire` when every parent is declared
+in the same file (or is a Tie::StdHash-style class whose module the file
+loads). It is unsafe because `use parent` dies where `use base` quietly went
+on. Based on Perl::Critic::Policy::Tics::ProhibitUseBase.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
