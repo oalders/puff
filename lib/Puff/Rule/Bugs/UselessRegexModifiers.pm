@@ -153,6 +153,6 @@ deletes them.
 Based on L<Perl::Critic::Policy::Bangs::ProhibitUselessRegexModifiers>, which
 checks only C</m> and C</s>.
 
-Not selected by default; select it with C<B> or C<B001>.
+Selected by default, as part of C<B>.
 
 =cut

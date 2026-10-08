@@ -6,8 +6,8 @@ safe that fix is. Adding a rule takes one small module and a few fixture
 files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
-The rules so far are security rules. puff does not format code; use perltidy
-for that.
+By default puff runs the security (`S`) and likely-bug (`B`) rules; the
+style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -173,7 +173,7 @@ puff reads `.puff.toml` from the current directory, if there is one. It does
 not search parent directories. Unknown keys are an error (exit `2`), so a typo
 does not silently do nothing.
 
-    select        = ["S"]
+    select        = ["S", "B"]
     extend-select = []
     ignore        = []
     rule-paths    = ["xt/puff-rules"]
@@ -185,7 +185,7 @@ does not silently do nothing.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `select` | `["S"]` | Rule codes or prefixes to enable. |
+| `select` | `["S", "B"]` | Rule codes or prefixes to enable. |
 | `extend-select` | `[]` | More codes or prefixes to enable. |
 | `ignore` | `[]` | Codes or prefixes to disable. Wins over `select`. |
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
@@ -276,7 +276,7 @@ user can guess where a rule lives:
 | --- | --- | --- |
 | `S` | Security; selected by default | `S` (flake8-bandit) |
 | `Q` | Quotes | `Q` (flake8-quotes) |
-| `B` | Likely bugs | `B` (flake8-bugbear) |
+| `B` | Likely bugs; selected by default | `B` (flake8-bugbear) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `P` | puff's own checks; always on | none |
 
@@ -427,13 +427,13 @@ names with `::` or `-`, v-strings, quote-like operator names such as `s` and
 are easy to misread, and the safe fix rewrites them as `q{}`. An empty hash
 key such as `$h{''}` is left alone, since `$h{q{}}` is harder to read.
 
-**B001** is not selected by default; turn it on with `--select B`. It reports
-pattern modifiers such as `/i`, `/m`, `/s` and `/x` on a match, substitution
-or `split` whose whole pattern is one variable that the file only assigns a
-`qr//` to. Perl ignores them (since 5.10, silently), so `$str =~ /$re/i` is
-still case-sensitive. Put the modifiers in the `qr//`. The unsafe fix deletes
-the ignored modifiers, which keeps the current behaviour. It is unsafe because
-the rule sees only this file's assignments. Based on
+**B001** is selected by default. It reports pattern modifiers such as `/i`,
+`/m`, `/s` and `/x` on a match, substitution or `split` whose whole pattern
+is one variable that the file only assigns a `qr//` to. Perl ignores them
+(since 5.10, silently), so `$str =~ /$re/i` is still case-sensitive. Put the
+modifiers in the `qr//`. The unsafe fix deletes the ignored modifiers, which
+keeps the current behaviour. It is unsafe because the rule sees only this
+file's assignments. Based on
 Perl::Critic::Policy::Bangs::ProhibitUselessRegexModifiers, which checks only
 `/m` and `/s`.
 

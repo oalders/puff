@@ -11,7 +11,7 @@ my %KNOWN_KEY       = map { $_ => 1 } qw( select extend-select ignore rule-paths
 sub load ( $class, %args ) {
     my $cli = $args{cli} // {};
     my %self = (
-        select        => ['S'],
+        select        => [qw( S B )],
         extend_select => [],
         ignore        => [],
         rule_paths    => [],
@@ -149,7 +149,7 @@ C<path> that does not exist is an error. C<no_config> ignores files entirely.
 Unknown top-level keys, and malformed values, die with a message naming the
 key and file.
 
-Defaults: C<select> C<["S"]>, C<extend-select> and C<ignore> empty,
+Defaults: C<select> C<["S", "B"]>, C<extend-select> and C<ignore> empty,
 C<exclude> C</local /blib /.build /.git>, C<unsafe-fixes> false. Entries in the
 file's C<exclude> are added to the default list (the defaults always apply).
 Relative C<rule-paths> are resolved against the config file's directory;

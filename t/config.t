@@ -10,7 +10,7 @@ my $orig = getcwd;
 chdir $tmp or die;
 
 my $c = Puff::Config->load( path => undef, no_config => 0, cli => {} );
-is( $c->select,        ['S'], 'default select' );
+is( $c->select,        [qw( S B )], 'default select' );
 is( $c->extend_select, [],    'default extend' );
 is( $c->ignore,        [],    'default ignore' );
 is( $c->rule_paths,    [],    'default rule_paths' );
@@ -39,7 +39,7 @@ is( $c->rule_paths,   [ Path::Tiny->cwd->child('xt/rules')->stringify ], 'rule-p
 is( $c->exclude, [qw( /local /blib /.build /.git t/corpus )], 'exclude adds to defaults' );
 
 $c = Puff::Config->load( path => undef, no_config => 1, cli => {} );
-is( $c->select, ['S'], 'no_config ignores file' );
+is( $c->select, [qw( S B )], 'no_config ignores file' );
 
 $c = Puff::Config->load(
     path => undef,
@@ -77,7 +77,7 @@ is( Puff::Config->load( path => 'sub/paths.toml', cli => {} )->rule_paths,
 
 $tmp->child('.puff.toml')->remove;
 $c = Puff::Config->load( path => undef, cli => {} );
-is( $c->select, ['S'], 'missing default file gives defaults' );
+is( $c->select, [qw( S B )], 'missing default file gives defaults' );
 
 ok( $c->is_excluded('local/lib/X.pm'),   'default local at the root' );
 ok( $c->is_excluded('./local/lib/X.pm'), 'default local at the root, ./ spelling' );
