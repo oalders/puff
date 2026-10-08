@@ -191,7 +191,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, B005, B006, M001 and S007 have options; `puff rule CODE` describes them. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, B005, B006, M001, S007 and S013 have options; `puff rule CODE` describes them. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -262,6 +262,7 @@ reported as `P001`:
 | S010 | PredictableToken | Do not hash the time, PID or `rand` to make a token | none | [340](https://cwe.mitre.org/data/definitions/340.html), [338](https://cwe.mitre.org/data/definitions/338.html) |
 | S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
 | S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | none | [502](https://cwe.mitre.org/data/definitions/502.html) |
+| S013 | SQLInjection | Variable interpolated or concatenated into SQL | none | [89](https://cwe.mitre.org/data/definitions/89.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -422,6 +423,16 @@ Storable), and setting `$Storable::Eval` or the LoadBlessed, LoadCode,
 UseCode or EvalCode variables of YAML, YAML::XS or YAML::Syck to a true
 constant. Use JSON for data that crosses a trust boundary, and suppress the
 violation where the program reads back only what it wrote. There is no fix.
+
+**S013** reports a variable or function call that is interpolated, concatenated
+or passed through `sprintf %s` into a string that starts like an SQL
+statement (`SELECT ... FROM`, `INSERT INTO`, `UPDATE ... SET`, `DELETE FROM`,
+`CREATE TABLE` and the like), into a `<<SQL` heredoc, or appended with `.=`
+to such a string. Values passed through `$dbh->quote` or `quote_identifier`,
+constants, and numeric functions such as `int` are allowed, and a
+`## SQL safe ($var)` comment marks a variable as checked. Use placeholders.
+The options `quoting-methods`, `safe-functions` and `upper-case-keywords`
+tune it. There is no fix.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
