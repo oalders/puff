@@ -105,7 +105,7 @@ subtest 'write_file' => sub {
     my $src = Puff::Source->from_file("$file");
     $src->write_file( "$file", qq{say "\x{e9}";\n} );
     is( $file->slurp_raw, qq{say "\xC3\xA9";\n}, 'written in original encoding' );
-    is( ( stat "$file" )[2] & 07777, 0755, 'mode preserved' );
+    is( ( stat "$file" )[2] & 07777, oct('0755'), 'mode preserved' );
 };
 
 subtest 'write_file follows a symlink' => sub {

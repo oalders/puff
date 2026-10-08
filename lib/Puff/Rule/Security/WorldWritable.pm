@@ -5,8 +5,8 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
 
-my $OTHER_WRITE = 0002;
-my $STICKY      = 01000;
+my $OTHER_WRITE = oct('0002');
+my $STICKY      = oct('01000');
 
 sub code       {'S009'}
 sub summary    {'Do not make files world-writable'}

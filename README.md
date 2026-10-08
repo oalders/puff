@@ -191,7 +191,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, M001 and S007 have options; `puff rule CODE` describes them. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, M001 and S007 have options; `puff rule CODE` describes them. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -267,6 +267,7 @@ reported as `P001`:
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
 | B001 | UselessRegexModifiers | Modifiers on a match against a lone qr// object are ignored | unsafe |  |
 | B002 | AggregateAssignRef | Array or hash assigned a `[...]` or `{...}` reference | unsafe |  |
+| B003 | LeadingZeros | Number with a leading zero is octal | safe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
@@ -449,6 +450,15 @@ unsafe fix turns the brackets or braces into parens, and is offered only when
 the constructor is the whole right side. Based on
 Perl::Critic::Policy::ValuesAndExpressions::ProhibitArrayAssignAref from
 Perl::Critic::Pulp, extended to hashes.
+
+**B003** is selected by default. It reports a number literal with a leading
+zero, which Perl reads as octal: `my $count = 010` is 8. The mode argument of
+`chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen` and `mkpath`, a value
+after a `mode` or `perm` key, and an operand of a bitwise operator
+(`$mode & 07777`) are octal by convention and not reported unless the `strict`
+option is on. The safe fix rewrites the literal as `oct('0755')`, which
+compiles to the same constant. Based on
+Perl::Critic::Policy::ValuesAndExpressions::ProhibitLeadingZeros.
 
 **M001** is not selected by default; turn it on with `--select M`. It reports
 `use Moose` or `use Mouse` in a package that never calls `->make_immutable`,
