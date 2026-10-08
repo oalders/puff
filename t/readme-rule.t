@@ -6,6 +6,7 @@ use Test2::V0;
 
 use Cwd        qw( getcwd );
 use Path::Tiny qw( path tempdir );
+use Puff::Test qw( run_corpus );
 
 my $root  = path(getcwd)->absolute;
 my @PERL  = ( $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib', 'perl5' ) );
@@ -22,13 +23,12 @@ sub puff ( $dir, @args ) {
     return ( $out, $exit );
 }
 
-# rule-paths is relative to the config file, so the rule is copied next to it.
-my $dir = tempdir();
-$dir->child('rules')->mkpath;
-$RULE->copy( $dir->child( 'rules', 'NoFixme.pm' ) );
-my $config = qq{rule-paths = ["rules"]\nextend-select = ["X"]\n};
+# An absolute rule-paths entry is used as it is.
+my $dir    = tempdir();
+my $config = sprintf qq{rule-paths = ["%s"]\nextend-select = ["X"]\n}, $RULE->parent;
 $dir->child('.puff.toml')->spew_utf8($config);
 $dir->child('a.pl')->spew_utf8("# FIXME: tidy\nmy \$x = 1;    # FIXME later\n");
+my $readme = $root->child('README.md')->slurp_utf8;
 
 my ( $out, $exit ) = puff( $dir, 'check', 'a.pl' );
 is( $exit, 1, 'violations found' );
@@ -49,6 +49,25 @@ $dir->child('.puff.toml')->spew_utf8( $config . qq{[rules.X001]\nkeyword = "KEEP
 like( $out, qr{^b\.pl:2:1: X001 Use TODO instead of KEEP}m, 'keyword option from [rules.X001]' );
 
 my $indented = join '', map { length $_ > 1 ? "    $_" : $_ } split /^/m, $RULE->slurp_utf8;
-ok( index( $root->child('README.md')->slurp_utf8, $indented ) >= 0, 'README shows t/lib-rules/NoFixme.pm verbatim' );
+ok( index( $readme, $indented ) >= 0, 'README shows t/lib-rules/NoFixme.pm verbatim' );
+
+# The README's sample lib/a.pl and the `puff check` output it shows.
+subtest 'README sample output' => sub {
+    my ($sample) = $readme =~ /Given this `lib\/a\.pl`:\n\n((?:    .*\n)+)/ or return fail('sample a.pl in README');
+    my ($shown)  = $readme =~ /\n    \$ puff check\n((?:    .*\n)+)\nThe points/ or return fail('sample output in README');
+    s/^    //mg for $sample, $shown;
+
+    my $proj = tempdir();
+    $proj->child('lib')->mkpath;
+    $proj->child( 'lib', 'a.pl' )->spew_utf8($sample);
+    $proj->child('.puff.toml')->spew_utf8($config);
+    my ( $got, $code ) = puff( $proj, 'check' );
+    is( $got,  $shown, 'README output matches a real run' );
+    is( $code, 1,      'exit 1' );
+};
+
+# The corpus harness, as the README shows it, with the rule loaded from
+# rule_paths.
+run_corpus( 'X001', rule_paths => ['t/lib-rules'] );
 
 done_testing;

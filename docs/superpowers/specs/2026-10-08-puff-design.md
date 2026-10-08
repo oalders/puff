@@ -412,8 +412,10 @@ usually applied in the same pass.
   `# expect: CODE` comment. If `<name>.fixed.pl` exists, running the fixer
   with unsafe fixes must produce exactly that text; if it doesn't, the
   fixer must leave the file unchanged. A shared harness
-  (`t/lib/PuffTest.pm`, with a `run_corpus` function) does this and is
-  available to rule authors. The `# expect:` comments stay in the fixed
+  (`Puff::Test`, shipped in `lib/`, with a
+  `run_corpus($code, rule_paths => [...], dir => ...)` function) does
+  this and is available to rule authors; `rule_paths` lets it find rules
+  outside `Puff::Rule::*`. The `# expect:` comments stay in the fixed
   file; the harness strips them before comparing violations in the fixed
   output. After fixing, the fixed text is linted again: it must have no
   violations from the rule being tested, apart from ones marked

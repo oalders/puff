@@ -1,4 +1,4 @@
-package PuffTest;
+package Puff::Test;
 
 use v5.36;
 
@@ -10,14 +10,14 @@ use Puff::Source ();
 use Test2::V0;
 
 our @EXPORT_OK = qw( run_corpus );
-our @EXPORT    = @EXPORT_OK;
 
-sub run_corpus ($code) {
-    my ($class) = grep { $_->code eq $code } Puff::Rules->load;
+sub run_corpus ( $code, %args ) {
+    my ($class) = grep { $_->code eq $code } Puff::Rules->load( rule_paths => $args{rule_paths} // [] );
     die "No rule with code $code\n" unless $class;
     my $rule = $class->new;
 
-    my $dir = path( 't', 'corpus', $code );
+    my $dir = path( $args{dir} // path( 't', 'corpus', $code ) );
+    die "Corpus directory $dir does not exist\n" unless $dir->is_dir;
     my @files = sort grep { /\.pl\z/ && !/\.fixed\.pl\z/ } map { $_->stringify } $dir->children;
     die "No corpus files in $dir\n" unless @files;
 
@@ -84,15 +84,21 @@ __END__
 
 =head1 SYNOPSIS
 
-    use lib 't/lib';
-    use PuffTest qw( run_corpus );
-    run_corpus('S001');
+    use v5.36;
+    use Test2::V0;
+    use Puff::Test qw( run_corpus );
+
+    run_corpus('S001');                                   # t/corpus/S001
+    run_corpus( 'X001', rule_paths => ['xt/puff-rules'] ); # a rule of your own
+    run_corpus( 'X002', dir => 'xt/corpus/X002' );
+
     done_testing;
 
 =head1 DESCRIPTION
 
-C<run_corpus($code)> runs one subtest per C<t/corpus/$code/*.pl> file
-(skipping C<*.fixed.pl>), using only the rule with that code:
+C<run_corpus($code, %args)> finds the rule with code C<$code> and runs one
+L<Test2::V0> subtest per C<*.pl> file in the corpus directory (skipping
+C<*.fixed.pl>), using only that rule:
 
 =over
 
@@ -114,7 +120,25 @@ C<fixable> 0. The C<# expect:> comments in the fixed text are not checked.
 
 =back
 
-Linting must not return an error at any step. Run tests from the
-distribution root, since corpus paths are relative to it.
+Linting must not return an error at any step.
+
+Arguments:
+
+=over
+
+=item rule_paths
+
+Directories to load rules from, as in the C<rule-paths> config setting
+(relative to the current directory here). Without it only C<Puff::Rule::*>
+classes on C<@INC> are found.
+
+=item dir
+
+The corpus directory. Default C<t/corpus/CODE>, relative to the current
+directory, so run tests from the distribution root.
+
+=back
+
+It dies if no rule has that code or the directory has no corpus files.
 
 =cut

@@ -331,8 +331,8 @@ the example works):
 
     1;
 
-Put the module in a directory and point `rule-paths` at it, relative to the
-config file. This also enables the `X` rules, because only `S` is enabled by
+Put the module in a directory and point `rule-paths` at it (a relative path
+is relative to the config file; an absolute path also works). This also enables the `X` rules, because only `S` is enabled by
 default:
 
     # .puff.toml
@@ -353,9 +353,16 @@ three digits and must be unique; `P001` is reserved. Then:
     X001   safe    Use TODO instead of FIXME
     P001   none    suppression comment must list codes
 
+Given this `lib/a.pl`:
+
+    # FIXME: tidy up
+    my $x = 1;    # FIXME later
+
+`puff check` reports both comments:
+
     $ puff check
     lib/a.pl:1:1: X001 Use TODO instead of FIXME [*]
-    lib/a.pl:2:12: X001 Use TODO instead of FIXME [*]
+    lib/a.pl:2:15: X001 Use TODO instead of FIXME [*]
     Found 2 violations.
     2 fixable with --fix
 
@@ -364,21 +371,21 @@ The points to know:
 - `applies_to` limits which elements `check` sees. Name the narrowest PPI
   class you can.
 - `check` returns violations built with `$self->violation`. The message
-  defaults to the rule's `summary`. Pass
-  `fixable => 0` for a violation that has no fix, so the report does not
-  offer one.
+  defaults to the rule's `summary`. Pass `fixable => 0` for a violation
+  that has no fix, so the report does not offer one.
 - `fix` records edits on the `$fix` object and returns true, or returns false
   (or calls `Puff::Fix->decline($why)`) to decline. If `fix` dies any other
   way, that is a bug in the rule: puff reports an error for the file
-  (exit `2`) and writes none of its fixes. The edits are text offsets into the file, so you can change
-  part of an element with `replace_range`.
+  (exit `2`) and writes none of its fixes. The edits are text offsets into
+  the file, so you can change part of an element with `replace_range`.
 - Use `fix_safety => 'unsafe'` for any fix that can change behaviour.
 - Rules that ship with puff go under `lib/Puff/Rule/` and are found
   automatically.
 
 ### Testing a rule: the corpus
 
-Each built-in rule is tested with fixture files under `t/corpus/CODE/`:
+Each rule is tested with fixture files in a corpus directory, by default
+`t/corpus/CODE/`:
 
 - `NAME.pl` is a fixture. Put `# expect: CODE` on every line where the rule
   must report a violation. Repeat the code (`# expect: S001 S001`) for a line
@@ -387,24 +394,27 @@ Each built-in rule is tested with fixture files under `t/corpus/CODE/`:
   unsafe fixes on. If there is no `NAME.fixed.pl`, the fixer must leave the
   file unchanged. This is how declined cases are covered.
 
-`t/lib/PuffTest.pm` provides `run_corpus($code)`, which finds the rule with
-that code and runs one subtest per fixture. For each file it checks that the
-reported lines match the `# expect:` comments, that fixing gives the
-`.fixed.pl` text (or no change), and that no fixable violation of that rule
-is left after fixing. A test file is three lines:
+`Puff::Test` (it ships with puff, see `perldoc Puff::Test`) provides
+`run_corpus($code, %args)`, which finds the rule with that code and runs one
+subtest per fixture. For each file it checks that the reported lines match
+the `# expect:` comments, that fixing gives the `.fixed.pl` text (or no
+change), and that no fixable violation of that rule is left after fixing.
+
+A rule of your own lives outside `Puff::Rule::`, so tell `run_corpus` where
+to load it from with `rule_paths` (as in the config file, but relative to
+the directory the tests run from). For the X001 rule above, with fixtures
+in `t/corpus/X001/`, the whole test file is:
 
     use v5.36;
     use Test2::V0;
-    use lib 't/lib';
-    use PuffTest qw( run_corpus );
+    use Puff::Test qw( run_corpus );
 
-    run_corpus('S001');
+    run_corpus( 'X001', rule_paths => ['xt/puff-rules'] );
 
     done_testing;
 
-Run the tests from the repository root:
+Pass `dir => 'path/to/corpus'` to use a different corpus directory. The
+built-in rules need neither argument: `t/rule-S001.t` is just
+`run_corpus('S001')`. Run the tests from the repository root:
 
     prove -lr -Ilocal/lib/perl5 t
-
-`run_corpus` finds rules through `Puff::Rules->load`, so it only sees rules on
-`@INC` under `Puff::Rule::`, not ones loaded from `rule-paths`.
