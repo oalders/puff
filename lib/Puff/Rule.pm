@@ -12,7 +12,7 @@ sub code        {''}
 sub summary     {''}
 sub explanation {''}
 sub applies_to  {'PPI::Element'}
-sub fix_safety  {'unsafe'}
+sub fix_safety  {'none'}
 sub options     { {} }
 
 sub check ( $self, $elem, $doc ) { return }
@@ -66,7 +66,7 @@ __END__
 
 Subclasses override the class methods C<code>, C<summary>, C<explanation>,
 C<applies_to> (a class name or list of them; default C<PPI::Element>),
-C<fix_safety> (C<safe>, C<unsafe> or C<none>) and C<options> (hashref of
+C<fix_safety> (C<safe>, C<unsafe> or C<none>; default C<none>) and C<options> (hashref of
 name to default). C<check> returns zero or more violations; C<fix> records
 edits on a L<Puff::Fix> and returns true, or returns false (or dies) to
 decline.

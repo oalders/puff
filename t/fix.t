@@ -64,6 +64,10 @@ package My::Rule {
     sub code    {'X001'}
     sub options { { x => 1 } }
 }
+package My::Fixable {
+    our @ISA = ('My::Rule');
+    sub fix_safety {'unsafe'}
+}
 package My::NoFix {
     our @ISA = ('My::Rule');
     sub fix_safety {'none'}
@@ -82,8 +86,9 @@ subtest 'Puff::Rule' => sub {
     is( $v->message, 'm',    'message' );
     is( $v->rule,    $rule,  'rule' );
     is( $v->element, $fh,    'element' );
-    ok( $v->fixable, 'fixable by default' );
-    ok( !$rule->violation( $fh, message => 'm', fixable => 0 )->fixable, 'explicit 0' );
+    ok( !$v->fixable, "base fix_safety none: not fixable" );
+    ok( My::Fixable->new->violation( $fh, message => "m" )->fixable, "fixable by default when fix_safety declared" );
+    ok( !My::Fixable->new->violation( $fh, message => "m", fixable => 0 )->fixable, "explicit 0" );
     ok( !My::NoFix->new->violation( $fh, message => 'm', fixable => 1 )->fixable,
         'fix_safety none' );
 
