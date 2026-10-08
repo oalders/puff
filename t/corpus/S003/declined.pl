@@ -70,3 +70,20 @@ close SOCK;
 open(OTHERPKG, '<', $f); # expect: S003
 package Other;
 close OTHERPKG;
+
+my @l;
+open(ANDED, '<', $f) && (@l = <ANDED>); # expect: S003
+
+open(PRINTED, '>', $f) and print PRINTED "x"; # expect: S003
+
+open(COMMAED, '<', $f), close(COMMAED); # expect: S003
+
+open(LOOPED, '<', $_) for @l; # expect: S003
+my @looped = <LOOPED>;
+
+my $c;
+open(MODIFIED, '<', $f) if $c; # expect: S003
+close MODIFIED;
+
+-e $f and open(GUARDED, '<', $f); # expect: S003
+close GUARDED;

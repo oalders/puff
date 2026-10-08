@@ -9,6 +9,7 @@ use Scalar::Util  qw( refaddr );
 my %OPENER   = map { $_ => 1 } qw( open opendir sysopen socket );
 my %FIXABLE  = map { $_ => 1 } qw( open opendir sysopen );
 my %EXCLUDED = map { $_ => 1 } qw( STDIN STDOUT STDERR DATA ARGV ARGVOUT _ my our local state );
+my %MODIFIER = map { $_ => 1 } qw( if unless while until for foreach );
 my %PRINT    = map { $_ => 1 } qw( print printf say );
 my %HANDLE_FIRST = map { $_ => 1 } qw(
     close eof binmode fileno flock seek tell truncate read sysread syswrite
@@ -43,8 +44,10 @@ sub explanation {
         of close, eof, binmode, fileno, flock, seek, tell, truncate, read,
         sysread, syswrite, readdir, closedir, rewinddir, telldir and seekdir.
         It declines, and the violation is reported as not fixable, for socket;
-        when the open is part of a larger expression or a condition; when the
-        file opens the same name more than once; when the name is used before
+        when the open is not at the start of its own statement, is part of a
+        condition or has a statement modifier (`if`, `for`, ...); when the
+        handle is used in the open's own statement (`open(...) and print FH`);
+        when the file opens the same name more than once; when the name is used before
         the open, outside the open's block, in a different named sub, after a
         package statement, or in any other way (passed to a sub, select,
         file tests, write, `*FH` globs, a package-qualified name, or the name
@@ -105,6 +108,8 @@ sub _edits ( $word, $handle ) {
 
     my $statement = $word->parent;
     return unless ref $statement eq 'PPI::Statement';
+    return unless _same_element( scalar $statement->schild(0), $word );
+    return if grep { $_->isa('PPI::Token::Word') && $MODIFIER{ $_->content } } $statement->schildren;
     my $scope = $statement->parent;
     return unless $scope && ( $scope->isa('PPI::Structure::Block') || $scope->isa('PPI::Document') );
 
@@ -116,7 +121,7 @@ sub _edits ( $word, $handle ) {
         @{ $doc->find('PPI::Token::Word') || [] };
     return unless @opens == 1;
 
-    my $var      = _var_name( $text, $name );
+    my $var      = _var_name( $text, $name ) // return;
     my $open_sub = _enclosing_sub($word);
     my @edits    = ( [ $handle, "my \$$var" ] );
     my ( $after_open, $package_since_open );
@@ -147,6 +152,7 @@ sub _edits ( $word, $handle ) {
 
         return unless $after_open && !$package_since_open;
         return unless _inside( $token, $scope );
+        return if _inside( $token, $statement );
         return unless _same_element( scalar _enclosing_sub($token), $open_sub );
 
         if ( $token->isa('PPI::Token::QuoteLike::Readline') ) {
@@ -237,7 +243,7 @@ sub _var_name ( $text, $name ) {
         next if $RESERVED_VAR{$candidate};
         return $candidate unless $text =~ /[\$\@\%]\{?\Q$candidate\E\b/;
     }
-    die "No free variable name for $name\n";
+    return;
 }
 
 1;
