@@ -1,0 +1,10 @@
+#!perl
+
+use v5.36;
+
+use Puff::CLI ();
+
+exit Puff::CLI->main;
+
+# PODNAME: puff
+# ABSTRACT: A Perl linter and fixer, inspired by ruff
