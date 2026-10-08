@@ -422,7 +422,8 @@ names with `::` or `-`, v-strings, quote-like operator names such as `s` and
 `y`, and multi-key slices keep their quotes.
 
 **Q003** is not selected by default either. It reports `''` and `""`, which
-are easy to misread, and the safe fix rewrites them as `q{}`.
+are easy to misread, and the safe fix rewrites them as `q{}`. An empty hash
+key such as `$h{''}` is left alone, since `$h{q{}}` is harder to read.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,

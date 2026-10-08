@@ -4,7 +4,7 @@ use v5.36;
 
 use Exporter qw( import );
 
-our @EXPORT_OK = qw( is_builtin_call call_args is_constant_string );
+our @EXPORT_OK = qw( is_builtin_call call_args is_constant_string is_sole_subscript_key );
 
 my $INTERPOLATES = qr/(?<!\\)(?:\\\\)*[\$\@]/;
 
@@ -73,6 +73,16 @@ sub is_constant_string ($elem) {
     return 0;
 }
 
+sub is_sole_subscript_key ($elem) {
+    my $stmt = $elem->parent or return 0;
+    return 0 unless $stmt->isa('PPI::Statement::Expression') || ref $stmt eq 'PPI::Statement';
+    return 0 unless $stmt->schildren == 1;
+    my $subscript = $stmt->parent or return 0;
+    return 0 unless $subscript->isa('PPI::Structure::Subscript');
+    return 0 unless $subscript->start && $subscript->start->content eq '{';
+    return $subscript->schildren == 1;
+}
+
 1;
 
 # ABSTRACT: PPI helpers for recognising built-in calls and their arguments
@@ -88,6 +98,7 @@ function call rather than a method, hash key, sub name, subscript or part of
 a C<package>/C<use>/C<no> statement. C<call_args($word)> returns the call's
 arguments as an arrayref of arrayrefs of significant PPI elements, split on
 top-level commas. C<is_constant_string($elem)> is true for a quote or heredoc
-with nothing interpolated.
+with nothing interpolated. C<is_sole_subscript_key($elem)> is true when
+C<$elem> is the only thing inside a C<{...}> subscript, as in C<$h{'key'}>.
 
 =cut

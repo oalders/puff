@@ -3,6 +3,8 @@ package Puff::Rule::Style::EmptyQuotes;
 use v5.36;
 use parent 'Puff::Rule';
 
+use Puff::PPIUtil qw( is_sole_subscript_key );
+
 sub code       {'Q003'}
 sub summary    {'Use q{} for an empty string'}
 sub applies_to { [ 'PPI::Token::Quote::Single', 'PPI::Token::Quote::Double' ] }
@@ -16,7 +18,8 @@ sub explanation {
 
         The rule reports `''` and `""`, and the fix rewrites them as `q{}`.
         The value is the same empty string, so the fix is safe. `q()`,
-        `qq{}` and other quote-like forms are left alone.
+        `qq{}` and other quote-like forms are left alone, and so is an empty
+        hash key such as `$h{''}`, where `$h{q{}}` would be harder to read.
 
         This rule is not selected by default. Turn it on with `--select Q` or
         `extend-select = ["Q"]`.
@@ -36,7 +39,8 @@ sub fix ( $self, $violation, $fix ) {
 
 sub _is_empty ($elem) {
     my $content = $elem->content;
-    return $content eq q{''} || $content eq q{""};
+    return 0 unless $content eq q{''} || $content eq q{""};
+    return !is_sole_subscript_key($elem);
 }
 
 1;
@@ -50,7 +54,8 @@ __END__
 =head1 DESCRIPTION
 
 Reports C<''> and C<""> and fixes them by writing C<q{}>. The fix is safe:
-the value is the same empty string.
+the value is the same empty string. An empty string that is the only key
+in a hash subscript (C<< $h{''} >>) is not reported.
 
 Not selected by default; select it with C<Q> or C<Q003>.
 

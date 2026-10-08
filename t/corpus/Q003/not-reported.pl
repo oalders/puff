@@ -7,3 +7,6 @@ print <<'EOT';
 ''
 EOT
 # ''
+my %h;
+my $r = {};
+print $h{''}, $h{ "" }, $r->{''}, @h{''};

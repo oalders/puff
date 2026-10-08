@@ -2,7 +2,7 @@ use v5.36;
 use Test2::V0;
 
 use PPI ();
-use Puff::PPIUtil qw( is_builtin_call call_args );
+use Puff::PPIUtil qw( is_builtin_call call_args is_sole_subscript_key );
 
 my @cases = (
     [ 'open(FH, "<$f");',                  1, 'FH|"<$f"' ],
@@ -32,6 +32,24 @@ for my $case (@cases) {
         return unless $builtin;
         is( join( '|', map { join ' ', map { $_->content } @{$_} } @{ call_args($word) } ), $args, 'args' );
     };
+}
+
+my @subscript_cases = (
+    [ q{$h{'k'};},             1 ],
+    [ q{$h->{ "k" };},         1 ],
+    [ q{@h{'k'};},             1 ],
+    [ q{@h{'k', 'j'};},        0 ],
+    [ q{$h{'k' . $x};},        0 ],
+    [ q{$a['k'];},             0 ],
+    [ q{${'k'};},              0 ],
+    [ q{f('k');},              0 ],
+);
+
+for my $case (@subscript_cases) {
+    my ( $code, $want ) = @{$case};
+    my $doc   = PPI::Document->new( \$code );
+    my $quote = $doc->find_first('PPI::Token::Quote');
+    is( is_sole_subscript_key($quote) ? 1 : 0, $want, "is_sole_subscript_key: $code" );
 }
 
 done_testing;

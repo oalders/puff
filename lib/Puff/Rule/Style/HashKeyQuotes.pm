@@ -3,7 +3,8 @@ package Puff::Rule::Style::HashKeyQuotes;
 use v5.36;
 use parent 'Puff::Rule';
 
-use PPI ();
+use PPI           ();
+use Puff::PPIUtil qw( is_sole_subscript_key );
 
 sub code       {'Q002'}
 sub summary    {'Hash key does not need quotes'}
@@ -58,20 +59,9 @@ sub _bare_key ($elem) {
     my $key = $elem->string;
     return unless $key =~ /\A[A-Za-z_][A-Za-z0-9_]*\z/;
     return if $SPECIAL{$key} || $key =~ /\A__.*__\z/;
-    my $context = _is_subscript_key($elem) ? 'subscript' : _is_fat_comma_key($elem) ? 'fat-comma' : return;
+    my $context = is_sole_subscript_key($elem) ? 'subscript' : _is_fat_comma_key($elem) ? 'fat-comma' : return;
     return unless _ppi_sees_word( $key, $context );
     return $key;
-}
-
-# $h{'key'}: the quote is the only thing inside a {...} subscript.
-sub _is_subscript_key ($elem) {
-    my $stmt = $elem->parent or return 0;
-    return 0 unless $stmt->isa('PPI::Statement::Expression') || ref $stmt eq 'PPI::Statement';
-    return 0 unless $stmt->schildren == 1;
-    my $subscript = $stmt->parent or return 0;
-    return 0 unless $subscript->isa('PPI::Structure::Subscript');
-    return 0 unless $subscript->start && $subscript->start->content eq '{';
-    return $subscript->schildren == 1;
 }
 
 # 'key' => ...: the next significant token is a fat comma.
