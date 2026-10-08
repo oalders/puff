@@ -3,3 +3,4 @@ local/
 Puff-*
 *.bak
 .tmp/
+.superpowers/
