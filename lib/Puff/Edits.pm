@@ -33,7 +33,7 @@ sub apply ( $text, $fixes ) {
         my @new;
         for my $edit ( @{ $fix->{edits} } ) {
             next if grep { _same( $edit, $_ ) } @edits, @new;
-            for my $other (@edits) {
+            for my $other ( @edits, @new ) {
                 if ( _conflicts( $edit, $other ) ) {
                     push @deferred, $fix;
                     next FIX;
@@ -77,8 +77,9 @@ C<< { edits => [ { start, end, text } ], key => [ $start, $code, $line ], id => 
 with half-open character offsets, and returns C<($new_text, \@accepted,
 \@deferred)>.
 
-Fixes are tried in C<key> order. A fix is accepted whole or deferred whole.
-Two replacements conflict when their ranges overlap; an insertion at X
+Fixes are tried in C<key> order. A fix is accepted whole or deferred whole;
+it is deferred when one of its edits conflicts with an accepted edit or with
+another of its own edits. Two replacements conflict when their ranges overlap; an insertion at X
 conflicts with a replacement C<[s,e)> only when C<s E<lt> X E<lt> e>. An edit
 identical to an accepted one is dropped. Insertions at one offset keep their
 accepted order.

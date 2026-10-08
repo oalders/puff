@@ -146,8 +146,13 @@ C<fix> will decline.
 
 Called for a violation whose C<fixable> is true and whose rule's
 C<fix_safety> is allowed in the current mode. Record edits on the
-L</"Puff::Fix object"> C<$fix> and return true. Return false, record no
-edits, or die to decline; the file is then left alone for that violation.
+L</"Puff::Fix object"> C<$fix> and return true. To decline (leave this
+violation unfixed, with no error), return false, record no edits, or call
+C<< Puff::Fix->decline($why) >>; any edits already recorded are thrown away.
+If C<fix> dies any other way, puff reports C<rule CODE fix failed: MESSAGE>
+as an error for the file (exit code 2) and writes none of the file's
+fixes.
+
 C<< $violation->element >> is the PPI element C<check> was given. Edits are
 text offsets, not tree changes: do not modify the PPI tree.
 
@@ -221,12 +226,18 @@ C<< $fix->source->end_of($elem) >>.
 
 The L<Puff::Source> for the text being fixed.
 
+=item Puff::Fix->decline($why)
+
+Declines the fix by dying with a C<Puff::Fix::Decline>. Use it from deep
+inside your own helper code, where returning false is awkward.
+
 =back
 
-C<replace>, C<insert_before>, C<insert_after> and C<delete> die if the
-element is or contains a C<PPI::Token::HereDoc> (the body of a here-document
-is not part of the element's text). The engine treats that as the rule
-declining. C<replace_range> does no such check.
+C<replace>, C<insert_before>, C<insert_after> and C<delete> call
+C<< Puff::Fix->decline >> if the element is or contains a
+C<PPI::Token::HereDoc> (the body of a here-document is not part of the
+element's text), so the rule declines. C<replace_range> does no such
+check.
 
 All the edits recorded in one C<fix> call are applied together or not at
 all.

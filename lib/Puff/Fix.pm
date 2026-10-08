@@ -9,10 +9,14 @@ sub new ( $class, %args ) {
 sub edits  ($self) { $self->{edits} }
 sub source ($self) { $self->{source} }
 
+sub decline ( $class, $message = 'fix declined' ) {
+    die Puff::Fix::Decline->new($message);
+}
+
 sub _check_no_heredoc ( $elem, $what ) {
     my $has = $elem->isa('PPI::Token::HereDoc')
         || ( $elem->isa('PPI::Node') && $elem->find_first('PPI::Token::HereDoc') );
-    die "Cannot $what an element containing a heredoc\n" if $has;
+    __PACKAGE__->decline("Cannot $what an element containing a heredoc") if $has;
     return;
 }
 
@@ -49,6 +53,20 @@ sub delete ( $self, $elem ) {
     $self->_add( $src->start_of($elem), $src->end_of($elem), '' );
 }
 
+package Puff::Fix::Decline;
+
+use v5.36;
+
+use overload '""' => sub ( $self, @ ) { $self->{message} . "\n" }, fallback => 1;
+
+sub new ( $class, $message ) {
+    return bless { message => $message }, $class;
+}
+
+sub message ($self) { $self->{message} }
+
+package Puff::Fix;
+
 1;
 
 # ABSTRACT: Rule-facing helpers that record text edits
@@ -61,9 +79,15 @@ __END__
 
 Records C<< {start, end, text} >> edits (character offsets) for one fix.
 C<replace>, C<insert_before>, C<insert_after> and C<delete> take a PPI
-element and die with a message mentioning "heredoc" when the element is or
-contains a C<PPI::Token::HereDoc>; the engine treats that as the rule
-declining. C<replace_range> takes raw offsets (use C<< $fix->source->start_of($elem) >> to
-find them) and does no such check.
+element and decline (see below), with a message mentioning "heredoc", when
+the element is or contains a C<PPI::Token::HereDoc>. C<replace_range> takes
+raw offsets (use C<< $fix->source->start_of($elem) >> to find them) and does
+no such check.
+
+C<< Puff::Fix->decline($message) >> dies with a C<Puff::Fix::Decline>
+object (C<message> returns the text; it stringifies to it). The engine
+treats that as the rule declining to fix the violation: no error, the
+file's other fixes still apply. Any other exception from a rule's C<fix> is
+an error.
 
 =cut

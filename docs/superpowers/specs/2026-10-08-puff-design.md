@@ -92,8 +92,12 @@ sub fix   ($self, $violation, $fix) { ...; return 1 }   # return false to declin
 
 - `check` returns a list (zero or more violations). `$doc` is the whole
   document, so a rule can look at more than the element it was given.
-- `fix` may decline for an individual violation by returning false or by
-  dying; any edits it already recorded are thrown away. A violation from a
+- `fix` may decline for an individual violation by returning false,
+  recording no edits, or calling `Puff::Fix->decline($why)` (which dies
+  with a `Puff::Fix::Decline`); any edits it already recorded are thrown
+  away. The `Puff::Fix` helpers that take an element decline this way when
+  the element contains a heredoc. Any other exception from `fix` is an
+  error (see "Applying fixes"). A violation from a
   rule whose `fix_safety` is `none` has no fix.
 - `$self->option('name')` returns the configured value, falling back to the
   default.
@@ -194,12 +198,17 @@ whatever its name.
 
 1. Work out the fixes for every unsuppressed violation whose rule is
    fixable in the current mode and which isn't marked `fixable => 0`.
+   A `fix` that returns false, records no edits or throws
+   `Puff::Fix::Decline` is a silent decline. A `fix` that dies with
+   anything else is an error: abandon fixing this file, keep the original
+   text and report `rule CODE fix failed: MESSAGE` (exit 2).
 2. Sort the fixes by the start offset of their earliest edit, then by rule
    code, then by line.
 3. Go through them in that order. A fix is **accepted** if none of its
    edits conflicts with an edit already accepted, and **deferred** (to the
-   next pass) otherwise. All edits of a fix are accepted together, or none
-   are.
+   next pass) otherwise; it is also deferred when two of its own edits
+   conflict with each other. All edits of a fix are accepted together, or
+   none are.
    - Edits are half-open ranges `[start, end)`. Two replacements or
      deletions conflict if their ranges overlap. An insertion at X
      (start = end = X) conflicts with a replacement `[s, e)` when s < X < e.

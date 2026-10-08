@@ -19,13 +19,14 @@ sub new ( $class, %args ) {
 sub run ( $self, @paths ) {
     @paths = ('.') unless @paths;
     my ( @files, %seen );
+    my $first = sub ($file) { !$seen{ path($file)->realpath }++ };    # a.pl and $PWD/a.pl are one file
     for my $given (@paths) {
         my $p = path($given);
         if ( $p->is_dir ) {
-            push @files, grep { !$seen{$_}++ } $self->_find($p);
+            push @files, grep { $first->($_) } $self->_find($p);
         }
         elsif ( -e $p ) {
-            push @files, $p->stringify unless $seen{$p}++;
+            push @files, $p->stringify if $first->($p);
         }
         else {
             push @files, { file => $p->stringify, error => 'No such file or directory' };
@@ -69,7 +70,11 @@ sub _process ( $self, $file ) {
         return \%out;
     }
 
-    my $result = $self->{engine}->process_source( $src, file => $file );
+    my $result = eval { $self->{engine}->process_source( $src, file => $file ) };
+    if ( !$result ) {
+        $out{error} = ( $@ || 'engine failed' ) =~ s/\s+\z//r;
+        return \%out;
+    }
     $out{violations}    = $result->{violations};
     $out{error}         = defined $result->{error} ? $result->{error} =~ s/\s+\z//r : undef;
     $out{fixes_skipped} = $result->{fixes_skipped};
@@ -79,9 +84,10 @@ sub _process ( $self, $file ) {
     $out{fixed_count} = $result->{fixed_count};
 
     if ( $self->{mode} eq 'diff' ) {
+        my $relative = $file =~ s{\A/+}{}r;
         $out{diff} = diff(
             \$src->text, \$new,
-            { STYLE => 'Unified', FILENAME_A => "a/$file", FILENAME_B => "b/$file" }
+            { STYLE => 'Unified', FILENAME_A => "a/$relative", FILENAME_B => "b/$relative" }
         );
     }
     elsif ( $self->{mode} eq 'fix' ) {
@@ -120,7 +126,9 @@ C<run> checks the given paths (default C<.>). Directories are searched
 recursively for C<*.pl>, C<*.pm>, C<*.t> and C<*.psgi> files, skipping
 anything the config's C<exclude> matches, relative to the directory being
 searched; symlinked directories are not followed. A file named explicitly
-is always checked, whatever its name.
+is always checked, whatever its name. A file reached twice (named twice,
+by different spellings of its path, or named and also found in a directory)
+is checked once.
 
 C<mode> is C<lint> (report only), C<fix> (write fixed files, only when the
 text changed) or C<diff> (compute a unified diff, write nothing). The
@@ -128,8 +136,8 @@ engine's C<fix_mode> decides which fixes are worked out.
 
 C<run> returns C<< { files => [...], exit_code => N } >>. Each file entry
 has C<file>, C<violations> (remaining), C<fixed_count>, and when relevant
-C<error> (read, parse, rule, fix or write failure; the file is left
-unchanged), C<fixes_skipped>, C<diff> (diff mode) and C<written> (fix mode).
+C<error> (read, parse, rule, engine, fix or write failure; the file is
+left unchanged, and other files are still processed), C<fixes_skipped>, C<diff> (diff mode) and C<written> (fix mode).
 
 The exit code is 2 if any file has an error, else 1 if violations remain or
 diff mode would change something, else 0.

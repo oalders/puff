@@ -58,6 +58,14 @@ subtest 'heredoc declines' => sub {
     like( dies { $fix->insert_before( $stmt, 'x' ) }, qr/heredoc/, 'insert_before' );
     like( dies { $fix->insert_after( $stmt, 'x' ) },  qr/heredoc/, 'insert_after' );
     is( $fix->edits, [], 'nothing recorded' );
+    isa_ok( dies { $fix->replace( $stmt, 'x' ) }, 'Puff::Fix::Decline' );
+};
+
+subtest 'decline' => sub {
+    my $err = dies { Puff::Fix->decline('no way') };
+    isa_ok( $err, 'Puff::Fix::Decline' );
+    is( $err->message, 'no way', 'message' );
+    like( "$err", qr/\Ano way/, 'stringifies to the message' );
 };
 
 package My::Rule {

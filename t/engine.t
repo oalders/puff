@@ -176,11 +176,90 @@ subtest 'CRLF lint only does not mention skipped fixes' => sub {
     is( $result->{violations}[0]->fixable, 0, 'not offered as fixable' );
 };
 
-subtest 'fix that dies is a decline' => sub {
+subtest 'fix that dies is an error' => sub {
     my $result = run_engine( engine( 'safe', qw( T006 T001 ) ), "boom; foo;\n" );
-    is( $result->{new_text},    "boom; bar;\n", 'other fixes still applied' );
-    is( summary($result),       [ [ 'T006', 1, 1 ] ], 'declined violation reported' );
+    is( $result->{error},       'rule T006 fix failed: nope', 'error names the rule' );
+    is( $result->{new_text},    undef,                        'file left unfixed' );
+    is( $result->{fixed_count}, 0,                            'nothing fixed' );
+    is( summary($result), [ [ 'T006', 1, 1 ], [ 'T001', 1, 7 ] ], 'violations of the original text' );
+};
+
+package T010 {    # fix declines with Puff::Fix->decline
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T010'}
+    sub fix_safety {'safe'}
+    sub from       {'nah'}
+    sub fix ( $self, $violation, $fix ) { Puff::Fix->decline('not today') }
+}
+
+package T011 {    # fix touches a heredoc, which declines
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T011'}
+    sub fix_safety {'safe'}
+    sub applies_to {'PPI::Statement'}
+
+    sub check ( $self, $elem, $doc ) {
+        return unless $elem->find_first('PPI::Token::HereDoc');
+        return $self->violation( $elem, message => 'heredoc' );
+    }
+
+    sub fix ( $self, $violation, $fix ) {
+        $fix->replace( $violation->element, 'x;' );
+        return 1;
+    }
+}
+
+package main;
+
+subtest 'Puff::Fix->decline is a silent decline' => sub {
+    my $result = run_engine( engine( 'safe', qw( T010 T001 ) ), "nah; foo;\n" );
+    is( $result->{error},       undef,           'no error' );
+    is( $result->{new_text},    "nah; bar;\n",   'other fixes still applied' );
+    is( summary($result),       [ [ 'T010', 1, 1 ] ], 'declined violation reported' );
     is( $result->{fixed_count}, 1,                    'only the applied fix counted' );
+
+    $result = run_engine( engine( 'safe', 'T011' ), "print <<EOT;\nhi\nEOT\n" );
+    is( $result->{error},    undef, 'heredoc guard declines without an error' );
+    is( $result->{new_text}, undef, 'nothing changed' );
+};
+
+package T012 {    # one fix whose own edits overlap
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T012'}
+    sub fix_safety {'safe'}
+    sub from       {'foo'}
+
+    sub fix ( $self, $violation, $fix ) {
+        my $start = $fix->source->start_of( $violation->element );
+        $fix->replace_range( $start,     $start + 2, 'AB' );
+        $fix->replace_range( $start + 1, $start + 3, 'CD' );
+        return 1;
+    }
+}
+
+package T013 {    # check returns something that is not a violation
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code {'T013'}
+    sub check ( $self, $elem, $doc ) { return 'oops' }
+}
+
+package main;
+
+subtest 'a fix whose own edits overlap is not applied' => sub {
+    my $result = run_engine( engine( 'safe', 'T012' ), "foo;\n" );
+    is( $result->{error},    undef, 'no error' );
+    is( $result->{new_text}, undef, 'text unchanged' );
+    is( summary($result), [ [ 'T012', 1, 1 ] ], 'still reported' );
+};
+
+subtest 'check returning a non-violation' => sub {
+    my $result = run_engine( engine( 'none', qw( T013 T001 ) ), "foo;\n" );
+    is( $result->{error}, 'rule T013 failed: check returned a non-violation', 'error names the rule' );
+    is( summary($result), [ [ 'T001', 1, 1 ] ], 'other rules still report' );
 };
 
 subtest 'unparseable source' => sub {

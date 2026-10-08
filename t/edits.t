@@ -113,4 +113,14 @@ subtest 'order comes from key' => sub {
     is $new, 'abcYWXZdefghij', 'start, code (string), line (numeric)';
 };
 
+subtest 'edits of one fix that overlap each other' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [ fix( 2, 'a', [ 2, 5, 'X' ], [ 4, 6, 'Y' ] ), fix( 8, 'b', [ 8, 9, '_' ] ) ]
+    );
+    is $new, 'abcdefgh_j', 'only the other fix applied';
+    is ids($acc), ['b'], 'other fix accepted';
+    is ids($def), ['a'], 'self-overlapping fix deferred';
+};
+
 done_testing;

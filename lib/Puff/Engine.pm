@@ -9,7 +9,7 @@ use Puff::Fix          ();
 use Puff::Source       ();
 use Puff::Suppressions ();
 use Puff::Violation    ();
-use Scalar::Util       qw( refaddr );
+use Scalar::Util       qw( blessed refaddr );
 
 my $MAX_PASSES   = 10;
 my $P001_SUMMARY = 'suppression comment must list codes';
@@ -71,8 +71,9 @@ sub process_source ( $self, $src, %args ) {
 # pass because PPI drops token locations when its document is destroyed.
 sub _fix_loop ( $self, $src, $doc, $violations ) {
     for my $pass ( 1 .. $MAX_PASSES + 1 ) {
-        my @fixes = $self->_collect_fixes( $src, $violations );
-        my ($text) = Puff::Edits::apply( $src->text, \@fixes );
+        my ( $fixes, $fix_error ) = $self->_collect_fixes( $src, $violations );
+        return ( undef, undef, $fix_error ) if $fix_error;
+        my ($text) = Puff::Edits::apply( $src->text, $fixes );
         return ( $src->text, $violations, undef ) if $text eq $src->text;
         return ( undef, undef, 'fix loop did not converge' ) if $pass > $MAX_PASSES;
 
@@ -84,11 +85,16 @@ sub _fix_loop ( $self, $src, $doc, $violations ) {
     die 'unreachable';
 }
 
+# Returns (\@fixes, $error). A Puff::Fix::Decline exception is a decline;
+# any other exception is an error and no fixes are applied.
 sub _collect_fixes ( $self, $src, $violations ) {
     my @fixes;
     for my $v ( grep { $self->_fixable_in_mode($_) } @$violations ) {
         my $fix = Puff::Fix->new( source => $src );
         my $ok  = eval { $v->rule->fix( $v, $fix ) };
+        if ( !defined $ok && $@ && !( blessed $@ && $@->isa('Puff::Fix::Decline') ) ) {
+            return ( undef, sprintf( 'rule %s fix failed: %s', $v->code, "$@" =~ s/\s+\z//r ) );
+        }
         my @edits = @{ $fix->edits };
         next unless $ok && @edits;
         push @fixes, {
@@ -97,7 +103,7 @@ sub _collect_fixes ( $self, $src, $violations ) {
             id    => $v,
         };
     }
-    return @fixes;
+    return ( \@fixes, undef );
 }
 
 sub _fixable_in_mode ( $self, $v ) {
@@ -127,6 +133,7 @@ sub _lint ( $self, $src, $doc ) {
         my @found;
         my $ok = eval {
             push @found, $rule->check( $_, $doc ) for @elems;
+            die "check returned a non-violation\n" if grep { !( blessed $_ && $_->isa('Puff::Violation') ) } @found;
             1;
         };
         if ( !$ok ) {
@@ -174,8 +181,10 @@ C<process_source> parses the text with PPI, runs each rule's C<check> on the
 elements matching its C<applies_to>, drops suppressed violations and adds a
 P001 violation for every suppression comment without codes. When fixing, it
 applies fixes through L<Puff::Edits>, re-parses and re-lints, and repeats
-while the text changes, for at most 10 passes. A C<fix> that dies or returns
-false is a decline. It never writes files. It returns a hashref:
+while the text changes, for at most 10 passes. A C<fix> that returns false,
+records no edits or dies with a L<Puff::Fix::Decline> (C<< Puff::Fix->decline >>)
+is a decline; a C<fix> that dies with anything else is an error. It never
+writes files. It returns a hashref:
 
 =over
 
@@ -202,9 +211,11 @@ below 0); 0 when C<new_text> is undef.
 
 The PPI error when the text (or the fixed text) does not parse, or
 C<fix loop did not converge> when the text still changes after 10 passes.
-When a rule's C<check> dies, C<rule CODE failed: MESSAGE> (several joined
-with C<; >); that rule's violations for the file are dropped and the other
-rules still report. A rule failure in the original lint means no fixes are
+When a rule's C<check> dies or returns something that is not a
+L<Puff::Violation>, C<rule CODE failed: MESSAGE> (several joined with
+C<; >); that rule's violations for the file are dropped and the other rules
+still report. When a rule's C<fix> dies with anything but a decline,
+C<rule CODE fix failed: MESSAGE> and fixing is abandoned for the file. A rule failure in the original lint means no fixes are
 attempted; one while re-linting fixed text abandons fixing. In every error
 case the original text is kept and the violations are those of the
 original lint.

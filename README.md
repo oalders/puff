@@ -141,8 +141,9 @@ How fixes are applied:
 - puff computes the fixes for all violations, applies the ones that do not
   overlap, re-parses the file, lints it again and repeats while the text
   changes, up to 10 passes.
-- If the fixed text no longer parses, or the passes do not converge, the
-  file is left unchanged and puff reports an error (exit `2`).
+- If the fixed text no longer parses, the passes do not converge, or a
+  rule's fix fails with an error, the file is left unchanged and puff
+  reports an error (exit `2`).
 - A file is written once, only if its text changed.
 - puff never runs `perl -c` on your code.
 - Files containing a carriage return (CRLF or lone CR line endings) are
@@ -359,7 +360,9 @@ The points to know:
   `fixable => 0` for a violation that has no fix, so the report does not
   offer one.
 - `fix` records edits on the `$fix` object and returns true, or returns false
-  to decline. The edits are text offsets into the file, so you can change
+  (or calls `Puff::Fix->decline($why)`) to decline. If `fix` dies any other
+  way, that is a bug in the rule: puff reports an error for the file
+  (exit `2`) and writes none of its fixes. The edits are text offsets into the file, so you can change
   part of an element with `replace_range`.
 - Use `fix_safety => 'unsafe'` for any fix that can change behaviour.
 - Rules that ship with puff go under `lib/Puff/Rule/` and are found
