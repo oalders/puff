@@ -17,17 +17,19 @@ sub main ($class) {
     my $ok = eval { $class->run; 1 };
     my $error = $@;
 
-    # App::Cmd reports an unknown command and then exits 1 from an END
-    # block; that is a usage error, which is exit 2 for puff.
-    if ($App::Cmd::_bad) {
-        $App::Cmd::_bad = 0;
-        return 2;
-    }
     if ( !$ok ) {
         print STDERR $error =~ /\n\z/ ? $error : "$error\n";
         return 2;
     }
     return $EXIT_CODE;
+}
+
+# App::Cmd prints an unknown command's usage to STDOUT and exits 1 from an
+# END block; puff treats it as a usage error (STDERR, exit 2) instead.
+sub get_command ( $self, @args ) {
+    my ( $cmd, $opt, @rest ) = $self->SUPER::get_command(@args);
+    die "Unrecognized command: $cmd\n" if defined $cmd && !$self->plugin_for($cmd);
+    return ( $cmd, $opt, @rest );
 }
 
 sub config_opt_spec ($class) {

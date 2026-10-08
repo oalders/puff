@@ -71,7 +71,7 @@ sub _process ( $self, $file ) {
 
     my $result = $self->{engine}->process_source( $src, file => $file );
     $out{violations}    = $result->{violations};
-    $out{error}         = $result->{error};
+    $out{error}         = defined $result->{error} ? $result->{error} =~ s/\s+\z//r : undef;
     $out{fixes_skipped} = $result->{fixes_skipped};
 
     my $new = $result->{new_text};

@@ -9,7 +9,7 @@ my $BOM = "\xEF\xBB\xBF";
 
 sub from_file ( $class, $path ) {
     my $bytes = eval { path($path)->slurp_raw };
-    die "Cannot read $path: " . ( $@ =~ s/\s+\z//r ) . "\n" unless defined $bytes;
+    die "Cannot read $path: " . ( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n" unless defined $bytes;
 
     my $has_bom = $bytes =~ s/\A\Q$BOM\E//;
     my ( $text, $encoding );

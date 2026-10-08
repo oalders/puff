@@ -12,7 +12,7 @@ sub new ( $class, %args ) {
 sub report ( $self, $run, $out, $err ) {
     my @files = sort { $a->{file} cmp $b->{file} } @{ $run->{files} };
 
-    _errors( \@files, $err );
+    $self->report_errors( \@files, $err );
 
     if ( $self->{mode} eq 'diff' ) {
         my @changed = grep { defined $_->{diff} } @files;
@@ -46,9 +46,9 @@ sub report ( $self, $run, $out, $err ) {
     return;
 }
 
-sub _errors ( $files, $err ) {
+sub report_errors ( $class, $files, $err ) {
     for my $file (@$files) {
-        print {$err} "$file->{file}: error: $file->{error}\n" if defined $file->{error};
+        print {$err} "$file->{file}: error: $file->{error}\n"   if defined $file->{error};
         print {$err} "$file->{file}: $file->{fixes_skipped}\n" if defined $file->{fixes_skipped};
     }
     return;
@@ -96,6 +96,8 @@ violations in M files.>
 In C<diff> mode it prints each file's unified diff instead, and C<Would fix
 N violations in M files.> on the error handle.
 
-File errors and skipped fixes go to the error handle.
+File errors and skipped fixes go to the error handle;
+C<< Puff::Reporter::Text->report_errors(\@files, $err) >> prints them and is
+shared with L<Puff::Reporter::JSON>.
 
 =cut

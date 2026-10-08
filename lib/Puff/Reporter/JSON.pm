@@ -2,7 +2,8 @@ package Puff::Reporter::JSON;
 
 use v5.36;
 
-use JSON::PP ();
+use JSON::PP             ();
+use Puff::Reporter::Text ();
 
 sub new ( $class, %args ) {
     return bless {}, $class;
@@ -10,10 +11,9 @@ sub new ( $class, %args ) {
 
 sub report ( $self, $run, $out, $err ) {
     my @files = sort { $a->{file} cmp $b->{file} } @{ $run->{files} };
+    Puff::Reporter::Text->report_errors( \@files, $err );
     my @items;
     for my $file (@files) {
-        print {$err} "$file->{file}: error: $file->{error}\n"   if defined $file->{error};
-        print {$err} "$file->{file}: $file->{fixes_skipped}\n" if defined $file->{fixes_skipped};
         for my $v ( @{ $file->{violations} } ) {
             push @items, {
                 code    => $v->code,

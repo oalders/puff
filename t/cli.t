@@ -116,6 +116,13 @@ subtest 'check --fix --unsafe-fixes rewrites files' => sub {
     ( $out, $err, $exit ) = puff( $dir, 'check', 'rand.pl', 'bin' );
     is( $exit, 0, 'second check of the fully fixed files exits 0' ) or diag $out, $err;
     like( $out, qr{^Found 0 violations\.$}m, 'no violations' );
+
+    # S002's corpus still has bareword handles (S003), so fix it with S002 alone.
+    ( $keep, $dir ) = project( 'lib/two_arg.pl' => 'S002/fixed.pl' );
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--fix', '--unsafe-fixes', '--select', 'S002' );
+    is( $exit, 0, 'S002-only fix leaves no S002 violations' ) or diag $out, $err;
+    is( $dir->child('lib/two_arg.pl')->slurp_raw, corpus('S002/fixed.fixed.pl')->slurp_raw,
+        'lib/two_arg.pl matches .fixed.pl' );
 };
 
 subtest 'check --fix that fixes everything exits 0' => sub {
@@ -235,6 +242,18 @@ subtest 'errors exit 2' => sub {
     is( $exit, 2, 'missing path exits 2' );
     like( $err, qr/missing\.pl/, 'names the path' );
 
+    my $unreadable = $dir->child('unreadable.pl');
+    $unreadable->spew_utf8("1;\n");
+    chmod 0, "$unreadable";
+    if ( !-r $unreadable ) {
+        ( $out, $err, $exit ) = puff( $dir, 'check', 'unreadable.pl' );
+        is( $exit, 2, 'unreadable file exits 2' );
+        like( $err, qr/^unreadable\.pl: error: Cannot read unreadable\.pl: .*Permission denied$/m,
+            'read error without an internal source location' );
+    }
+    chmod 0644, "$unreadable";
+    $unreadable->remove;
+
     ( $out, $err, $exit ) = puff( $dir, 'check', 'missing.pl', 'rand.pl' );
     is( $exit, 2, '2 takes priority over 1' );
     like( $out, qr/^rand\.pl:4:9: S001/m, 'other files still processed' );
@@ -247,6 +266,8 @@ subtest 'errors exit 2' => sub {
 
     ( $out, $err, $exit ) = puff( $dir, 'frobnicate' );
     is( $exit, 2, 'unknown command exits 2' );
+    is( $out,  '', 'nothing on STDOUT' );
+    like( $err, qr/^Unrecognized command: frobnicate$/m, 'error on STDERR' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S999' );
     is( $exit, 0, 'selecting nothing finds nothing' );
