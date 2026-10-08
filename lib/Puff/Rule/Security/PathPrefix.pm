@@ -16,8 +16,7 @@ sub explanation {
         Checking that a path is inside a directory by testing for a string
         prefix lets sibling directories through: `/srv/www-private` starts
         with `/srv/www`. When the check guards file access, that is a path
-        traversal (CWE-22). Several CPAN web frameworks and static file
-        servers have had CVEs for this.
+        traversal (CWE-22).
 
         The rule reports, when the prefix is a variable whose name looks
         like a directory (it contains root, dir, base, home, top, parent,

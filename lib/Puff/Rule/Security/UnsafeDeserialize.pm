@@ -29,8 +29,7 @@ sub explanation {
         data names, so data an attacker wrote can run those classes' hooks
         and destructors, and with `$Storable::Eval` set it runs code directly.
         YAML loaders do the same when told to load blessed objects or code
-        (CWE-502). YAML and WWW::Mechanize::Cached have both had CVEs for
-        this.
+        (CWE-502).
 
         The rule reports:
 

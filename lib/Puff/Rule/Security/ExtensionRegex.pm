@@ -16,8 +16,7 @@ sub explanation {
         `evil.pl.txt`, and `qr/\Q$ext\E/` accepts `file.pdf.exe` when
         `$ext` is `pdf`. `$` and `\Z` also match before a trailing newline,
         so `/\.jpg$/` accepts `"x.jpg\n"`, a different file name (CWE-184,
-        incomplete list of disallowed inputs). Upload filters and CGI
-        dispatch have had CVEs for both.
+        incomplete list of disallowed inputs).
 
         The rule reports a match or qr// whose whole pattern is a file
         extension: `\.` followed by a word or a group of words

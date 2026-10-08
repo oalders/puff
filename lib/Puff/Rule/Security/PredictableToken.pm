@@ -20,9 +20,8 @@ sub explanation {
         Hashing the time, the process ID or rand does not make a value
         unpredictable: the hash only hides inputs that an attacker can guess
         or enumerate. A session ID, password-reset token, CSRF token, nonce
-        or salt built this way can be brute forced (CWE-340, CWE-338).
-        Several CPAN session modules have had CVEs for exactly this, such as
-        `md5_hex( time . $$ . rand )`.
+        or salt built this way, such as `md5_hex( time . $$ . rand )`, can be
+        brute forced (CWE-340, CWE-338).
 
         The rule reports md2, md4, md5 and sha* functions (from Digest::MD5,
         Digest::SHA, Crypt::Digest and the like, with any `_hex`, `_base64`,
