@@ -1,6 +1,9 @@
 use v5.36;
 use Test2::V0;
 
+use lib 't/lib';
+use TestCommand qw( run_capture );
+
 # Checks the example rule in the README ("Writing a rule"). The README shows
 # t/lib-rules/NoFixme.pm verbatim, so this test keeps the example working.
 
@@ -14,10 +17,9 @@ my $PUFF  = $root->child( 'bin', 'puff' )->stringify;
 my $RULE  = $root->child( 't', 'lib-rules', 'NoFixme.pm' );
 
 sub puff ( $dir, @args ) {
-    my $cmd  = join ' ', map { quotemeta } @PERL, $PUFF, @args;
     my $orig = getcwd;
     chdir $dir or die "chdir $dir: $!";
-    my $out  = qx{$cmd 2>&1};
+    my $out  = run_capture( undef, @PERL, $PUFF, @args );
     my $exit = $? >> 8;
     chdir $orig or die "chdir $orig: $!";
     return ( $out, $exit );

@@ -3,7 +3,7 @@ package Puff::Rule::Security::TwoArgOpen;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( is_builtin_call call_args );
+use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
 
 # A whole escape sequence at the end of a "..." string: it may stand for
 # whitespace (\x20, \040, \x{20}, \o{40}, \N{SPACE}, \t, ...).
@@ -24,6 +24,9 @@ sub explanation {
         file, `&` duplicates a filehandle and `-` opens STDIN or STDOUT.
         Three-argument open passes the mode separately and takes the filename
         literally.
+
+        `open($fh, '-|')` and `open($fh, '|-')`, which fork instead of opening
+        anything, are not reported.
 
         The fix rewrites `open(FH, "<$file")` as `open(FH, '<', $file)` and
         `open(FH, $file)` as `open(FH, '<', $file)`. It only handles a second
@@ -53,6 +56,7 @@ sub check ( $self, $elem, $doc ) {
     return unless $elem->content eq 'open' && is_builtin_call($elem);
     my $args = call_args($elem);
     return unless @$args == 2;
+    return if _is_fork_open( $args->[1] );
     return $self->violation(
         $elem,
         message => 'Use three-argument open',
@@ -66,6 +70,13 @@ sub fix ( $self, $violation, $fix ) {
     my $text = _replacement( $args->[1] ) // return 0;
     $fix->replace( $args->[1][0], $text );
     return 1;
+}
+
+# open($fh, '-|') and open($fh, '|-') fork; they open no file and run no
+# command, and have no three-argument form.
+sub _is_fork_open ($arg) {
+    return 0 unless @$arg == 1 && $arg->[0]->isa('PPI::Token::Quote') && is_constant_string( $arg->[0] );
+    return $arg->[0]->string =~ /\A\s*(?:-\||\|-)\s*\z/;
 }
 
 # The text that replaces the second argument (a list of significant

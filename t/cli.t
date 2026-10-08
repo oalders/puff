@@ -1,6 +1,9 @@
 use v5.36;
 use Test2::V0;
 
+use lib 't/lib';
+use TestCommand qw( run_capture );
+
 use Cwd        qw( getcwd );
 use JSON::PP   ();
 use Path::Tiny qw( path tempdir );
@@ -12,10 +15,9 @@ my $PUFF = $root->child( 'bin', 'puff' )->stringify;
 # Runs bin/puff in $dir. Returns (stdout, stderr, exit code).
 sub puff ( $dir, @args ) {
     my $err  = path( $dir, '..', 'stderr.txt' );
-    my $cmd  = join ' ', map { quotemeta } @PERL, $PUFF, @args;
     my $orig = getcwd;
     chdir $dir or die "chdir $dir: $!";
-    my $out = qx{$cmd 2>"$err"};
+    my $out  = run_capture( $err, @PERL, $PUFF, @args );
     my $exit = $? >> 8;
     chdir $orig or die "chdir $orig: $!";
     return ( $out, $err->slurp_utf8, $exit );

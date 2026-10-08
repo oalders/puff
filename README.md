@@ -298,8 +298,9 @@ Crypt::PRNG (by name or with `:all`) or from Math::Random::Secure. Where the
 random value becomes a key, token or salt, use `random_bytes` from Crypt::PRNG
 or Crypt::SysRandom instead; puff leaves that rewrite to you.
 
-**S002** reports two-argument `open`. The fix rewrites `open(FH, "<$file")`
-as `open(FH, '<', $file)`. It does not fix a second argument that:
+**S002** reports two-argument `open`, except the forking `open($fh, '-|')`
+and `open($fh, '|-')`. The fix rewrites `open(FH, "<$file")` as
+`open(FH, '<', $file)`. It does not fix a second argument that:
 
 - is anything but a single `'...'` or `"..."` string or a single scalar
   variable;

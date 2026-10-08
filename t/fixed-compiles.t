@@ -1,6 +1,9 @@
 use v5.36;
 use Test2::V0;
 
+use lib 't/lib';
+use TestCommand qw( run_capture );
+
 # Every *.fixed.pl in the corpus is fixer output we vouch for, so it must
 # compile. These are our own fixtures, so running perl -c on them is safe.
 # t/lib-stub stands in for optional modules the fixtures use.
@@ -20,7 +23,7 @@ for my $file (@files) {
         note "skipping $file: $why";
         next;
     }
-    my $out = qx{\Q$^X\E -It/lib-stub -c \Q$file\E 2>&1};
+    my $out = run_capture( undef, $^X, '-It/lib-stub', '-c', $file );
     like( $out, qr/\Q$file\E syntax OK$/m, "$file compiles" ) or diag $out;
 }
 
