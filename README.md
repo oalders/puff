@@ -263,6 +263,7 @@ reported as `P001`:
 | S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
 | S012 | UnsafeDeserialize | Do not deserialize untrusted data with Storable or code-loading YAML | none | [502](https://cwe.mitre.org/data/definitions/502.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
+| Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
@@ -411,6 +412,13 @@ violation where the program reads back only what it wrote. There is no fix.
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
 backslash, `$`, `@`, `'` or `"`, and the safe fix rewrites `"coffee"` as
 `'coffee'`. `qq{...}` and heredocs are left alone.
+
+**Q002** is not selected by default either. It reports a quoted hash key
+that Perl would quote by itself: the only key in a `{...}` subscript
+(`$h{'name'}`) or the string just left of `=>` (`'name' => 1`), when its
+text is a plain ASCII identifier. The safe fix removes the quotes. Numbers,
+names with `::` or `-`, v-strings, quote-like operator names such as `s` and
+`y`, and multi-key slices keep their quotes.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
