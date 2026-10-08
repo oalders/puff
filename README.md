@@ -256,6 +256,15 @@ reported as `P001`:
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |
 | P001 | (built in) | Suppression comment must list codes | none |
 
+Rule codes follow ruff's prefixes where ruff has an equivalent, so a ruff
+user can guess where a rule lives:
+
+| Prefix | Meaning | Ruff equivalent |
+| --- | --- | --- |
+| `S` | Security; selected by default | `S` (flake8-bandit) |
+| `Q` | Quotes | `Q` (flake8-quotes) |
+| `P` | puff's own checks; always on | none |
+
 `puff rule CODE` prints the full explanation of a rule. When a fix is
 declined, the violation is still reported, without a marker.
 
