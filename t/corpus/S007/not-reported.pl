@@ -9,3 +9,8 @@ $h{mktemp} = 2;
 $fh->mktemp('x');
 sub tmpnam { return 1 }
 print 'tmp/x';
+my ( $tfh, $tname ) = tmpnam();
+my @pair = tmpnam();
+( $tfh, $tname ) = File::Temp::tmpnam();
+my @l = ( 1, tmpnam() );
+sub name_and_handle { return tmpnam() }

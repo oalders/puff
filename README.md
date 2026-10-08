@@ -350,8 +350,11 @@ There is no fix.
 
 **S007** reports a string literal naming a file in `/tmp`, `/var/tmp` or
 `/dev/shm` (`"/tmp/report.$$"`, or `'/tmp/' . $name`), and calls to
-`mktemp`, `tmpnam` and `tempnam`. A directory on its own (`DIR => '/tmp'`) is
-not reported. Use File::Temp's `tempfile` or `File::Temp->new` instead. Change
+`mktemp`, `tempnam` and `POSIX::tmpnam`. File::Temp's `tmpnam` is reported
+only in scalar context (`my $name = tmpnam()`, `scalar(tmpnam())`,
+`tmpnam() . $suffix`), where it returns a name without creating the file; in
+list context it creates the file safely. A directory on its own
+(`DIR => '/tmp'`) is not reported. Use File::Temp's `tempfile` or `File::Temp->new` instead. Change
 the directories with:
 
     [rules.S007]

@@ -8,3 +8,11 @@ $f = mktemp('fooXXXX'); # expect: S007
 $f = File::Temp::mktemp('fooXXXX'); # expect: S007
 $f = POSIX::tmpnam(); # expect: S007
 $f = tmpnam(); # expect: S007
+my $g = tmpnam; # expect: S007
+$f = scalar( tmpnam() ) . $$; # expect: S007
+$f = scalar tmpnam(); # expect: S007
+$f = tmpnam() . '.lock'; # expect: S007
+$name->{x}{$f} = File::Temp::tmpnam(); # expect: S007
+$f = $g = tmpnam(); # expect: S007
+$f = File::Temp::tempnam( '/var/run', 'x' ); # expect: S007
+my ( $lfh, $lname ) = POSIX::tmpnam(); # expect: S007
