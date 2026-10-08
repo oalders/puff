@@ -60,7 +60,7 @@ puff check [paths] --fix
 
 | Unit | Responsibility |
 |---|---|
-| `Puff::Source` | Reads a file. Strips and remembers a UTF-8 BOM. Decodes as UTF-8 (strict); if that fails, decodes as Latin-1. Records whether the file uses CRLF line endings. Builds a line-start table (character offset where each line starts) from the decoded text. Converts PPI locations into character offsets: `line_start[line] + rowchar - 1`. Writes text back using the original encoding and BOM, atomically (temp file in the same directory, then rename), keeping file permissions. |
+| `Puff::Source` | Reads a file. Strips and remembers a UTF-8 BOM. Decodes as UTF-8 (strict); if that fails, decodes as Latin-1. Records whether the text contains a carriage return (CRLF or lone CR line endings). Builds a line-start table (character offset where each line starts) from the decoded text. Converts PPI locations into character offsets: `line_start[line] + rowchar - 1`. Writes text back using the original encoding and BOM, atomically (temp file in the same directory, then rename), keeping file permissions; a symlink is resolved first so its target is replaced, not the link. Encoding is strict: a character the original encoding cannot hold is an error, never a `?`. |
 | `Puff::Rule` | Base class for rules. |
 | `Puff::Rules` | Loads rules (`Puff::Rule::*` on @INC, plus every `.pm` under each configured `rule-paths` directory), checks codes, selects rules. |
 | `Puff::Violation` | rule, element, file, line, column, message. Line and column are 1-based, columns counted in characters (`location->[0]`, `location->[1]`). |
@@ -217,8 +217,11 @@ whatever its name.
    `BEGIN` blocks).
 7. Write the file once, at the end, only if the text changed.
 
-**CRLF files** are linted normally, but puff doesn't fix them in the MVP.
-The report says that fixes were skipped because of the line endings.
+**CRLF files** (and any file containing a carriage return, such as lone CR
+line endings) are linted normally, but puff doesn't fix them in the MVP:
+their violations are reported with `fixable` 0, so no fix marker is shown.
+When fixes were asked for, the report says that they were skipped because
+of the line endings.
 
 ## Output
 

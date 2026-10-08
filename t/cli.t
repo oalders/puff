@@ -281,7 +281,8 @@ subtest 'CRLF files are linted but not fixed' => sub {
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--fix', '--unsafe-fixes' );
     is( $exit, 1, 'violations remain' );
     is( $file->slurp_raw, $before, 'file unchanged' );
-    like( $err, qr/^crlf\.pl: CRLF line endings: fixes not applied$/m, 'reported' );
+    like( $err, qr/^crlf\.pl: CR or CRLF line endings: fixes not applied$/m, 'reported' );
+    unlike( $out, qr/\[\*\*?\]|fixable/, 'no fix offered' );
 };
 
 done_testing;

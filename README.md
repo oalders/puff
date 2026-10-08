@@ -145,8 +145,17 @@ How fixes are applied:
   file is left unchanged and puff reports an error (exit `2`).
 - A file is written once, only if its text changed.
 - puff never runs `perl -c` on your code.
-- Files with CRLF line endings are linted but not fixed. puff says so on
-  STDERR.
+- Files containing a carriage return (CRLF or lone CR line endings) are
+  linted but not fixed, and their violations are not offered as fixable.
+  With `--fix` or `--diff`, puff says so on STDERR.
+- A file is written in the encoding it was read in (UTF-8, else Latin-1),
+  keeping a BOM. If a fix adds a character that encoding cannot hold, the
+  file is left unchanged and puff reports an error.
+- The file is replaced atomically (a temporary file in the same directory,
+  renamed over it), keeping its permission bits. A symlink is followed: the
+  file it points to is replaced and the link stays. Ownership is not kept
+  (the new file belongs to whoever runs puff), and a hard link to the old
+  file keeps the old text.
 - A rule may decline to fix a particular violation (see the table below). It
   is still reported, without a marker.
 

@@ -37,12 +37,12 @@ sub _new ( $class, $text, %args ) {
         %args,
         text        => $text,
         line_starts => \@line_starts,
-        has_crlf    => ( $text =~ /\r\n/ ? 1 : 0 ),
+        has_cr      => ( $text =~ /\r/ ? 1 : 0 ),
     }, $class;
 }
 
 sub text     ($self) { $self->{text} }
-sub has_crlf ($self) { $self->{has_crlf} }
+sub has_cr   ($self) { $self->{has_cr} }
 sub encoding ($self) { $self->{encoding} }
 
 sub offset_of_location ( $self, $line, $rowchar ) {
@@ -64,15 +64,19 @@ sub end_of ( $self, $elem ) {
 }
 
 sub encode ( $self, $text ) {
-    my $bytes = Encode::encode( $self->{encoding}, $text );
+    my $bytes = eval { Encode::encode( $self->{encoding}, $text, Encode::FB_CROAK | Encode::LEAVE_SRC ) };
+    die "Cannot encode the fixed text as $self->{encoding}: "
+        . ( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n"
+        unless defined $bytes;
     return $self->{bom} ? $BOM . $bytes : $bytes;
 }
 
 sub write_file ( $self, $path, $text ) {
-    my $file = path($path);
-    my $mode = ( stat "$file" )[2];
-    my $tmp  = $file->sibling( '.' . $file->basename . ".puff-$$" );
-    $tmp->spew_raw( $self->encode($text) );
+    my $bytes = $self->encode($text);
+    my $file  = path($path)->realpath;    # replace a symlink's target, not the link
+    my $mode  = ( stat "$file" )[2];
+    my $tmp   = $file->sibling( '.' . $file->basename . ".puff-$$" );
+    $tmp->spew_raw($bytes);
     chmod( $mode & 07777, "$tmp" ) if defined $mode;
     rename( "$tmp", "$file" ) or do {
         my $err = $!;
@@ -94,7 +98,15 @@ __END__
 
 Reads a file, decodes it (UTF-8, falling back to Latin-1), strips a BOM and
 maps PPI C<(line, rowchar)> locations to character offsets in the decoded
-text. Writing goes back through the original encoding, atomically.
+text. Writing goes back through the original encoding, atomically (a temp
+file in the same directory, renamed over the original), keeping the file's
+permission bits. A symlink is followed: its target is replaced and the link
+is left alone. Ownership and hard links are not preserved. C<encode> (and so
+C<write_file>) dies if the text has a character the original encoding cannot
+represent.
+
+C<has_cr> is true when the text contains a carriage return anywhere (CRLF or
+lone CR line endings); the engine does not fix such files.
 
 PPI must be given exactly C<< $source->text >> for offsets to line up.
 

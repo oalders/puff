@@ -156,14 +156,24 @@ subtest 'pass cap' => sub {
 subtest 'CRLF' => sub {
     my $result = run_engine( engine( 'unsafe', 'T001' ), "foo;\r\nfoo;\r\n" );
     is( summary($result), [ [ 'T001', 1, 1 ], [ 'T001', 2, 1 ] ], 'violations reported' );
-    like( $result->{fixes_skipped}, qr/CRLF/, 'fixes_skipped set' );
+    like( $result->{fixes_skipped}, qr/CR/, 'fixes_skipped set' );
     is( $result->{new_text},    undef, 'nothing fixed' );
     is( $result->{fixed_count}, 0,     'fixed_count 0' );
+    is( [ map { $_->fixable } @{ $result->{violations} } ], [ 0, 0 ], 'violations not offered as fixable' );
+};
+
+subtest 'lone CR' => sub {
+    my $result = run_engine( engine( 'unsafe', 'T001' ), "foo;\rfoo;\n" );
+    like( $result->{fixes_skipped}, qr/CR/, 'fixes_skipped set' );
+    is( $result->{new_text}, undef, 'nothing fixed' );
+    is( [ map { $_->fixable } @{ $result->{violations} } ], [ (0) x @{ $result->{violations} } ],
+        'violations not offered as fixable' );
 };
 
 subtest 'CRLF lint only does not mention skipped fixes' => sub {
     my $result = run_engine( engine( 'none', 'T001' ), "foo;\r\n" );
     is( $result->{fixes_skipped}, undef, 'no fixes were asked for' );
+    is( $result->{violations}[0]->fixable, 0, 'not offered as fixable' );
 };
 
 subtest 'fix that dies is a decline' => sub {

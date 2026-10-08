@@ -41,22 +41,25 @@ sub process_source ( $self, $src, %args ) {
     $result{error}      = $lint_error;
     my @fixable = grep { $self->_fixable_in_mode($_) } @$original;
 
+    # PPI and Puff::Source disagree about lines when there is a CR, so
+    # offsets would be wrong: lint only, and offer no fixes.
+    if ( $src->has_cr ) {
+        $result{fixes_skipped} = 'CR or CRLF line endings: fixes not applied'
+            if $self->{fix_mode} ne 'none' && @fixable;
+        $_->fixable(0) for @$original;
+    }
+
     # Never fix on the strength of a partial lint.
-    if ( $self->{fix_mode} ne 'none' && @fixable && !$lint_error ) {
-        if ( $src->has_crlf ) {
-            $result{fixes_skipped} = 'CRLF line endings: fixes not applied';
+    elsif ( $self->{fix_mode} ne 'none' && @fixable && !$lint_error ) {
+        my ( $text, $final, $error ) = $self->_fix_loop( $src, $doc, $original );
+        if ($error) {
+            $result{error} = $error;
         }
-        else {
-            my ( $text, $final, $error ) = $self->_fix_loop( $src, $doc, $original );
-            if ($error) {
-                $result{error} = $error;
-            }
-            elsif ( $text ne $src->text ) {
-                my $remaining = grep { $self->_fixable_in_mode($_) } @$final;
-                $result{new_text}    = $text;
-                $result{violations}  = $final;
-                $result{fixed_count} = @fixable > $remaining ? @fixable - $remaining : 0;
-            }
+        elsif ( $text ne $src->text ) {
+            my $remaining = grep { $self->_fixable_in_mode($_) } @$final;
+            $result{new_text}    = $text;
+            $result{violations}  = $final;
+            $result{fixed_count} = @fixable > $remaining ? @fixable - $remaining : 0;
         }
     }
 
@@ -208,8 +211,9 @@ original lint.
 
 =item fixes_skipped
 
-Set when fixes were wanted but not applied because the text has CRLF line
-endings.
+Set when fixes were wanted but not applied because the text contains a
+carriage return (CRLF or lone CR line endings). For such text every
+violation has C<fixable> 0, in every mode.
 
 =back
 

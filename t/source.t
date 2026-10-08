@@ -29,7 +29,7 @@ subtest 'offset_of_location' => sub {
     my $src = Puff::Source->from_string("my \$x = 1;\nrand();\n");
     is( $src->offset_of_location( 1, 1 ), 0,  'line 1 col 1' );
     is( $src->offset_of_location( 2, 1 ), 11, 'line 2 col 1' );
-    ok( !$src->has_crlf, 'no CRLF' );
+    ok( !$src->has_cr, 'no CR' );
 };
 
 subtest 'heredoc, POD, __END__ and __DATA__' => sub {
@@ -92,8 +92,10 @@ subtest 'Latin-1 fallback' => sub {
     is( $src->encode( $src->text ), $file->slurp_raw, 'round trip' );
 };
 
-subtest 'CRLF' => sub {
-    ok( Puff::Source->from_string("a;\r\nb;\r\n")->has_crlf, 'CRLF detected' );
+subtest 'carriage returns' => sub {
+    ok( Puff::Source->from_string("a;\r\nb;\r\n")->has_cr, 'CRLF detected' );
+    ok( Puff::Source->from_string("a;\rb;\r")->has_cr,       'lone CR detected' );
+    ok( Puff::Source->from_string("a; # x\ry\nb;\n")->has_cr, 'CR inside a line detected' );
 };
 
 subtest 'write_file' => sub {
@@ -104,6 +106,31 @@ subtest 'write_file' => sub {
     $src->write_file( "$file", qq{say "\x{e9}";\n} );
     is( $file->slurp_raw, qq{say "\xC3\xA9";\n}, 'written in original encoding' );
     is( ( stat "$file" )[2] & 07777, 0755, 'mode preserved' );
+};
+
+subtest 'write_file follows a symlink' => sub {
+    my $real = $dir->child('real.pl');
+    my $link = $dir->child('link.pl');
+    $real->spew_raw("a;\n");
+    symlink( "$real", "$link" ) or skip_all "cannot symlink: $!";
+    my $src = Puff::Source->from_file("$link");
+    $src->write_file( "$link", "b;\n" );
+    ok( -l "$link", 'link is still a symlink' );
+    is( readlink("$link"), "$real", 'link target unchanged' );
+    is( $real->slurp_raw, "b;\n", 'target file written' );
+};
+
+subtest 'unencodable text' => sub {
+    my $file = $dir->child('latin1-write.pl');
+    $file->spew_raw(qq{my \$s = "\xE9";\n});
+    my $src = Puff::Source->from_file("$file");
+    like(
+        dies { $src->encode(qq{my \$s = "\x{20ac}";\n}) },
+        qr/ISO-8859-1/, 'encode dies for a character the encoding lacks'
+    );
+    ok( dies { $src->write_file( "$file", qq{my \$s = "\x{20ac}";\n} ) }, 'write_file dies' );
+    is( $file->slurp_raw, qq{my \$s = "\xE9";\n}, 'file unchanged' );
+    is( [ grep {/\.puff-/} map { $_->basename } $dir->children ], [], 'no temp file left' );
 };
 
 subtest 'read errors' => sub {
