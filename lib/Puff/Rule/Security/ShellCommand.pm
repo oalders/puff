@@ -3,10 +3,9 @@ package Puff::Rule::Security::ShellCommand;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
+use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body );
 
 my %SHELL_FUNCTION = map { $_ => 1 } qw( system exec readpipe CORE::system CORE::exec CORE::readpipe );
-my $INTERPOLATES   = qr/(?<!\\)(?:\\\\)*[\$\@]/;
 
 sub code    {'S008'}
 sub summary {'Do not pass a command built at runtime to the shell'}
@@ -41,8 +40,8 @@ sub explanation {
         or Capture::Tiny around the list form of system. `system { $prog }
         @args` and `system(@cmd)` are not reported. Two-argument piped opens
         are reported by S002. There is no fix.
-        A constant command string is reported by S018, which is selected
-        only by its code.
+        A constant command string with shell syntax is reported by S018,
+        which is selected only by its code.
 
         Ruff's equivalents are S602, S605 and S607.
         END
@@ -50,9 +49,8 @@ sub explanation {
 
 sub check ( $self, $elem, $doc ) {
     if ( $elem->isa('PPI::Token::QuoteLike') ) {
-        my ( $delim, $body ) = $elem->content =~ /\A(?:qx\s*(.)|`)(.*)\z/s;
-        return if defined $delim && $delim eq q{'};
-        return unless $body =~ $INTERPOLATES;
+        my ( undef, $interpolates ) = command_body($elem);
+        return unless $interpolates;
         return $self->violation(
             $elem,
             message => 'Interpolated command runs through the shell (CWE-78); use the list form of system or IPC::Run3'

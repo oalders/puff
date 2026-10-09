@@ -318,7 +318,7 @@ reported as `P001`:
 | S015 | PathPrefix | Directory containment checked with a bare prefix test | unsafe | [22](https://cwe.mitre.org/data/definitions/22.html) |
 | S016 | RequireRuntimePath | Do not require or do a file name computed at runtime | none | [829](https://cwe.mitre.org/data/definitions/829.html) |
 | S017 | HTMLEscapeQuote | Escape ' in a hand-written HTML escaper | unsafe | [79](https://cwe.mitre.org/data/definitions/79.html) |
-| S018 | ShellString | Pass system/exec a list instead of one command string | unsafe | [78](https://cwe.mitre.org/data/definitions/78.html) |
+| S018 | ShellString | Constant command string runs /bin/sh | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -458,7 +458,7 @@ constant string (`system("tar xf $file")`, `system($cmd)`), backticks and
 `qx{...}` that interpolate, and three-argument `open` with mode `-|` or `|-`
 and one non-constant command string. The list forms (`system('tar', 'xf',
 $file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
-reported. There is no fix. A constant command string is S018's.
+reported. There is no fix. A constant command string with shell syntax is S018's.
 
 **S009** reports `chmod` with a constant world-writable mode (`chmod 0777,
 $dir`, `chmod 0666, $file`), the same through a `->chmod` method (including
@@ -538,17 +538,24 @@ and modifiers; an escaper that uses a character class and a lookup table
 
 **S018** is not selected by default, and selecting `S` does not turn it on:
 name it (`--extend-select S018`) or use `ALL`. It reports a constant command
-string of more than one word (or with shell syntax) given to `system` or
-`exec` as the only argument, or run by backticks, `qx` or `readpipe`. A
-command built at runtime is S008's, so the two never report the same call.
-The unsafe fix rewrites `system 'ls -l /tmp'` as `system 'ls', '-l', '/tmp'`
-when every word is made of `A-Za-z0-9_./:=+,@%-` and the first word is not
-`.`, `exec` or `VAR=value`. Commands with shell syntax (pipes, redirects,
-globs, quotes, `&&`, backslashes) are reported but not fixed, and so are
-backticks, `qx` and `readpipe`: use IPC::Run3 or Capture::Tiny around the
-list form. It is unsafe because the string form falls back to `/bin/sh` for
-a program that cannot be executed directly, such as a script with no `#!`
-line.
+string that Perl runs through `/bin/sh`, given to `system` or `exec` as the
+only argument, or run by backticks, `qx` or `readpipe`. Perl uses the shell
+only when the string has shell syntax: one of `$&*(){}[]'";\|?<>~` or a
+backtick, a newline before the end, a first word of `.` or `exec`, or a
+leading `VAR=value` assignment. A string without any of these, such as
+`system 'ls -l /tmp'`, is not reported: Perl splits it on whitespace and
+runs the program directly, so the shell is never involved and the list form
+would change nothing. A command built at runtime is S008's, so the two never
+report the same call.
+
+There is no fix. Issue #17 proposed splitting the string into a list, but
+that only works for strings without shell syntax, which already skip the
+shell; a string that does run the shell uses quotes, pipes, globs or
+redirects, so it cannot be split mechanically. Rewrite it by hand with the
+list form of `system`, and for captured output use IPC::Run3 or
+Capture::Tiny. On Win32 the list form is joined back into one command line
+and Perl quotes the arguments by its own rules, so the two forms are not
+equivalent in the same way there.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
