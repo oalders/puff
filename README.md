@@ -339,6 +339,7 @@ reported as `P001`:
 | M002 | HasWithoutIs | Attribute declared with has but no is | none |  |
 | M003 | LazyWithoutBuilder | Lazy attribute has no default or builder | none |  |
 | M004 | RedundantSuperBuild | BUILD or DEMOLISH calls the parent one, which already runs | unsafe |  |
+| M005 | NamespaceAutoclean | Moose sugar left in the namespace | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | U002 | PrintToSay | print with a trailing newline can be say | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -864,6 +865,19 @@ removes the call when it is a statement of its own, with its line when only
 a comment shares it; a call whose value is used (`return
 $self->SUPER::BUILD(@_)`) has no fix. It is unsafe because a parent outside
 the framework may rely on the call.
+
+**M005** is not selected by default; turn it on with `--select M`. It
+reports `use Moose`, `use Mouse`, `use Moo` or one of their `::Role`
+modules in a package with no `use namespace::autoclean`,
+`use namespace::clean` or `use namespace::sweep` and no `no Moose` (or the
+matching `no`). Otherwise `has`, `extends`, `with` and the rest stay
+callable as methods of the class. Each package is checked on its own, and
+`use Moose ()` is not reported. The unsafe fix adds
+`use namespace::autoclean;` on its own line after the `use`, with the same
+indentation; it is not offered when other code shares that line. It is
+unsafe because namespace::autoclean removes every imported function, not
+only the sugar, so code that calls an import such as `blessed` as a method
+breaks.
 
 **U001** is not selected by default; turn it on with `--select U`. It reports
 `use base`, which carries on when a parent class fails to load. The unsafe fix
