@@ -38,16 +38,26 @@ sub explanation {
         (`0755`, `0o755`), hex or binary literals, `oct('755')`, variables
         and expressions.
 
+        A literal whose decimal value is a common mode or umask is taken as
+        deliberate: `mkdir $dir, 511` is 0777, `chmod 493, $f` is 0755 and
+        `umask 18` is 022. The list is the decimals of 0777, 0775, 0770,
+        0755, 0750, 0711, 0700, 0666, 0664, 0660, 0644, 0640, 0600, 0444,
+        0400, 022, 027, 077, 002 and 007.
+
         Method calls cannot be typed, so any object's `chmod`, `mkdir` or
         `mkpath` method is checked, which can report a class whose method
-        really does take a decimal number.
+        really does take a decimal number. Only the options-hash form of
+        `->mkdir` and `->mkpath` is checked; a positional mode such as
+        `$p->mkdir( $dir, 755 )` is not.
 
         The fix adds the leading zero, so `755` becomes `0755`. It is
-        unsafe because it changes the mode the code sets. B003 does not
-        report the fixed literal. S009 reads a decimal mode as the octal
-        one it was meant to be, so `chmod 777, $dir` is reported by both
-        rules: here for the missing zero, there for the world-writable
-        mode.
+        unsafe because it changes the mode the code sets, and the new mode
+        can be wider than the accidental one: `chmod 664, $f` really sets
+        01230, and the fix makes it 0664, which is world-readable. Review
+        each fixed mode. B003 does not report the fixed literal. S009 checks
+        a decimal mode both as its real value and as the octal one it was
+        meant to be, so `chmod 777, $dir` is reported by both rules: here
+        for the missing zero, there for the world-writable mode it would be.
 
         This rule is not selected by `B`; select it by code or with `ALL`.
         END
@@ -84,7 +94,15 @@ __END__
 
 Reports a file mode written as a decimal literal, such as C<chmod 755, $f>,
 C<umask 22> or C<< make_path( $dir, { mode => 711 } ) >>, where the octal
-C<0755> was meant. The unsafe fix adds the leading zero.
+C<0755> was meant. A literal whose decimal value is a common mode
+(C<mkdir $d, 511> is 0777) is taken as deliberate. Only the options-hash
+form of C<< ->mkdir >> and C<< ->mkpath >> is checked, not a positional
+mode.
+
+The unsafe fix adds the leading zero. That sets the mode the author wrote,
+which can be wider than the accidental one: C<chmod 664, $f> really sets
+01230, and the fix makes it 0664, which is world-readable. Review each fixed
+mode.
 
 Not selected by C<B>: select it by its exact code or with C<ALL>. See
 L<Puff::Rule/explicit_select>.

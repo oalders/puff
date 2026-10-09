@@ -30,6 +30,20 @@ if (0) {
     umask 88;
     umask $mode;
     mkdir 755;
+    mkdir 755, $dir;
+    $p->mkdir( $dir, 755 );
+    $p->mkpath( $dir, 755 );
+
+    # Decimal values of common modes and umasks are taken as deliberate.
+    mkdir "x", 511;
+    mkdir $dir, 504;
+    chmod 511, $file;
+    chmod 493, $file;
+    chmod 457, $file;
+    chmod 420, $file;
+    umask 18;
+    umask 23;
+    umask 63;
     mkdir $dir, 0755;
     mkdir $dir, 75;
     sysopen my $fh, $file, 755;

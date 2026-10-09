@@ -30,6 +30,14 @@ if (0) {
     $p->chmod(755); # expect: B010
     $p->mkdir( { mode => 700 } ); # expect: B010
     path($dir)->mkpath( { mask => 750, chmod => 750 } ); # expect: B010 B010
+    my @f;
+    chmod 755, sort @f; # expect: B010
+    chmod 755 => $file; # expect: B010
+    chmod 755; # expect: B010
+    # Known false positive: any class's ->chmod is checked, not just
+    # Path::Tiny's, since method calls cannot be typed.
+    my $obj = bless {}, 'Not::Path::Tiny';
+    $obj->chmod(755); # expect: B010
 }
 
 sub path { return shift }

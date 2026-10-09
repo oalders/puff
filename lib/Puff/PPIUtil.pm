@@ -132,10 +132,23 @@ sub mode_call ($elem) {
     return _is_method($word) ? '->' . $word->content : _name($word);
 }
 
+# Decimal literals whose value is a common mode or umask, so the author
+# probably wrote the decimal on purpose: `mkdir $d, 511` is 0777 and
+# `umask 18` is 022. decimal_mode never reports these. Many of them have an
+# 8 or 9 and are skipped by the digit check anyway; the list keeps the
+# exemption in one place whatever the digits.
+our @REAL_DECIMAL_MODES = map { oct "0$_" } qw(
+    777 775 770 755 750 711 700
+    666 664 660 644 640 600 444 400
+    22 27 77 2 7
+);
+my %REAL_DECIMAL_MODE = map { $_ => 1 } @REAL_DECIMAL_MODES;
+
 sub decimal_mode ($elem) {
     return undef unless ref $elem eq 'PPI::Token::Number';
     my $digits = $elem->content;
     return undef unless $digits =~ /\A[1-7][0-7]{1,3}\z/;
+    return undef if $REAL_DECIMAL_MODE{$digits};
     my $call = mode_call($elem) // return undef;
     return undef if length $digits == 2 && $call ne 'umask';
     return $call;
@@ -261,7 +274,11 @@ C<{ ... }> hash passed to File::Path's C<make_path> or C<mkpath>, or to a
 C<< ->mkdir >> or C<< ->mkpath >> method (Path::Tiny). C<decimal_mode($elem)>
 returns the same name when C<$elem> is also a decimal literal that was
 probably meant as octal: three or four digits, all 0 to 7, or two for
-C<umask>. B003 skips the mode positions, B010 reports the decimal ones and
-S009 reads those as the octal mode they were meant to be, so the three agree.
+C<umask>. A literal whose decimal value is a common mode or umask (the
+decimal of 0777, 0755, 0644, 022 and so on, listed in
+C<@Puff::PPIUtil::REAL_DECIMAL_MODES>) is taken as deliberate and is not
+returned: C<mkdir $d, 511> sets 0777 on purpose. B003 skips the mode
+positions, B010 reports the decimal ones, and S009 checks both their real
+value and the octal reading they were probably meant as, so the three agree.
 
 =cut
