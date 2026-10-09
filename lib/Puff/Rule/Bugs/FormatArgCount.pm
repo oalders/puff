@@ -21,7 +21,7 @@ my $CONVERSION = qr{
     (?<width> [0-9]+ | \* (?: [0-9]+ \$ )? )?
     (?: \. (?<precision> [0-9]* | \* (?: [0-9]+ \$ )? ) )?
     (?: hh | h | ll | l | q | L | V | z | t | j )?
-    [csduoxXeEfFgGbBpaAiDUO]
+    (?<letter> [csduoxXeEfFgGbBpaAiDUO] )
 }x;
 
 sub code            {'B009'}
@@ -48,9 +48,14 @@ sub explanation {
         heredoc or concatenated format makes it skip the call, since the
         count is unknown. `%%` takes no argument, a `*` width or precision
         takes one more, and `%*vd` takes two. A format with an explicit
-        index (`%1$s`) or an invalid conversion is skipped. The filehandle
-        of `printf STDERR ...`, `printf {$fh} ...` and `printf $fh ...` is
-        not counted. There is no fix.
+        index (`%1$s`) or an invalid conversion (including a vector flag on
+        a non-integer conversion, `%vs`) is skipped. The filehandle of
+        `printf STDERR ...`, `printf {$fh} ...` and `printf $fh ...` is not
+        counted; a lowercase word before the format (`printf join ...`) is a
+        call and makes the rule skip the call. Also skipped on purpose: a
+        handle block holding an expression (`printf { $o->{fh} } ...`), a
+        parenthesised list after a handle, `@` in a double-quoted format,
+        and reference or anonymous sub arguments. There is no fix.
 
         Not selected by default, not even by `--select B`: enable it by its
         exact code (`--extend-select B009`) or with `ALL`.
@@ -85,10 +90,13 @@ sub check ( $self, $elem, $doc ) {
 
 # printf FH FORMAT, printf {$fh} FORMAT and printf $fh FORMAT: the
 # filehandle and the format are one argument group, with no comma between.
+# A bareword is a handle only when it looks like one (STDERR, OUT, LOG);
+# any other word, such as join, lc or a sub name, is a call that makes the
+# format unknown, and the group is left for the caller to skip.
 sub _is_filehandle (@group) {
     return 0 unless @group == 2;
     my ($fh) = @group;
-    return 1 if $fh->isa('PPI::Token::Word') && $fh->content =~ /\A[A-Za-z_]\w*(?:::\w+)*\z/;
+    return $fh->content =~ /\A[A-Z_][A-Z0-9_]*(?:::\w+)*\z/ ? 1 : 0 if $fh->isa('PPI::Token::Word');
     if ( $fh->isa('PPI::Structure::Block') ) {
         my @inner = $fh->schildren;
         return 0 unless @inner == 1;
@@ -127,8 +135,12 @@ sub _conversions ($format) {
             next;
         }
         return undef unless $format =~ /$CONVERSION/gc;
-        return undef if grep { defined && /\$/ } @+{qw( index vector width precision )};
-        $count += 1 + grep { defined && /\A\*/ } @+{qw( vector width precision )};
+        my %part = %+;
+        return undef if grep { defined && /\$/ } @part{qw( index vector width precision )};
+
+        # A vector flag is only valid with an integer conversion.
+        return undef if defined $part{vector} && $part{letter} !~ /\A[diuoxXbB]\z/;
+        $count += 1 + grep { defined && /\A\*/ } @part{qw( vector width precision )};
     }
     return $count;
 }
@@ -233,14 +245,25 @@ one more argument, and so does the C<*v> join string of a vector flag
 =item *
 
 A format with an explicit index (C<%2$s>, C<%*3$d>) or with a conversion
-that is invalid or unusual (such as C<%n> or C<%y>) is skipped.
+that is invalid or unusual (such as C<%n>, C<%y>, or C<%vs>: a vector flag
+is only valid with C<d i u o x X b B>) is skipped.
 
 =item *
 
 The filehandle of C<printf STDERR FORMAT, ...>, C<printf {$fh} FORMAT, ...>
-and C<printf $fh FORMAT, ...> is not an argument. C<printf> with no
+and C<printf $fh FORMAT, ...> is not an argument. Only C<STDOUT>,
+C<STDERR>, C<STDIN> or another all-caps bareword counts as a handle; any
+other word before the format (C<printf join '', ...>, C<printf lc ...>) is
+a function call, and the call is skipped. C<printf> with no
 arguments prints C<$_> and is not checked. Method calls (C<< $obj->sprintf >>)
 and hash keys (C<< sprintf => 1 >>) are not calls of the builtin.
+
+=item *
+
+Deliberately skipped shapes: a C<printf> handle given as a block
+expression (C<< printf { $o->{fh} } ... >>), a parenthesised list after a
+handle (C<printf STDERR ( ... )>), an C<@> inside a double-quoted format,
+and reference or anonymous sub arguments (C<\$x>, C<[...]>, C<sub {...}>).
 
 =back
 

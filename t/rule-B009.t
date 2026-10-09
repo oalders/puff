@@ -1,6 +1,12 @@
 use v5.36;
 use Test2::V0;
 
+use lib 't/lib';
+use TestCommand qw( run_capture );
+
+use Cwd        qw( getcwd );
+use Path::Tiny qw( path tempdir );
+
 use Puff::Engine ();
 use Puff::Rules  ();
 use Puff::Source ();
@@ -44,5 +50,20 @@ is( selected( 'S', 'B' ), [], 'not selected by the default prefixes' );
 is( selected('B00'), [], 'not selected by a longer prefix' );
 is( selected('B009'), ['B009'], 'selected by its exact code' );
 is( selected('ALL'), ['B009'], 'selected by ALL' );
+
+# Through the CLI: the prefix B does not enable the rule, its code does.
+my $root = path(getcwd)->absolute;
+my @puff = (
+    $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib', 'perl5' ),
+    $root->child( 'bin', 'puff' )->stringify, 'check', '--no-config',
+);
+my $dir  = tempdir();
+my $file = $dir->child('x.pl');
+$file->spew_utf8("my \$x;\nmy \$s = sprintf '%s %s', \$x;\n");
+my $out = run_capture( undef, @puff, '--select', 'B', "$file" );
+unlike( $out, qr/B009/, '--select B does not enable B009' );
+$out = run_capture( undef, @puff, '--select', 'B009', "$file" );
+like( $out, qr/:2:\d+: B009 Missing argument in sprintf/, '--select B009 enables it' );
+is( $? >> 8, 1, 'and exits 1' );
 
 done_testing;

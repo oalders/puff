@@ -27,3 +27,5 @@ $s = sprintf "%s %s", # expect: B009
     $x;
 my @out = ( sprintf( '%s', $x, $y ), 1 ); # expect: B009
 $s = sprintf '%05.2f %x %#o %e %g %c %b %u %i %hd %ld %lld %qd', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11; # expect: B009
+printf sprintf '%s %s', $x; # expect: B009
+$s = sprintf '%s', $count ? sprintf( '%s %s', $x ) : 'n'; # expect: B009
