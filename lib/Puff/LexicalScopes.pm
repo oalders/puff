@@ -34,11 +34,37 @@ sub _conflicts ($doc) {
 # block, or a compound statement for the variables in its condition or
 # loop header) keeps the names declared in it so far, so a name found in
 # the declaration's own scope is redeclared and one found in an enclosing
-# scope is shadowed.
+# scope is shadowed. The package in effect is tracked on the way: `package
+# NAME;` lasts to the end of the enclosing block, and `package NAME { }`
+# sets it only inside its own block.
 sub _analyse ($doc) {
-    my ( %declared, %found );
+    my ( %declared, %found, %block_package, @outer );
+    my $package = 'main';
     for my $token ( $doc->tokens ) {
-        for my $decl ( _declarations($token) ) {
+        if ( $token->isa('PPI::Token::Structure') ) {
+            my $block = $token->parent;
+            next unless $block && $block->isa('PPI::Structure::Block');
+            if ( _is( $block->start, $token ) ) {
+                push @outer, $package;
+                $package = $block_package{ refaddr $block } // $package;
+            }
+            elsif ( @outer && _is( $block->finish, $token ) ) {
+                $package = pop @outer;
+            }
+            next;
+        }
+        if ( $token->isa('PPI::Token::Word') && $token->content eq 'package' ) {
+            my $stmt = $token->parent;
+            next unless $stmt && $stmt->isa('PPI::Statement::Package');
+            if ( my $block = $stmt->find_first('PPI::Structure::Block') ) {
+                $block_package{ refaddr $block } = $stmt->namespace;
+            }
+            else {
+                $package = $stmt->namespace;
+            }
+            next;
+        }
+        for my $decl ( _declarations( $token, $package ) ) {
             my $conflict = _check( \%declared, $decl ) or next;
             push @{ $found{ refaddr $decl->{elem} } }, $conflict;
         }
@@ -49,14 +75,16 @@ sub _analyse ($doc) {
 sub _check ( $declared, $decl ) {
     my $symbol = $decl->{symbol};
     my $own    = $declared->{ refaddr $decl->{scope} } //= {};
-    if ( my $earlier = $own->{$symbol} ) {
-        if ( _different_globals( $earlier, $decl ) ) {
-            $own->{$symbol} = $decl;
-            return;
-        }
-        return { kind => 'redeclared', symbol => $symbol, line => $earlier->{line} };
-    }
+
+    # Each scope keeps the latest declaration of each name, and the first
+    # `our` of each name per package, so in `package A; our $x; package B;
+    # our $x; package A; our $x;` the last one still finds A's.
+    my $global  = $decl->{kind} eq 'our' ? "our $decl->{package}::$symbol" : undef;
+    my $earlier = $own->{$symbol};
+    $earlier = $own->{$global} if $earlier && _different_globals( $earlier, $decl );
     $own->{$symbol} = $decl;
+    $own->{$global} //= $decl if defined $global;
+    return { kind => 'redeclared', symbol => $symbol, line => $earlier->{line} } if $earlier;
 
     for ( my $scope = $decl->{scope}->parent ; $scope ; $scope = $scope->parent ) {
         next unless _is_scope($scope);
@@ -85,6 +113,10 @@ sub _is_scope ($elem) {
         || $elem->isa('PPI::Statement::Compound');
 }
 
+sub _is ( $elem, $other ) {
+    return $elem && refaddr($elem) == refaddr($other);
+}
+
 sub _contains ( $outer, $elem ) {
     for ( my $el = $elem ; $el ; $el = $el->parent ) {
         return 1 if refaddr($el) == refaddr($outer);
@@ -95,10 +127,10 @@ sub _contains ( $outer, $elem ) {
 # The declarations a token starts: the variables after my/our/state, or the
 # parameters of a sub signature (one token holding them all, or one symbol
 # token per parameter, depending on how PPI parsed it).
-sub _declarations ($token) {
-    return _signature($token) if $token->isa('PPI::Token::Prototype');
+sub _declarations ( $token, $package ) {
     return _signature_param($token) if $token->isa('PPI::Token::Symbol');
-    return unless $token->isa('PPI::Token::Word') && $DECLARATOR{ $token->content };
+    return _signature($token) if $token->isa('PPI::Token::Prototype');
+    return unless $DECLARATOR{ $token->content } && $token->isa('PPI::Token::Word');
     my $prev = $token->sprevious_sibling;
     return if $prev && $prev->isa('PPI::Token::Operator') && $prev->content eq '->';
     my $what = $token->snext_sibling or return;
@@ -110,8 +142,8 @@ sub _declarations ($token) {
 
     my $scope = _scope_of($token) or return;
     my $stmt  = $token->statement;
-    $stmt = undef if $stmt && $stmt->isa('PPI::Statement::Compound');    # for my $x (...) { }
-    my $package = $token->content eq 'our' ? _package_of($token) : q{};
+    $stmt    = undef if $stmt && $stmt->isa('PPI::Statement::Compound');    # for my $x (...) { }
+    $package = q{} unless $token->content eq 'our';
     return map {
         +{
             elem      => $_,
@@ -159,11 +191,11 @@ sub _signature ($token) {
 # PPI::Structure::Signature after a named sub, or a list after `sub` in an
 # anonymous sub. Symbols in default values are not parameters.
 sub _signature_param ($token) {
-    my $prev = $token->sprevious_sibling;
-    return if $prev && !( $prev->isa('PPI::Token::Operator') && $prev->content eq ',' );
     my $expr   = $token->parent or return;
     my $struct = $expr->isa('PPI::Statement') ? $expr->parent : $expr;
-    return unless $struct;
+    return unless $struct && $struct->isa('PPI::Structure');
+    my $prev = $token->sprevious_sibling;
+    return if $prev && !( $prev->isa('PPI::Token::Operator') && $prev->content eq ',' );
     my $is_signature = $struct->isa('PPI::Structure::Signature');
     if ( !$is_signature && $struct->isa('PPI::Structure::List') ) {
         my $word = $struct->sprevious_sibling;
@@ -205,19 +237,6 @@ sub _split_params ($text) {
         $current .= $char;
     }
     return ( @params, $current );
-}
-
-# The package in effect at $token: the nearest enclosing `package NAME {`
-# block, or the last `package NAME;` before it in an enclosing scope.
-sub _package_of ($token) {
-    for ( my $el = $token ; $el ; $el = $el->parent ) {
-        return $el->namespace if $el->isa('PPI::Statement::Package');
-        for ( my $prev = $el->sprevious_sibling ; $prev ; $prev = $prev->sprevious_sibling ) {
-            return $prev->namespace
-                if $prev->isa('PPI::Statement::Package') && !$prev->find_first('PPI::Structure::Block');
-        }
-    }
-    return 'main';
 }
 
 1;

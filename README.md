@@ -84,8 +84,7 @@ be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
 rule and applies every fix. A few rules (B007 and B008) are selected only by
 their exact code or `ALL`, never by a prefix, so `--select B` leaves them
-off. A
-`select` or `extend-select` entry that matches no rule is an error
+off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
 rules off. An `ignore` entry that matches nothing is allowed.
 

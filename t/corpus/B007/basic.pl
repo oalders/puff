@@ -36,3 +36,12 @@ elsif ( my $match = shift ) { # expect: B007
 package Foo;
 our $VERSION = '1.0';
 our $VERSION = '1.1'; # expect: B007
+
+package Alternate::A;
+our $shared = 1;
+
+package Alternate::B;
+our $shared = 2;
+
+package Alternate::A;
+our $shared = 3; # expect: B007

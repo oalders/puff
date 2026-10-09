@@ -34,6 +34,14 @@ is( violations("sub f (\$\$) {\n    my \$x;\n}\n"), [], 'a real prototype declar
 is( violations("package A;\nour \$x;\npackage B;\nour \$x;\n"), [], 'our in different packages' );
 is( scalar @{ violations("package A;\nour \$x;\nour \$x;\n") }, 1, 'our twice in one package' );
 
+# The analysis is linear: thousands of file-level declarations finish well
+# inside prove's timeout (it was quadratic in the number of `our`s).
+my $many = join q{}, map {"our \$o$_ = 1;\nprint 1;\nmy \$m$_ = 1;\n"} 1 .. 3000;
+is(
+    [ map { $_->line } @{ violations("${many}our \$o1;\nmy \$m1;\n") } ],
+    [ 9001, 9002 ], 'many declarations, two redeclared'
+);
+
 sub selected (@select) {
     return [ grep { $_ eq 'B007' } map { $_->code } Puff::Rules->instantiate( \@classes, select => [@select] ) ];
 }
