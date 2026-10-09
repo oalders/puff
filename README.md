@@ -7,7 +7,7 @@ files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
 By default puff runs the security (`S`) and likely-bug (`B`) rules (except
-S018, S019, B007, B008 and B009, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
+S018, S019, B007, B008, B009 and B010, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -82,7 +82,7 @@ To see which rules fire most and which of them can be fixed, use
 `CODES` is a comma-separated list, and the option can be repeated. A code can
 be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
-rule and applies every fix. A few rules (S018, S019, B007, B008 and B009) are selected only by
+rule and applies every fix. A few rules (S018, S019, B007, B008, B009 and B010) are selected only by
 their exact code or `ALL`, never by a prefix, so `--select S` or `--select B`
 leaves them off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
@@ -333,6 +333,7 @@ reported as `P001`:
 | B007 | RedeclaredVariable | Lexical variable is redeclared in the same scope | none |  |
 | B008 | ShadowedVariable | Lexical variable shadows one from an enclosing scope | none |  |
 | B009 | FormatArgCount | sprintf/printf argument count does not match the format | none |  |
+| B010 | DecimalMode | File mode given as a decimal literal | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | U002 | PrintToSay | print with a trailing newline can be say | safe |  |
@@ -466,7 +467,9 @@ $dir`, `chmod 0666, $file`), the same through a `->chmod` method (including
 symbolic modes such as `'o+w'`), and `umask` with a constant mask that does
 not mask other-write (`umask 0`). Sticky-bit modes such as `01777` are
 allowed. Modes passed to `mkdir`, `sysopen` and `make_path` are not reported,
-since the umask filters them. There is no fix.
+since the umask filters them. A mode written in decimal (`chmod 777, $dir`,
+`umask 20`) is read as the octal mode it was meant to be, so B010 reports
+the missing zero and S009 the world-writable mode. There is no fix.
 
 **S010** reports md2, md4, md5 and sha* digest functions (`md5_hex`,
 `sha256_hex`, `sha256_b64u` and the rest) and Crypt::Digest's `digest_data*`
@@ -659,8 +662,9 @@ Perl::Critic::Pulp, extended to hashes.
 
 **B003** is selected by default. It reports a number literal with a leading
 zero, which Perl reads as octal: `my $count = 010` is 8. The mode argument of
-`chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen` and `mkpath`, a value
-after a `mode` or `perm` key, and an operand of a bitwise operator
+`chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen` and `mkpath`, the
+argument of `->chmod(...)`, a value after a `mode` or `perm` key or a `mask`
+key in a `make_path` or `->mkdir` options hash, and an operand of a bitwise operator
 (`$mode & 07777`) are octal by convention and not reported unless the `strict`
 option is on. The safe fix rewrites the literal as `oct('0755')`, which
 compiles to the same constant. Based on
@@ -726,6 +730,21 @@ indexes (`%1$s`) and invalid conversions. `%%` takes no argument and each
 `*` width, precision or vector join string takes one. The filehandle in
 `printf STDERR ...`, `printf {$fh} ...` and `printf $fh ...` is not counted.
 There is no fix.
+
+**B010** is not selected by default either, and selecting `B` does not turn
+it on: name it (`--extend-select B010`) or use `ALL`. It reports a file mode
+written as a decimal literal, so `chmod 755, $file` sets mode 01363. It
+checks three- or four-digit literals with only the digits 0 to 7 in the mode
+argument of `chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen` and
+legacy `mkpath`, the `mode`, `chmod` or `mask` value in an options hash passed
+to `make_path`, `mkpath` or a `->mkdir`/`->mkpath` method, and the single
+argument of a `->chmod(...)` method. `umask` with two digits (`umask 22`) is
+reported too, since `022` and `077` are its usual values. Octal, hex and
+binary literals, strings (Path::Tiny's `->chmod('0755')`), `oct('755')`,
+variables and expressions are not reported. Method calls cannot be typed,
+so any class's `chmod`, `mkdir` or `mkpath` method is checked. The unsafe fix
+adds the leading zero (`0755`); B003 does not report the result, and S009
+reads a decimal mode as the octal one it was meant to be.
 
 **M001** is not selected by default; turn it on with `--select M`. It reports
 `use Moose` or `use Mouse` in a package that never calls `->make_immutable`,

@@ -12,3 +12,8 @@ umask(077);
 umask $mode;
 my $old = umask;
 my %h = ( chmod => 0777 );
+chmod 755, $f;
+chmod 444, $f;
+chmod 1777, $f;
+umask 22;
+umask 77;

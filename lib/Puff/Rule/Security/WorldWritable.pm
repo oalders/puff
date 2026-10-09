@@ -3,7 +3,7 @@ package Puff::Rule::Security::WorldWritable;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
+use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string decimal_mode );
 
 my $OTHER_WRITE = oct('0002');
 my $STICKY      = oct('01000');
@@ -35,6 +35,11 @@ sub explanation {
         up. Modes passed to `mkdir`, `sysopen` and File::Path's `make_path`
         are not reported: the umask filters them, so 0777 there is the normal
         default. Modes in variables are not checked.
+
+        A mode written in decimal, such as `chmod 777, $dir` or `umask 20`,
+        is read as the octal mode it was meant to be (0777, 020), since that
+        is what the code will do once the missing zero is added. B010
+        reports the missing zero; this rule reports the world-writable mode.
 
         Use 0755 or 0644, or 0700 and 0600 for anything private. There is no
         fix.
@@ -78,7 +83,10 @@ sub check ( $self, $elem, $doc ) {
     return;
 }
 
+# A decimal mode such as `chmod 777, $f` is read as the octal mode it was
+# meant to be (B010 reports the missing zero).
 sub _number ($elem) {
+    return oct( $elem->content ) if defined decimal_mode($elem);
     return undef unless $elem->isa('PPI::Token::Number') && $elem->can('literal');
     return $elem->literal;
 }

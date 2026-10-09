@@ -30,6 +30,12 @@ if (0) {
     mkpath( $dir, 0, 0711 );
     make_path( $dir, { mode => 0711 } );
     make_path( $dir, { chmod => 0711, 'perms' => 0700 } );
+    make_path( $dir, { mask => 0022 } );
+    CORE::chmod 0644, $file;
+    my $p = bless {}, 'X';
+    $p->chmod(0755);
+    $p->mkdir( { mask => 0700 } );
+    $p->mkpath( { mask => 0700 } );
 }
 my $perm = ( stat $file )[2] & 07777;
 my $new = 0666 & ~$zero;
