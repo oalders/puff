@@ -8,7 +8,7 @@ use Puff::Reporter::JSON ();
 
 sub new ( $class, %args ) {
     return bless {
-        out  => $args{out},                # where start and file events go, as they happen
+        out  => $args{out},               # where start and file events go, as they happen
         mode => $args{mode} // 'lint',    # lint, fix or diff
         json => JSON::PP->new->canonical->ascii,
     }, $class;

@@ -294,8 +294,10 @@ subtest 'check --output-format jsonl: non-ASCII' => sub {
     $dir->child('cafe.pl')->spew_utf8("use utf8;\nmy \$x = new Caf\x{e9}(1);\nprint \$x;\n");
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'B004' );
     is( $exit, 1, 'exit 1' ) or diag $err;
-    my @events = map { JSON::PP->new->utf8->decode($_) } split /\n/, $out;
-    is( $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)", 'message decodes as UTF-8' );
+    my @lines = split /\n/, $out;
+    is( [ grep { !/\A[\x00-\x7f]*\z/ } @lines ], [], 'every line is pure ASCII' );
+    my @events = map { JSON::PP->new->utf8->decode($_) } @lines;
+    is( $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)", 'message decodes to the original text' );
 };
 
 subtest 'check --output-format jsonl: Unicode line separators are escaped' => sub {

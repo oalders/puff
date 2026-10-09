@@ -73,8 +73,12 @@ sub execute ( $self, $opt, $args ) {
         my $error = $@;
         $progress->( 0, 0 ) if $progress;    # stop the timer and erase the line
         # Puff::CLI->main exits 2 when a command dies. The eval keeps a
-        # failure inside abort from replacing $error.
-        eval { $jsonl->abort( 2, $error ); 1 } if $jsonl;
+        # failure inside abort from replacing $error; that failure is
+        # warned about on STDERR, then $error is still rethrown.
+        if ( $jsonl && !eval { $jsonl->abort( 2, $error ); 1 } ) {
+            ( my $abort_error = $@ ) =~ s/\s+\z//;
+            warn "puff: could not write the final jsonl event: $abort_error\n";
+        }
         die $error;
     }
     my $reporter
