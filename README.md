@@ -337,6 +337,7 @@ reported as `P001`:
 | B010 | DecimalMode | File mode given as a decimal literal | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | M002 | HasWithoutIs | Attribute declared with has but no is | none |  |
+| M003 | LazyWithoutBuilder | Lazy attribute has no default or builder | none |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | U002 | PrintToSay | print with a trailing newline can be say | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -837,6 +838,20 @@ package an attribute with `reader`, `writer`, `accessor`, `predicate`,
 whatever else is given. `has '+name'` (changing an inherited attribute) and
 a `has` whose name or options are not literal (`%opts`, `@args`, a variable)
 are not reported. There is no fix.
+
+**M003** is not selected by default; turn it on with `--select M`. In the
+same packages as M002 it reports a lazy attribute (`lazy => 1`, or Moo's
+`is => 'lazy'`) with no `default` and no `builder`: Moose and Mouse die when
+the class is built, and Moo has nothing to build the value from. Moo's
+`is => 'lazy'` and Moose's `lazy_build => 1` imply the builder
+`_build_NAME`. It also reports a lazy attribute whose builder has a known
+name (`builder => '_load'`, or `_build_NAME` from Moo's `builder => 1` or
+`is => 'lazy'`) that appears nowhere else in the package, not even as
+`sub _load`. That check is skipped for roles and for packages that may
+inherit the method (`extends`, `with`, `use parent`, `use base`, `@ISA`).
+`has '+name'`, a lazy flag that is not a literal, `builder => sub {...}`
+and a `has` whose name or options are not literal are not reported. There
+is no fix.
 
 **U001** is not selected by default; turn it on with `--select U`. It reports
 `use base`, which carries on when a parent class fails to load. The unsafe fix
