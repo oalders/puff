@@ -16,3 +16,10 @@ on test => sub {
     requires 'Test2::V0';
     recommends 'Crypt::PRNG';
 };
+
+# Tidy and lint tools run by precious (see precious.toml). Perl::Tidy is
+# pinned because its output changes between releases.
+on develop => sub {
+    requires 'Perl::Critic', '1.156';
+    requires 'Perl::Tidy', '== 20260826';
+};

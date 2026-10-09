@@ -1,0 +1,37 @@
+# Run `precious lint --all` to check everything and `precious tidy --all` to
+# reformat. t/corpus/ holds rule fixtures whose exact bytes the tests compare
+# against, so no tool touches it.
+exclude = ["t/corpus"]
+
+[commands.perltidy]
+type    = "both"
+include = ["**/*.{pl,pm,t,psgi}", "bin/puff"]
+cmd     = ["perltidy", "--profile=$PRECIOUS_ROOT/.perltidyrc"]
+lint-flags = ["--assert-tidy", "--no-standard-output", "--outfile=/dev/null"]
+tidy-flags = ["--backup-and-modify-in-place", "--backup-file-extension=/"]
+ok-exit-codes = [0]
+lint-failure-exit-codes = [2]
+
+[commands.perlcritic]
+type    = "lint"
+include = ["**/*.{pl,pm,t,psgi}", "bin/puff"]
+cmd     = ["perlcritic", "--profile=$PRECIOUS_ROOT/.perlcriticrc"]
+ok-exit-codes = [0]
+lint-failure-exit-codes = [2]
+
+# puff lints itself with its default rules (security and likely bugs).
+[commands.puff]
+type      = "lint"
+include   = ["lib/**/*.pm", "bin/puff", "t/*.t", "t/lib/**/*.pm"]
+invoke    = "once"
+cmd       = ["perl", "-Ilib", "-Ilocal/lib/perl5", "bin/puff", "check"]
+ok-exit-codes = [0]
+lint-failure-exit-codes = [1]
+
+[commands.omegasort-gitignore]
+type    = "both"
+include = [".gitignore"]
+cmd     = ["omegasort", "--sort", "path", "--unique"]
+lint-flags = ["--check"]
+ok-exit-codes = [0]
+lint-failure-exit-codes = [1]

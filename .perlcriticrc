@@ -1,0 +1,40 @@
+# perlcritic profile for puff. Run it through precious (`precious lint --all`)
+# so everyone gets the same file set; t/corpus/ holds deliberately bad
+# fixtures and is not linted.
+severity = 4
+theme    = core
+verbose  = %f:%l:%c: %m (%p, severity %s)\n
+
+# Allow the targeted pragmas the test stubs need.
+[TestingAndDebugging::ProhibitNoStrict]
+allow = refs
+
+[TestingAndDebugging::ProhibitNoWarnings]
+allow = io redefine
+
+# The progress spinner owns $SIG{ALRM} for the whole run.
+[Variables::RequireLocalizedPunctuationVars]
+allow = %SIG
+
+# Signature-style one-liners such as `sub code {'S002'}` return implicitly.
+[-Subroutines::RequireFinalReturn]
+# Signatures unpack arguments.
+[-Subroutines::RequireArgUnpacking]
+# Helpers that return a single scalar return undef on purpose.
+[-Subroutines::ProhibitExplicitReturnUndef]
+# Public methods named after builtins (Config->select, Fix->delete) and test
+# stubs that mimic modules exporting try/catch/rand.
+[-Subroutines::ProhibitBuiltinHomonyms]
+# Tests declare small helper packages inline; test scripts are not modules.
+[-Modules::ProhibitMultiplePackages]
+[-Modules::RequireEndWithOne]
+[-Modules::RequireExplicitPackage]
+[-Modules::RequireFilenameMatchesPackage]
+# File modes are written as octal masks (07777, 0600).
+[-ValuesAndExpressions::ProhibitLeadingZeros]
+# Tests read in-memory handles over several statements.
+[-InputOutput::RequireBriefOpen]
+# -t decides whether to draw the progress spinner, not whether to prompt.
+[-InputOutput::ProhibitInteractiveTest]
+# :utf8 is only used on output handles, where it is safe.
+[-InputOutput::RequireEncodingWithUTF8Layer]
