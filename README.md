@@ -330,6 +330,7 @@ reported as `P001`:
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | T001 | OkCompare | Use is/isnt instead of ok with eq, ==, ne or != | safe for `eq` with Test::More, else unsafe |  |
+| R001 | UnlessElse | Use if/else instead of unless/else | safe |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
 Rule codes follow ruff's prefixes where ruff has an equivalent, so a ruff
@@ -344,6 +345,7 @@ user can guess where a rule lives:
 | `U` | Upgrades to newer idioms | `UP` (pyupgrade) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `T` | Test style | `PT` (flake8-pytest-style) |
+| `R` | Readability: simpler equivalent code | `SIM` (flake8-simplify) |
 | `P` | puff's own checks; always on | none |
 
 `puff rule CODE` prints the full explanation of a rule. When a fix is
@@ -646,6 +648,16 @@ passes undef against `''`, and Test2's `is` compares references deeply, so
 those fixes are unsafe. No fix is offered with more than two arguments, or for
 an array, hash or parenthesized-list operand (Test2's `is` has no prototype,
 so `@a` would be flattened; declined for every module to keep it simple).
+
+**R001** is not selected by default; turn it on with `--select R`. It
+reports `unless (X) { A } else { B }`, a double negative, and the safe fix
+rewrites it as `if (X) { B } else { A }`: the two blocks swap places with
+everything inside their braces, comments included, and the condition is left
+alone. `unless ... elsif ... else` is reported with no fix. The statement
+modifier `... unless X;` and `unless` without `else` are not reported. No fix
+is offered when a comment or POD sits between the first block and the `else`
+block, or when the statement contains a heredoc, whose body would not move
+with its block.
 
 ## Writing a rule
 
