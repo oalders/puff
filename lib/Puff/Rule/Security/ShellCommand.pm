@@ -41,6 +41,8 @@ sub explanation {
         or Capture::Tiny around the list form of system. `system { $prog }
         @args` and `system(@cmd)` are not reported. Two-argument piped opens
         are reported by S002. There is no fix.
+        A constant command string is reported by S018, which is selected
+        only by its code.
 
         Ruff's equivalents are S602, S605 and S607.
         END
