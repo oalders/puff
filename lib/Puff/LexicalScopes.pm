@@ -88,15 +88,15 @@ sub _check ( $declared, $decl ) {
 
     for ( my $scope = $decl->{scope}->parent ; $scope ; $scope = $scope->parent ) {
         next unless _is_scope($scope);
-        my $earlier = ( $declared->{ refaddr $scope } // {} )->{$symbol} or next;
+        my $outer = ( $declared->{ refaddr $scope } // {} )->{$symbol} or next;
 
         # `my $x = do { my $x ... }`: the outer $x is not visible yet.
-        next if $earlier->{statement} && _contains( $earlier->{statement}, $decl->{elem} );
+        next if $outer->{statement} && _contains( $outer->{statement}, $decl->{elem} );
 
         # An inner `our` of a name already declared with `our` is the same
         # global or, in another package, a different one on purpose.
-        return if $earlier->{kind} eq 'our' && $decl->{kind} eq 'our';
-        return { kind => 'shadowed', symbol => $symbol, line => $earlier->{line} };
+        return if $outer->{kind} eq 'our' && $decl->{kind} eq 'our';
+        return { kind => 'shadowed', symbol => $symbol, line => $outer->{line} };
     }
     return;
 }
