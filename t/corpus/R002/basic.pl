@@ -34,6 +34,59 @@ my @nested = map {
     $_ * 2;
 } @list;
 
-show(@nested);
+for my $n (@list) {
+    map { print } $n; # expect: R002
+}
+
+foreach (@list) {
+    grep { $seen{$_}++ } $_; # expect: R002
+}
+
+while ( !$y ) {
+    grep { $seen{$_}++ } @list; # expect: R002
+}
+
+until ($y) {
+    map { print } @list; # expect: R002
+}
+
+for ( my $i = 0; $i < 1; $i++ ) {
+    map { print } @list; # expect: R002
+}
+
+for my $n (@list) {
+    print $n;
+}
+continue {
+    map { print } @list; # expect: R002
+}
+
+map { 1 } @list until $y; # expect: R002
+
+map { print } @list # expect: R002
+    if $y;
+
+map { # expect: R002
+    print <<~"EOT";
+        item $_
+        EOT
+} @list;
+
+grep /re/, @list; # expect: R002
+map lc, @list; # expect: R002
+
+my $v = do {
+    map { print } @list; # expect: R002
+    1;
+};
+
+if ($y) {
+    map { print } @list; # expect: R002
+    $y++;
+}
+
+map { print } @list ? 1 : 2; # expect: R002
+
+show( @nested, $v );
 
 map { print } @list; # expect: R002

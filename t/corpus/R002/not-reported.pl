@@ -32,6 +32,8 @@ sub evens (@items) {
 }
 
 my $code = sub { grep { $_ } @_ };
+my $anon = sub { map { print } @_ };
+my @e    = eval { map { $_ + 1 } @list };
 my @d    = do { map { $_ + 1 } @list };
 my @s    = sort { $a <=> $b } map { $_ } @list;
 my @g    = grep { map { $_ } @list } @list;
@@ -57,4 +59,9 @@ grep { $seen{$_}++ } @list;
 
 =cut
 
-print doubled(@list), evens(@list), $code->(@list), @d, @s, @g, @deep, $key, $r, $ar, $str, @x, $n;
+print doubled(@list), evens(@list), $code->(@list), $anon->(@list), @e, @d, @s, @g, @deep, $key, $r, $ar, $str, @x, $n;
+
+__END__
+
+map { print } @list;
+grep { $seen{$_}++ } @list;

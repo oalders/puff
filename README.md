@@ -660,14 +660,16 @@ is offered when a comment or POD sits between the first block and the `else`
 block, or when the statement contains a heredoc, whose body would not move
 with its block.
 
-**R002** is not selected by default; turn it on with `--select R`. It
-reports `map` and `grep` called only for their side effects, with the list
-they build thrown away (`map { print } @list;`), in any form and with or
-without a statement modifier. A `for` loop says what is meant. There is no
-fix. A `map` or `grep` whose value is used (assigned, passed as an argument,
-returned, in a condition, joined with `or`) is not reported, and neither is
-the last statement of a sub or any other block, which may be the block's
-value. The last statement of a file is reported.
+**R002** is not selected by default; turn it on with `--select R` or
+`extend-select = ["R"]`. It reports `map` and `grep` called only for their
+side effects, with the list they build thrown away (`map { print } @list;`),
+in any form and with or without a statement modifier. A `for` loop says what
+is meant. There is no fix. A `map` or `grep` whose value is used (assigned,
+passed as an argument, returned, in a condition, joined with `or`) is not
+reported, and neither is the last statement of a sub, `do`, `eval`, `map`,
+`grep`, `sort`, `if`/`else` or bare block, which may be the block's value.
+The last statement of a loop body (`for`, `foreach`, `while`, `until`) or
+of a file is reported.
 
 ## Writing a rule
 
