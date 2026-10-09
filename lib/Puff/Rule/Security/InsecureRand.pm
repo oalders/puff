@@ -90,7 +90,8 @@ sub fix ( $self, $violation, $fix ) {
 # Both answers depend only on the whole document, so they are computed once
 # per document rather than once per rand call. The weakened reference goes
 # undef when the document is freed, so a re-parsed document (a new fix pass
-# or the next file) never sees another document's answers.
+# or the next file) never sees another document's answers. This relies on
+# fixes being text edits: a document is never changed in place.
 sub _doc_facts ( $self, $doc ) {
     unless ( $self->{facts_doc} && $self->{facts_doc} == $doc ) {
         $self->{facts_doc} = $doc;
