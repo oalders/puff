@@ -501,6 +501,10 @@ subtest 'check --statistics' => sub {
         like( $err, qr/--statistics only works with --output-format text/, q{... with a usage error} );
         is( $out, q{}, q{... and nothing checked} );
     }
+
+    ( $out, $err, $exit ) = puff( $dir, qw( check --show-files --statistics --output-format json ) );
+    is( $exit, 0, '--show-files ignores --statistics, whatever the format' );
+    like( $out, qr/\.pl$/m, '... and lists the files' );
 };
 
 subtest 'check --show-files lists files and checks nothing' => sub {
