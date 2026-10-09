@@ -60,7 +60,7 @@ subtest 'progress' => sub {
     );
     is( [ $runner->files("$dir") ], [ map { $dir->child($_)->stringify } qw( one.pl two.pl ) ], 'files' );
     $runner->run("$dir");
-    is( \@calls, [ [ 1, 2 ], [ 2, 2 ] ], 'called after each file with (done, total)' );
+    is( \@calls, [ [ 0, 2 ], [ 1, 2 ], [ 2, 2 ] ], 'called once the files are found, then after each one' );
     $dir->child($_)->remove for qw( one.pl two.pl );
 };
 $dir->child('bad.pl')->spew_utf8("foo;\n");

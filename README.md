@@ -50,8 +50,18 @@ column. A marker at the end of the line says what a fix would do:
 
 The `Found` line counts the violations and the files checked; to see which
 files those are, run `puff check --show-files`. On a terminal, a run that
-takes more than half a second shows a `Checking N/M files` counter on STDERR
-while it works.
+takes more than half a second shows a spinner and a `Checking N/M files`
+counter on STDERR while it works.
+
+To see which rules fire most and which of them can be fixed, use
+`--statistics`. It prints one line per rule instead of one per violation:
+
+    $ puff check --statistics
+    29  S002  [**]  Use three-argument open (9 fixable)
+    29  S003  [**]  Use a lexical filehandle instead of a bareword (3 fixable)
+     2  S001  [**]  rand/srand is not cryptographically secure
+    Found 60 violations (checked 4 files).
+    14 more fixable with --unsafe-fixes
 
 ### Options for `check`
 
@@ -65,6 +75,7 @@ while it works.
 | `--diff` | Print the fixes as a unified diff and write nothing. Wins over `--fix`. |
 | `--output-format text\|json` | Output format; default `text`. |
 | `--show-files` | List the files that would be checked, one per line, and check nothing. |
+| `--statistics` | Print one line per rule instead of one per violation: the count, the fix marker, the rule's summary, and `(N fixable)` when only some can be fixed. Most violations first. |
 | `--config PATH` | Read this config file instead of `./.puff.toml`. |
 | `--no-config` | Ignore config files. |
 

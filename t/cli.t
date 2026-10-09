@@ -278,6 +278,19 @@ subtest 'default excludes when the searched dir is outside the root' => sub {
     unlike( $out, qr{\.\./(?:local|blib)/}, 'local/ and blib/ skipped when searching ..' );
 };
 
+subtest 'check --statistics' => sub {
+    my $dir = project(%FILES);
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--statistics' );
+    is( $exit, 1,   'exit 1' );
+    is( $err,  q{}, 'nothing on STDERR' );
+    unlike( $out, qr{^\S+:\d+:\d+: }m, 'no per-violation lines' );
+    like( $out, qr{^\s*\d+  S001  \[\*\*\]  \S}m, 'S001 counted with its unsafe-fix marker' );
+    like( $out, qr{^\s*\d+  S002  \[\*\*\]  Use three-argument open \(\d+ fixable\)$}m, 'S002 partly fixable' );
+    like( $out, qr{^Found \d+ violations \(checked 4 files\)\.$}m, 'summary still printed' );
+    my @counts = $out =~ /^\s*(\d+)  [A-Z]\d{3} /mg;
+    is( \@counts, [ sort { $b <=> $a } @counts ], 'most violations first' );
+};
+
 subtest 'check --show-files lists files and checks nothing' => sub {
     my $dir = project( %FILES, 'local/lib/Rand.pm' => 'S001/basic.pl', 'lib/notes.txt' => 'S001/basic.pl' );
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--show-files' );

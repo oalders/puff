@@ -4,9 +4,26 @@ use v5.36;
 
 sub new ( $class, %args ) {
     return bless {
-        fix_mode => $args{fix_mode} // 'safe',    # the fixes --fix would apply
-        mode     => $args{mode}     // 'lint',
+        fix_mode   => $args{fix_mode} // 'safe',    # the fixes --fix would apply
+        mode       => $args{mode}     // 'lint',
+        statistics => $args{statistics},            # one line per rule instead of per violation
     }, $class;
+}
+
+# One line per rule code, most violations first: the count, the code, the
+# fix marker when any of them can be fixed, and the rule's summary, with
+# "(N fixable)" when only some can.
+sub _statistics ( $self, $by_code, $out ) {
+    my @codes = sort { $by_code->{$b}{count} <=> $by_code->{$a}{count} || $a cmp $b } keys %$by_code;
+    my $width = length( $codes[0] ? $by_code->{ $codes[0] }{count} : 0 );
+    for my $code (@codes) {
+        my $stat    = $by_code->{$code};
+        my $summary = $stat->{rule} ? $stat->{rule}->summary : q{};
+        my $partial = $stat->{fixable} && $stat->{fixable} < $stat->{count} ? " ($stat->{fixable} fixable)" : q{};
+        my $line    = sprintf "%*d  %-5s %-5s %s%s", $width, $stat->{count}, $code, $stat->{marker} =~ s/\A //r, $summary, $partial;
+        print {$out} $line =~ s/\s+\z//r, "\n";
+    }
+    return;
 }
 
 sub report ( $self, $run, $out, $err ) {
@@ -24,15 +41,25 @@ sub report ( $self, $run, $out, $err ) {
     }
 
     my ( $total, $enabled, $unsafe ) = ( 0, 0, 0 );
+    my %by_code;
     for my $file (@files) {
         for my $v ( @{ $file->{violations} } ) {
             my $marker = $self->_marker($v);
             $total++;
             $enabled++ if $marker eq ' [*]';
             $unsafe++  if $marker eq ' [**]';
+            if ( $self->{statistics} ) {
+                my $stat = $by_code{ $v->code } //= { count => 0, fixable => 0, marker => q{}, rule => $v->rule };
+                $stat->{count}++;
+                next unless $marker;
+                $stat->{fixable}++;
+                $stat->{marker} = $marker;
+                next;
+            }
             printf {$out} "%s:%d:%d: %s %s%s\n", $v->file, $v->line, $v->column, $v->code, $v->message, $marker;
         }
     }
+    $self->_statistics( \%by_code, $out ) if $self->{statistics};
 
     my $checked = grep { !defined $_->{error} } @files;
     printf {$out} "Found %s (checked %s).\n", _n( $total, 'violation' ), _n( $checked, 'file' );
@@ -94,6 +121,11 @@ violations (checked F files).>, where F counts the files read without an
 error, C<M fixable with --fix> and C<K more fixable with
 --unsafe-fixes> when those are non-zero, and in C<fix> mode C<Fixed N
 violations in M files.>
+
+With C<< statistics => 1 >> it prints one line per rule code instead of one
+per violation, most violations first: the count, the code, the fix marker
+when any can be fixed, the rule's summary, and C<(N fixable)> when only
+some can. The summary lines follow as usual.
 
 In C<diff> mode it prints each file's unified diff instead, and C<Would fix
 N violations in M files.> on the error handle.

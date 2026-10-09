@@ -43,6 +43,7 @@ sub run ( $self, @paths ) {
     my @files    = $self->files(@paths);
     my $progress = $self->{progress};
     my @results;
+    $progress->( 0, scalar @files ) if $progress;
     for my $file (@files) {
         push @results, ref $file ? $file : $self->_process($file);
         $progress->( scalar @results, scalar @files ) if $progress;
@@ -187,7 +188,7 @@ engine's C<fix_mode> decides which fixes are worked out.
 C<files> takes the same paths and returns the files C<run> would check, in
 order: a path string for each, or C<< { file => $path, error => $message } >>
 for a path that does not exist. A C<progress> code ref passed to C<new> is
-called as C<< $progress->($done, $total) >> after each file is checked.
+called as C<< $progress->($done, $total) >> once the files are found and again after each one is checked.
 
 C<run> returns C<< { files => [...], exit_code => N } >>. Each file entry
 has C<file>, C<violations> (remaining), C<fixed_count>, and when relevant
