@@ -10,7 +10,7 @@ sub new ( $class, %args ) {
     return bless {
         out  => $args{out},                # where start and file events go, as they happen
         mode => $args{mode} // 'lint',    # lint, fix or diff
-        json => JSON::PP->new->canonical,
+        json => JSON::PP->new->canonical->ascii,
     }, $class;
 }
 
@@ -73,8 +73,11 @@ __END__
 
 =head1 DESCRIPTION
 
-Prints one compact JSON object per line, flushing after each, so a consumer
-can follow a run as it goes. Every object has a C<type>:
+Prints one compact JSON object per C<\n>-terminated line, flushing after
+each, so a consumer can follow a run as it goes. The output is pure ASCII:
+every non-ASCII character is written as a C<\u> escape, so characters such
+as U+2028, U+2029 and U+0085 never appear raw where a Unicode-aware line
+splitter could break a line on them. Every object has a C<type>:
 
 =over 4
 
@@ -82,8 +85,10 @@ can follow a run as it goes. Every object has a C<type>:
 
     {"total":250,"type":"start"}
 
-Printed once, before any file is checked. C<total> is the number of files
-the run will check (including paths that do not exist).
+Printed once, before any file is checked, as the first line. C<total> is
+the number of files the run will check (including paths that do not
+exist). If puff fails before the files are found, there is no C<start>:
+the stream is just C<done> with C<error>.
 
 =item C<file>
 
@@ -107,7 +112,8 @@ key: the unified diff for the file, or null when nothing would change.
 
     {"error":"...","exit_code":2,"type":"done"}
 
-Printed last: C<done> is always the last line of a completed run.
+Printed last: C<done> is always the last line of any run that does not
+crash outright.
 C<exit_code> is the exit code puff returns. If the run dies part way
 (C<abort>), C<done> also has C<error>, the message puff prints to STDERR,
 and C<exit_code> is 2. A stream that ends without C<done> means puff was
@@ -116,8 +122,7 @@ killed or aborted before it could print one: treat it as a failure.
 =back
 
 More event types, and more keys in any event, may be added later: ignore
-any C<type> or key you do not know. The output is character data: give it
-a handle with an encoding layer. C<message>, C<error>, C<fixes_skipped>,
+any C<type> or key you do not know. C<message>, C<error>, C<fixes_skipped>,
 C<file> and C<diff> contain text derived from the linted files (their
 names and contents): consumers should treat it as untrusted data.
 

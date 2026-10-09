@@ -74,7 +74,7 @@ To see which rules fire most and which of them can be fixed, use
 | `--unsafe-fixes` | Also apply unsafe fixes (with `--fix` or `--diff`). `--no-unsafe-fixes` turns off `unsafe-fixes = true` from the config. |
 | `--diff` | Print the fixes as a unified diff and write nothing. Wins over `--fix`. |
 | `--output-format text\|json\|jsonl` | Output format; default `text`. `jsonl` streams JSON Lines (see below). |
-| `--show-files` | List the files that would be checked, one per line, and check nothing. |
+| `--show-files` | List the files that would be checked, one per line, and check nothing. Plain paths, and `--statistics` does not apply, whatever `--output-format` says. |
 | `--statistics` | Print one line per rule instead of one per violation: the count, the fix marker, the rule's summary, and `(N fixable)` when only some can be fixed. Most violations first. |
 | `--config PATH` | Read this config file instead of `./.puff.toml`. |
 | `--no-config` | Ignore config files. |
@@ -131,16 +131,20 @@ checked, so a tool can show progress or start work before the run ends:
     {"error":"No such file or directory","file":"missing.pl","fixed":0,"fixes_skipped":null,"type":"file","violations":[]}
     {"exit_code":2,"type":"done"}
 
-`start` comes first, with the number of files to check. Each `file` event
-follows in the order the files are checked: `violations` holds the same
-objects as the JSON output, `error` is the file's error or `null` (errors are
-not printed to STDERR), `fixes_skipped` is why fixes were not applied (such as
-CRLF line endings) or `null` (also not printed to STDERR), and `fixed` is the
-number of fixes `--fix` wrote to the file (always 0 with `--diff`). With
-`--diff`, each `file` event also has `diff`: the unified diff, or `null` when
-nothing would change. `done` is always the last line of a completed run, with
-the exit code; if puff dies part way it still prints `done` with
-`"exit_code":2` and an `error`. A stream that ends without `done` means puff
+Each event is one line ending in `\n`, and the output is pure ASCII: non-ASCII
+characters are `\u` escapes, so U+2028, U+2029 and U+0085 never appear raw for
+a Unicode-aware line splitter to break on. `start` comes first, with the number
+of files to check, unless puff fails before the files are found: then the
+stream is just `done` with an `error`. Each `file` event follows in the order
+the files are checked: `violations` holds the same objects as the JSON output,
+`error` is the file's error or `null` (errors are not printed to STDERR),
+`fixes_skipped` is why fixes were not applied (such as CRLF line endings) or
+`null` (also not printed to STDERR), and `fixed` is the number of fixes `--fix`
+wrote to the file (always 0 with `--diff`). With `--diff`, each `file` event
+also has `diff`: the unified diff, or `null` when nothing would change. `done`
+is always the last line of any run that does not crash outright, with the exit
+code; if puff dies part way it still prints `done` with `"exit_code":2` and an
+`error`. A stream that ends without `done` means puff
 was killed or aborted: treat it as a failure. More event types and keys may be
 added later, so ignore any you do not know. File names, messages, errors and
 diffs come from the linted files: treat them as untrusted data.

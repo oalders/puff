@@ -298,6 +298,26 @@ subtest 'check --output-format jsonl: non-ASCII' => sub {
     is( $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)", 'message decodes as UTF-8' );
 };
 
+subtest 'check --output-format jsonl: Unicode line separators are escaped' => sub {
+    my $dir = project();
+    $dir->child('sep.pl')->spew_utf8("use strict;\n# a\x{2028}b\x{85}c\nprint rand(10);\n");
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001' );
+    is( $exit, 1, 'exit 1: the diff would change something' ) or diag $err;
+    my @lines = split /\n/, $out;
+    is( scalar @lines, 3, 'start, file, done: one line each' );
+    is( [ grep {/[^\x00-\x7f]/} @lines ], [], 'every line is pure ASCII' );
+    my @events = jsonl($out);
+    like( $events[1]{diff}, qr/^ # a\x{2028}b\x{85}c$/m, 'diff decodes back to the original characters' );
+};
+
+subtest 'check --output-format jsonl: no files' => sub {
+    my $dir = project();
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' );
+    is( $exit, 0,   'exit 0' ) or diag $err;
+    is( $err,  q{}, 'nothing on STDERR' );
+    is( [ jsonl($out) ], [ { type => 'start', total => 0 }, { type => 'done', exit_code => 0 } ], 'just start and done' );
+};
+
 subtest 'check --output-format jsonl: a run that dies still ends with done' => sub {
     my $dir = project( 'a.pl' => 'S001/basic.pl', 'bad.pl' => 'S001/basic.pl', 'c.pl' => 'S001/basic.pl' );
     my $code = <<~'END';

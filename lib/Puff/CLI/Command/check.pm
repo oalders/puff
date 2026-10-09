@@ -72,7 +72,9 @@ sub execute ( $self, $opt, $args ) {
     if ( !$run ) {
         my $error = $@;
         $progress->( 0, 0 ) if $progress;    # stop the timer and erase the line
-        $jsonl->abort( 2, $error ) if $jsonl;    # Puff::CLI->main exits 2 when a command dies
+        # Puff::CLI->main exits 2 when a command dies. The eval keeps a
+        # failure inside abort from replacing $error.
+        eval { $jsonl->abort( 2, $error ); 1 } if $jsonl;
         die $error;
     }
     my $reporter
@@ -147,10 +149,12 @@ file event carries its diff instead (see L<Puff::Reporter::JSONL>).
 
 C<--statistics> prints one line per rule instead of one per violation (see
 L<Puff::Reporter::Text>). C<--show-files> prints the files that would be
-checked, one per line, and checks nothing. While checking, a spinner and a
-C<Checking N/M files> counter are shown on STDERR when it is a terminal and
-the run takes more than half a second (never with C<--output-format jsonl>,
-which streams one JSON object per line as each file is checked). See
+checked, one per line, and checks nothing: they are plain paths and
+C<--statistics> does not apply, whatever C<--output-format> says. While
+checking, a spinner and a C<Checking N/M files> counter are shown on STDERR
+when it is a terminal and the run takes more than half a second (never with
+C<--output-format jsonl>, which streams one JSON object per line as each
+file is checked). See
 L<Puff::Runner> for exit codes.
 
 =cut
