@@ -82,6 +82,22 @@ ok(
     'options for unselected rule ignored'
 );
 
+my $explicit = $tmp->child('explicit');
+$explicit->mkpath;
+rule_file( $explicit, 'E::On', 'W001' );
+rule_file( $explicit, 'E::Off', 'W002', 'sub explicit_select {1}' );
+my @wclasses = grep { $_->code =~ /\AW/ } Puff::Rules->load( rule_paths => ["$explicit"] );
+
+sub wcodes (%args) {
+    return [ map { $_->code } Puff::Rules->instantiate( \@wclasses, %args ) ];
+}
+is( wcodes( select => ['W'] ), ['W001'], 'explicit_select rule is not selected by a prefix' );
+is( wcodes( select => ['W00'] ), ['W001'], 'nor by a longer prefix' );
+is( wcodes( select => ['W'], extend_select => ['W002'] ), [qw( W001 W002 )], 'selected by its exact code' );
+is( wcodes( select => ['ALL'] ), [qw( W001 W002 )], 'selected by ALL' );
+is( wcodes( select => ['W002'], ignore => ['W'] ), [], 'ignored by a prefix' );
+like( dies { wcodes( select => ['W9'] ) }, qr/Unknown rule selector: W9/, 'unknown selectors still die' );
+
 my $dup = $tmp->child('dup');
 $dup->mkpath;
 rule_file( $dup, 'D::A', 'Y001' );

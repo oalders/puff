@@ -77,7 +77,7 @@ sub instantiate ( $class, $classes, %args ) {
     my @rules;
     for my $rule_class ( sort { $a->code cmp $b->code } @$classes ) {
         my $code = $rule_class->code;
-        next unless _matches( $code, \@select );
+        next unless $rule_class->explicit_select ? _names( $code, \@select ) : _matches( $code, \@select );
         next if _matches( $code, \@ignore );
 
         my $given = $options->{$code} // {};
@@ -92,6 +92,11 @@ sub instantiate ( $class, $classes, %args ) {
 
 sub _matches ( $code, $prefixes ) {
     return scalar grep { index( $code, $_ ) == 0 } @$prefixes;
+}
+
+# Whether a selector is the exact code or ALL (already mapped to '').
+sub _names ( $code, $selectors ) {
+    return scalar grep { $_ eq $code || $_ eq q{} } @$selectors;
 }
 
 1;
@@ -125,7 +130,9 @@ returned sorted by code.
 C<instantiate> enables the rules whose code starts with any C<select> or
 C<extend_select> prefix and with no C<ignore> prefix, and returns objects
 sorted by code. The selector C<ALL> matches every rule, in any of the three
-lists. It dies if a C<select> or C<extend_select> entry is not a
+lists. A rule whose C<explicit_select> is true (see L<Puff::Rule>) is
+enabled only by its exact code or C<ALL>, never by a shorter prefix, so the
+default C<select> of C<S> and C<B> leaves it off. It dies if a C<select> or C<extend_select> entry is not a
 prefix of any loaded rule's code (or of C<P001>) (C<Unknown rule selector:
 X>), or if C<rule_options> names an option a selected rule does not declare.
 An C<ignore> entry that matches nothing is allowed.

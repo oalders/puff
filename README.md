@@ -6,8 +6,8 @@ safe that fix is. Adding a rule takes one small module and a few fixture
 files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
-By default puff runs the security (`S`) and likely-bug (`B`) rules; the
-style rules are opt-in. puff does not format code; use perltidy for that.
+By default puff runs the security (`S`) and likely-bug (`B`) rules (except
+B007 and B008, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -82,7 +82,9 @@ To see which rules fire most and which of them can be fixed, use
 `CODES` is a comma-separated list, and the option can be repeated. A code can
 be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
-rule and applies every fix. A
+rule and applies every fix. A few rules (B007 and B008) are selected only by
+their exact code or `ALL`, never by a prefix, so `--select B` leaves them
+off. A
 `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
 rules off. An `ignore` entry that matches nothing is allowed.
@@ -326,6 +328,8 @@ reported as `P001`:
 | B004 | IndirectObject | Indirect object syntax | unsafe |  |
 | B005 | TryTinySemicolon | Try::Tiny try/catch is not ended with a semicolon | unsafe |  |
 | B006 | UnusedVariable | Lexical variable is declared but never used | unsafe |  |
+| B007 | RedeclaredVariable | Lexical variable is redeclared in the same scope | none |  |
+| B008 | ShadowedVariable | Lexical variable shadows one from an enclosing scope | none |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -601,6 +605,25 @@ deletes a declaration that has no assignment. Based on
 Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter, limited to
 statement-level declarations.
 
+**B007** and **B008** are not selected by default, and selecting `B` does
+not turn them on: name them (`--extend-select B007,B008` or
+`extend-select = ["B007", "B008"]`) or use `ALL`. Both look at `my`, `our`
+and `state` declarations and sub signature parameters, and have no fix.
+`$x`, `@x` and `%x` are different variables, `local` is not a declaration,
+and code in a string `eval` is not seen. Scopes are blocks, the file, and
+each `if`/`while`/`for` statement for the variables declared in its
+condition or loop header. **B007** reports a variable declared again in the
+same scope (`my $x = 1; my $x = 2;`, which Perl warns about), including in
+one `if`/`elsif` chain and in a sub body that redeclares a signature
+parameter (parameters belong to the body's scope). `our $x` twice is
+reported only in the same package, so `our $VERSION` in each package of a
+file is fine. **B008** reports a declaration that hides one from an
+enclosing scope: `my $item` inside `for my $item (...)`, a sub (named or
+anonymous) declaring a name the file declared before it, or `my $x = $x + 1`
+in an inner block. Blocks side by side may reuse a name, a variable is not
+visible inside its own declaration (`my $x = do { my $x }` is fine), and an
+inner `our` of a name an outer scope declared with `our` is not reported.
+
 **M001** is not selected by default; turn it on with `--select M`. It reports
 `use Moose` or `use Mouse` in a package that never calls `->make_immutable`,
 so every `new` builds the constructor at runtime. Each package is checked on
@@ -771,6 +794,9 @@ The points to know:
   `fix_safety => 'safe'` to `$self->violation` for the safe ones.
 - If the rule detects a known weakness, return its CWE numbers from `cwe`
   (`sub cwe { ( 78, 73 ) }`); `puff rule CODE` prints them.
+- To keep a rule off unless it is asked for by name, define
+  `sub explicit_select {1}`. Then only its exact code or `ALL` selects it,
+  not a prefix, even one that is selected by default.
 - Rules that ship with puff go under `lib/Puff/Rule/` and are found
   automatically.
 
