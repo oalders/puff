@@ -558,8 +558,11 @@ from `&foo(...)`; it changes behaviour when `foo` has a prototype. `&foo`
 without parens is not fixed (the equivalent is `foo(@_)`), and neither is a
 sub named like a builtin, such as `&open(...)`, where the `&` is needed.
 `\&foo`, `goto &foo`, `defined &foo`, `exists &foo`, `&$code(...)`,
-`&{...}(...)`, `&CORE::...` and an `&` that could be bitwise (`$x &foo`) are
-left alone.
+`&{...}(...)` and `&CORE::...` are left alone; `\&foo(...)` calls `foo`, so
+it is reported. The rule is conservative: it does not report `&foo` after a
+term, where the `&` could be bitwise (`$x &foo`), after a filehandle
+(`print STDERR &foo(1)`, `print {$fh} &foo(1)`) or after a block
+(`grep {...} &foo(1)`).
 
 **B001** is selected by default. It reports pattern modifiers such as `/i`,
 `/m`, `/s` and `/x` on a match, substitution or `split` whose whole pattern

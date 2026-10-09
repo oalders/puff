@@ -27,12 +27,22 @@ sub explanation {
         `&print(...)` or `&open(...)`, is reported but not fixed either,
         since there the `&` is what makes Perl call your sub.
 
-        Uses of `&` that do not call the sub are left alone: `\&foo`,
+        Uses of `&foo` that do not call the sub are left alone: `\&foo`,
         `\(&foo)`, `goto &foo`, `defined &foo`, `exists &foo`, `undef &foo`
-        and `sort &foo`, as are `&$code(...)`, `&{...}(...)` and `&CORE::...`
-        subs. An `&` that could be the bitwise operator, as in `$x &foo`, is
-        not reported. `print &foo (...)` with a space before the paren is
-        not fixed, because `print foo (...)` can read `foo` as a filehandle.
+        and `sort &foo`. `\&foo(...)` does call `foo` and takes a ref to
+        the result, so it is reported. `&$code(...)`, `&{...}(...)` and
+        `&foo::(...)` are left alone, since there is no plain name to call
+        instead, as are `&CORE::...` subs. `print &foo (...)` with a space
+        before the paren is not fixed, because `print foo (...)` can read
+        `foo` as a filehandle.
+
+        The rule is conservative about when `&` is a sigil. It reports
+        `&foo` at the start of an expression, after an operator, or after a
+        word it knows takes an expression, such as `return`, `print`,
+        `join`, `map` or `grep`. It does not report `&foo` after a term,
+        where the `&` could be the bitwise operator (`$x &foo`,
+        `$i++ &foo`), after a filehandle (`print STDERR &foo(1)`,
+        `print {$fh} &foo(1)`) or after a block (`grep {...} &foo(1)`).
 
         This rule is not selected by default. Turn it on with `--select Q` or
         `extend-select = ["Q"]`.
@@ -47,6 +57,7 @@ my %NOT_A_CALL = map { $_ => 1 } qw( defined exists goto undef sort );
 my %TAKES_EXPR = map { $_ => 1 } qw(
     return and or not xor if unless while until elsif
     print printf say die warn push unshift join scalar ref
+    reverse map grep
 );
 
 my %PRINT = map { $_ => 1 } qw( print printf say );
@@ -100,7 +111,7 @@ sub _called_name ($elem) {
 
     my $prev = $elem->sprevious_sibling;
     if ($prev) {
-        return unless _starts_term($prev);
+        return unless _starts_term($prev) || _ref_to_call( $prev, $elem );
     }
     else {
         return unless _in_call_list($elem);
@@ -117,6 +128,12 @@ sub _starts_term ($prev) {
     return $prev->isa('PPI::Token::Word') && $TAKES_EXPR{ $prev->content };
 }
 
+# True when $cast is the `\` in `\&foo(...)` or `\(&foo(...))`. With an
+# argument list that is a call, and the `\` takes a ref to its result.
+sub _ref_to_call ( $cast, $elem ) {
+    return $cast->isa('PPI::Token::Cast') && $cast->content eq '\\' && _args($elem);
+}
+
 # False when $elem is in a list that makes it a code ref: `\(&foo)`,
 # `defined(&foo)` and the like.
 sub _in_call_list ($elem) {
@@ -124,7 +141,7 @@ sub _in_call_list ($elem) {
     my $list = $stmt->parent;
     return 1 unless $list && $list->isa('PPI::Structure::List');
     my $before = $list->sprevious_sibling or return 1;
-    return 0 if $before->isa('PPI::Token::Cast');
+    return _ref_to_call( $before, $elem ) if $before->isa('PPI::Token::Cast');
     return !( $before->isa('PPI::Token::Word') && $NOT_A_CALL{ $before->content } );
 }
 
@@ -165,11 +182,19 @@ named like a Perl builtin or keyword (C<&print(...)>, C<&open(...)>) is
 reported but not fixed, because there the C<&> is needed to call the user
 sub.
 
-Not reported: C<\&foo>, C<\(&foo)>, C<goto &foo>, C<defined &foo>,
-C<defined(&foo)>, C<exists &foo>, C<undef &foo>, C<sort &foo>,
-C<&$code(...)>, C<&{...}(...)>, C<&CORE::...>, and any C<&> that could be
-the bitwise operator (C<$x &foo>). When the word before C<&foo> is not one
-the rule knows takes an expression, it is not reported.
+Not reported, because the C<&> does not make a call: C<\&foo>,
+C<\(&foo)>, C<goto &foo>, C<defined &foo>, C<defined(&foo)>,
+C<exists &foo>, C<undef &foo> and C<sort &foo>. C<\&foo(...)> calls
+C<foo> and takes a ref to the result, so it is reported. Also not reported:
+C<&$code(...)>, C<&{...}(...)>, C<&foo::(...)> and C<&CORE::...>.
+
+The rule is conservative. It reports C<&foo> at the start of an
+expression, after an operator, or after a word it knows takes an
+expression (C<return>, C<print>, C<join>, C<map>, C<grep> and the like).
+It does not report C<&foo> after a term, where the C<&> could be the
+bitwise operator (C<$x &foo>, C<$i++ &foo>), after a filehandle
+(C<print STDERR &foo(1)>, C<print {$fh} &foo(1)>) or after a block
+(C<grep {...} &foo(1)>).
 
 Not selected by default; select it with C<Q> or C<Q004>.
 
