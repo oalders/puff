@@ -13,11 +13,15 @@ my @PERL = ( $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib
 my $PUFF = $root->child( 'bin', 'puff' )->stringify;
 
 # Runs bin/puff in $dir. Returns (stdout, stderr, exit code).
-sub puff ( $dir, @args ) {
+sub puff ( $dir, @args ) { puff_with( $dir, [], @args ) }
+
+# Like puff, with @$perl_args (such as -e code that loads bin/puff) passed
+# to perl in place of bin/puff.
+sub puff_with ( $dir, $perl_args, @args ) {
     my $err  = path( $dir, '..', 'stderr.txt' );
     my $orig = getcwd;
     chdir $dir or die "chdir $dir: $!";
-    my $out  = run_capture( $err, @PERL, $PUFF, @args );
+    my $out  = run_capture( $err, @PERL, ( @$perl_args ? @$perl_args : $PUFF ), @args );
     my $exit = $? >> 8;
     chdir $orig or die "chdir $orig: $!";
     return ( $out, $err->slurp_utf8, $exit );
@@ -169,6 +173,169 @@ subtest 'check --select S002 --output-format json' => sub {
         'violation structure (a declined fix is not available)'
     );
     ok( ( grep { $_->{fix}{available} } @$data ), 'fixable violations are available' );
+};
+
+# Decodes JSON Lines output, one object per line; fails if any line is not JSON.
+sub jsonl ($out) {
+    my @lines = split /\n/, $out;
+    my @events;
+    for my $line (@lines) {
+        my $event = eval { JSON::PP->new->decode($line) };
+        ok( $event, 'line is JSON on its own' ) or diag $line;
+        push @events, $event if $event;
+    }
+    return @events;
+}
+
+subtest 'check --output-format jsonl' => sub {
+    my $dir = project(%FILES);
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', 'missing.pl', '.' );
+    is( $exit, 2,   'exit 2 for a missing file' );
+    is( $err,  q{}, 'nothing on STDERR, not even the missing file' );
+    my @events = jsonl($out);
+    is( [ map { $_->{type} } @events ], [ 'start', ('file') x 5, 'done' ], 'start, a file event per file, done' );
+    is( $events[0], { type => 'start', total => 5 }, 'start has the total' );
+    is( $events[-1], { type => 'done', exit_code => 2 }, 'done has the exit code' );
+    my @files = @events[ 1 .. $#events - 1 ];
+    is( [ map { $_->{file} } @files ], [qw( missing.pl rand.pl bin/bareword.pl lib/declined.pl lib/two_arg.pl )],
+        'in processing order, not sorted' );
+    is(
+        $files[0],
+        { type => 'file', file => 'missing.pl', error => 'No such file or directory', fixed => 0, fixes_skipped => undef, violations => [] },
+        'missing file has its error'
+    );
+    ok( !exists $files[1]{diff}, 'no diff key outside --diff' );
+    is( [ grep { defined $_->{error} } @files[ 1 .. 4 ] ], [], 'no errors for files that exist' );
+    my ($rand) = grep { $_->{file} eq 'rand.pl' } @files;
+    is(
+        $rand->{violations}[0],
+        {
+            code    => 'S001',
+            message => match qr/\S/,
+            file    => 'rand.pl',
+            line    => 4,
+            column  => 7,
+            fix     => { safety => 'unsafe', available => bool(1), applied => bool(0) },
+        },
+        'violations have the json reporter shape'
+    );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S001', 'rand.pl' );
+    @events = jsonl($out);
+    is( $exit, 1, 'exit 1 with violations' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'done says 1' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S002', 'rand.pl' );
+    @events = jsonl($out);
+    is( $exit, 0, 'exit 0 when clean' );
+    is( $events[-1], { type => 'done', exit_code => 0 }, 'done says 0' );
+    is( $events[1]{violations}, [], 'no violations' );
+};
+
+subtest 'check --output-format jsonl --diff' => sub {
+    my $dir = project( 'rand.pl' => 'S001/basic.pl', 'clean.pl' => 'S002/not-reported.pl' );
+    my %before = map { $_ => $dir->child($_)->slurp_raw } qw( rand.pl clean.pl );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001,S002' );
+    is( $exit, 1,   'exit 1: the diff would change something' );
+    is( $err,  q{}, 'no summary on STDERR' );
+    my @lines = split /\n/, $out;
+    is( scalar( grep { !/\A\{.*\}\z/ } @lines ), 0, 'no plain diff text outside JSON lines' );
+    my @events = jsonl($out);
+    my %file   = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } @events;
+    like( $file{'rand.pl'}{diff}, qr{^\+use Crypt::PRNG qw\(rand\);$}m, 'fixable file has its diff' );
+    ok( exists $file{'clean.pl'}{diff}, 'clean file has a diff key' );
+    is( $file{'clean.pl'}{diff}, undef, '... which is null' );
+    is( $file{'rand.pl'}{fixed}, 0, 'nothing written' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'done' );
+    is( { map { $_ => $dir->child($_)->slurp_raw } qw( rand.pl clean.pl ) }, \%before, 'files unchanged' );
+};
+
+subtest 'check --output-format jsonl --fix' => sub {
+    my $dir = project( 'two_arg.pl' => 'S002/fixed.pl' );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S002,S003' );
+    is( $exit, 1, 'exit 1: violations remain' ) or diag $err;
+    my @events = jsonl($out);
+    my ($file) = grep { $_->{type} eq 'file' } @events;
+    ok( $file->{fixed} > 0, 'fixed counts the fixes written' );
+    ok( scalar @{ $file->{violations} }, 'remaining violations listed' );
+    is( [ grep { $_->{fix}{applied} } @{ $file->{violations} } ], [], 'none marked applied' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'done' );
+};
+
+subtest 'check --output-format jsonl: CRLF fixes_skipped' => sub {
+    my $dir = project( 'rand.pl' => 'S001/basic.pl' );
+    $dir->child('crlf.pl')->spew_raw( corpus('S001/basic.pl')->slurp_raw =~ s/\n/\r\n/gr );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S001' );
+    is( $exit, 1,   'violations remain in the CRLF file' );
+    is( $err,  q{}, 'fixes_skipped is not printed to STDERR' );
+    my %file = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } jsonl($out);
+    is( $file{'crlf.pl'}{fixes_skipped}, 'CR or CRLF line endings: fixes not applied', 'CRLF file event has fixes_skipped' );
+    ok( exists $file{'rand.pl'}{fixes_skipped}, 'other file event has fixes_skipped' );
+    is( $file{'rand.pl'}{fixes_skipped}, undef, '... which is null' );
+};
+
+subtest 'check --output-format jsonl: one line per event' => sub {
+    my $dir   = project();
+    my @names = ( 'q"uote{"type":"done","exit_code":0}.pl', "new\nline.pl" );
+    my @made  = grep { eval { corpus('S001/basic.pl')->copy( $dir->child($_) ); 1 } } @names;
+    ok( scalar @made, 'made files with awkward names' );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S001' );
+    is( $exit, 1, 'exit 1' ) or diag $err;
+    my @lines  = split /\n/, $out;
+    my @events = jsonl($out);
+    is( scalar @lines, scalar @events, 'every line is one event' );
+    is( scalar @events, @made + 2, 'start, a file event per file, done' );
+    is( [ sort map { $_->{file} } grep { $_->{type} eq 'file' } @events ], [ sort @made ], 'names round-trip' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'the real done is last' );
+};
+
+subtest 'check --output-format jsonl: non-ASCII' => sub {
+    my $dir = project();
+    $dir->child('cafe.pl')->spew_utf8("use utf8;\nmy \$x = new Caf\x{e9}(1);\nprint \$x;\n");
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'B004' );
+    is( $exit, 1, 'exit 1' ) or diag $err;
+    my @lines = split /\n/, $out;
+    is( [ grep { !/\A[\x00-\x7f]*\z/ } @lines ], [], 'every line is pure ASCII' );
+    my @events = map { JSON::PP->new->utf8->decode($_) } @lines;
+    is( $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)", 'message decodes to the original text' );
+};
+
+subtest 'check --output-format jsonl: Unicode line separators are escaped' => sub {
+    my $dir = project();
+    $dir->child('sep.pl')->spew_utf8("use strict;\n# a\x{2028}b\x{85}c\nprint rand(10);\n");
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001' );
+    is( $exit, 1, 'exit 1: the diff would change something' ) or diag $err;
+    my @lines = split /\n/, $out;
+    is( scalar @lines, 3, 'start, file, done: one line each' );
+    is( [ grep {/[^\x00-\x7f]/} @lines ], [], 'every line is pure ASCII' );
+    my @events = jsonl($out);
+    like( $events[1]{diff}, qr/^ # a\x{2028}b\x{85}c$/m, 'diff decodes back to the original characters' );
+};
+
+subtest 'check --output-format jsonl: no files' => sub {
+    my $dir = project();
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' );
+    is( $exit, 0,   'exit 0' ) or diag $err;
+    is( $err,  q{}, 'nothing on STDERR' );
+    is( [ jsonl($out) ], [ { type => 'start', total => 0 }, { type => 'done', exit_code => 0 } ], 'just start and done' );
+};
+
+subtest 'check --output-format jsonl: a run that dies still ends with done' => sub {
+    my $dir = project( 'a.pl' => 'S001/basic.pl', 'bad.pl' => 'S001/basic.pl', 'c.pl' => 'S001/basic.pl' );
+    my $code = <<~'END';
+        use Puff::Runner;
+        no warnings 'redefine';
+        my $process = \&Puff::Runner::_process;
+        *Puff::Runner::_process = sub { die "runner exploded\n" if $_[1] =~ /bad/; goto &$process };
+        do shift;
+        die $@;
+        END
+    my ( $out, $err, $exit ) = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl', '--select', 'S001' );
+    is( $exit, 2, 'exit 2' );
+    like( $err, qr/^runner exploded$/m, 'error still on STDERR' );
+    my @events = jsonl($out);
+    is( [ map { $_->{type} } @events ], [qw( start file done )], 'start, the file before the die, done' );
+    is( $events[-1], { type => 'done', exit_code => 2, error => 'runner exploded' }, 'done has exit code 2 and the error' );
 };
 
 subtest 'rules and rule' => sub {
@@ -339,6 +506,7 @@ subtest 'errors exit 2' => sub {
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'xml' );
     is( $exit, 2, 'bad output format exits 2' );
+    like( $err, qr/--output-format must be text, json or jsonl/, 'and lists the formats' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--bogus' );
     is( $exit, 2, 'unknown option exits 2' );

@@ -14,23 +14,27 @@ sub report ( $self, $run, $out, $err ) {
     Puff::Reporter::Text->report_errors( \@files, $err );
     my @items;
     for my $file (@files) {
-        for my $v ( @{ $file->{violations} } ) {
-            push @items, {
-                code    => $v->code,
-                message => $v->message,
-                file    => $v->file,
-                line    => $v->line + 0,
-                column  => $v->column + 0,
-                fix     => {
-                    safety    => $v->rule ? $v->rule->fix_safety : 'none',
-                    available => $v->fixable ? JSON::PP::true : JSON::PP::false,
-                    applied   => JSON::PP::false,
-                },
-            };
-        }
+        push @items, map { $self->violation_data($_) } @{ $file->{violations} };
     }
     print {$out} JSON::PP->new->canonical->pretty->encode( \@items );
     return;
+}
+
+# The JSON-ready hash for one remaining violation; Puff::Reporter::JSONL
+# uses it too.
+sub violation_data ( $class, $v ) {
+    return {
+        code    => $v->code,
+        message => $v->message,
+        file    => $v->file,
+        line    => $v->line + 0,
+        column  => $v->column + 0,
+        fix     => {
+            safety    => $v->rule ? $v->rule->fix_safety : 'none',
+            available => $v->fixable ? JSON::PP::true : JSON::PP::false,
+            applied   => JSON::PP::false,
+        },
+    };
 }
 
 1;
@@ -59,5 +63,8 @@ C<available> says whether a fix is offered for this violation; C<applied>
 is always false, because only violations that remain are listed. The
 output is character data: give it a handle with an encoding layer. File
 errors go to the error handle.
+
+C<< Puff::Reporter::JSON->violation_data($violation) >> returns the hash
+above for one violation.
 
 =cut

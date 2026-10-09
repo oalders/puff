@@ -63,6 +63,28 @@ subtest 'progress' => sub {
     is( \@calls, [ [ 0, 2 ], [ 1, 2 ], [ 2, 2 ] ], 'called once the files are found, then after each one' );
     $dir->child($_)->remove for qw( one.pl two.pl );
 };
+subtest 'on_file' => sub {
+    $dir->child('one.pl')->spew_utf8("foo;\n");
+    $dir->child('two.pl')->spew_utf8("1;\n");
+    my @events;
+    my $runner = Puff::Runner->new(
+        config   => $config,
+        engine   => Puff::Engine->new( rules => [ FlagWord->new ], fix_mode => 'none' ),
+        on_file  => sub ($result) { push @events, [ file => $result ] },
+        progress => sub ( $done, $total ) { push @events, [ progress => $done ] },
+    );
+    my $missing = $dir->child('missing.pl')->stringify;
+    my $run     = $runner->run( $dir->child('two.pl')->stringify, $missing, $dir->child('one.pl')->stringify );
+    is( [ map { $_->[0] eq 'file' ? 'file' : "progress $_->[1]" } @events ],
+        [ 'progress 0', 'file', 'progress 1', 'file', 'progress 2', 'file', 'progress 3' ],
+        'called once per file, before progress' );
+    my @results = map { $_->[1] } grep { $_->[0] eq 'file' } @events;
+    is( [ map { path( $_->{file} )->basename } @results ], [qw( two.pl missing.pl one.pl )], 'in order' );
+    ref_is( $results[$_], $run->{files}[$_], "result $_ is the run's entry" ) for 0 .. 2;
+    is( $results[1], { file => $missing, error => 'No such file or directory' }, 'missing path entry' );
+    is( scalar @{ $results[2]{violations} }, 1, 'violations included' );
+    $dir->child($_)->remove for qw( one.pl two.pl );
+};
 $dir->child('bad.pl')->spew_utf8("foo;\n");
 $dir->child('good.pl')->spew_utf8("foo;\n");
 
