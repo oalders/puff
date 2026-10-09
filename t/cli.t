@@ -47,25 +47,25 @@ sub project (%files) {
 }
 
 my %FILES = (
-    'rand.pl'          => 'S001/basic.pl',
-    'lib/two_arg.pl'   => 'S002/fixed.pl',
-    'bin/bareword.pl'  => 'S003/basic.pl',
-    'lib/declined.pl'  => 'S002/declined.pl',
+    'rand.pl'         => 'S001/basic.pl',
+    'lib/two_arg.pl'  => 'S002/fixed.pl',
+    'bin/bareword.pl' => 'S003/basic.pl',
+    'lib/declined.pl' => 'S002/declined.pl',
 );
 
 subtest 'check lints and exits 1' => sub {
     my $dir = project(%FILES);
     my ( $out, $err, $exit ) = puff( $dir, 'check' );
     is( $exit, 1, 'exit 1' );
-    is( $err,  '', 'nothing on STDERR' );
-    like( $out, qr{^rand\.pl:4:7: S001 \S.* \[\*\*\]$}m,        'S001 line with unsafe-fix marker' );
+    is( $err, '', 'nothing on STDERR' );
+    like( $out, qr{^rand\.pl:4:7: S001 \S.* \[\*\*\]$}m, 'S001 line with unsafe-fix marker' );
     like( $out, qr{^lib/two_arg\.pl:5:1: S002 Use three-argument open \[\*\*\]$}m, 'S002 line' );
-    like( $out, qr{^bin/bareword\.pl:5:1: S003 \S.* \[\*\*\]$}m,  'S003 line' );
-    like( $out, qr{^Found \d+ violations \(checked 4 files\)\.$}m,  'summary counts the files' );
-    like( $out, qr{^\d+ more fixable with --unsafe-fixes$}m,      'unsafe fixes mentioned' );
+    like( $out, qr{^bin/bareword\.pl:5:1: S003 \S.* \[\*\*\]$}m, 'S003 line' );
+    like( $out, qr{^Found \d+ violations \(checked 4 files\)\.$}m, 'summary counts the files' );
+    like( $out, qr{^\d+ more fixable with --unsafe-fixes$}m, 'unsafe fixes mentioned' );
     unlike( $out, qr{fixable with --fix}, 'no safe fixes available' );
 
-    my @lines = grep { /^\S+:\d+:\d+: / } split /\n/, $out;
+    my @lines  = grep {/^\S+:\d+:\d+: /} split /\n/, $out;
     my @sorted = sort {
         my @x = split /:/, $a;
         my @y = split /:/, $b;
@@ -75,24 +75,24 @@ subtest 'check lints and exits 1' => sub {
 };
 
 subtest 'check --fix applies only safe fixes' => sub {
-    my $dir = project(%FILES);
+    my $dir    = project(%FILES);
     my %before = map { $_ => $dir->child($_)->slurp_raw } keys %FILES;
     my ( $out, undef, $exit ) = puff( $dir, 'check', '--fix' );
     is( $exit, 1, 'exit 1' );
     is( { map { $_ => $dir->child($_)->slurp_raw } keys %FILES }, \%before, 'files unchanged' );
     like( $out, qr{^\d+ more fixable with --unsafe-fixes$}m, 'mentions --unsafe-fixes' );
-    like( $out, qr{^Fixed 0 violations in 0 files\.$}m,      'fixed count' );
+    like( $out, qr{^Fixed 0 violations in 0 files\.$}m, 'fixed count' );
 };
 
 subtest 'check --diff --unsafe-fixes prints a diff and writes nothing' => sub {
-    my $dir = project(%FILES);
+    my $dir    = project(%FILES);
     my %before = map { $_ => $dir->child($_)->slurp_raw } keys %FILES;
     for my $args ( [ '--diff', '--unsafe-fixes' ], [ '--diff', '--fix', '--unsafe-fixes' ] ) {
         my ( $out, $err, $exit ) = puff( $dir, 'check', @$args );
         is( $exit, 1, "exit 1 (@$args)" );
-        like( $out, qr{^--- a/rand\.pl$}m,    '--- header' );
+        like( $out, qr{^--- a/rand\.pl$}m, '--- header' );
         like( $out, qr{^\+\+\+ b/rand\.pl$}m, '+++ header' );
-        like( $out, qr{^@@ }m,                'hunk header' );
+        like( $out, qr{^@@ }m, 'hunk header' );
         like( $out, qr{^\+use Crypt::PRNG qw\(rand\);$}m, 'added line' );
         like( $err, qr{^Would fix \d+ violations in 4 files\.$}m, 'summary on STDERR' );
         is( { map { $_ => $dir->child($_)->slurp_raw } keys %FILES }, \%before, 'files unchanged' );
@@ -102,8 +102,8 @@ subtest 'check --diff --unsafe-fixes prints a diff and writes nothing' => sub {
 subtest 'check --diff with nothing to fix exits 0' => sub {
     my $dir = project( 'clean.pl' => 'S002/not-reported.pl' );
     my ( $out, undef, $exit ) = puff( $dir, 'check', '--diff', '--unsafe-fixes', '--select', 'S002' );
-    is( $out,  '', 'no diff' );
-    is( $exit, 0,  'exit 0' );
+    is( $out, '', 'no diff' );
+    is( $exit, 0, 'exit 0' );
 };
 
 subtest 'check --fix --unsafe-fixes rewrites files' => sub {
@@ -112,14 +112,17 @@ subtest 'check --fix --unsafe-fixes rewrites files' => sub {
         'bin/bareword.pl' => 'S003/basic.pl',
         'lib/two_arg.pl'  => 'S002/fixed.pl',
     );
-    my $dir = project(%fixable);
+    my $dir  = project(%fixable);
     my $mode = ( stat $dir->child('rand.pl') )[2] & 07777;
-    my ( $out, $err, $exit ) = puff( $dir, 'check', '--fix', '--unsafe-fixes', '--select', 'S001,S002', '--extend-select', 'S003' );
+    my ( $out, $err, $exit )
+        = puff( $dir, 'check', '--fix', '--unsafe-fixes', '--select', 'S001,S002', '--extend-select', 'S003' );
     is( $err, '', 'nothing on STDERR' );
     like( $out, qr{^Fixed \d+ violations in 3 files\.$}m, 'fixed summary' );
     for my $name (qw( rand.pl bin/bareword.pl )) {
-        is( $dir->child($name)->slurp_raw, corpus( $fixable{$name} =~ s/\.pl\z/.fixed.pl/r )->slurp_raw,
-            "$name matches .fixed.pl" );
+        is(
+            $dir->child($name)->slurp_raw, corpus( $fixable{$name} =~ s/\.pl\z/.fixed.pl/r )->slurp_raw,
+            "$name matches .fixed.pl"
+        );
     }
     is( ( stat $dir->child('rand.pl') )[2] & 07777, $mode, 'mode kept' );
 
@@ -131,8 +134,10 @@ subtest 'check --fix --unsafe-fixes rewrites files' => sub {
     $dir = project( 'lib/two_arg.pl' => 'S002/fixed.pl' );
     ( $out, $err, $exit ) = puff( $dir, 'check', '--fix', '--unsafe-fixes', '--select', 'S002' );
     is( $exit, 0, 'S002-only fix leaves no S002 violations' ) or diag $out, $err;
-    is( $dir->child('lib/two_arg.pl')->slurp_raw, corpus('S002/fixed.fixed.pl')->slurp_raw,
-        'lib/two_arg.pl matches .fixed.pl' );
+    is(
+        $dir->child('lib/two_arg.pl')->slurp_raw, corpus('S002/fixed.fixed.pl')->slurp_raw,
+        'lib/two_arg.pl matches .fixed.pl'
+    );
 };
 
 subtest 'check --fix that fixes everything exits 0' => sub {
@@ -147,7 +152,7 @@ subtest 'unsafe-fixes in config' => sub {
     $dir->child('.puff.toml')->spew_utf8("unsafe-fixes = true\n");
     my ( $out, $err, $exit ) = puff( $dir, 'check' );
     like( $out, qr{^rand\.pl:4:7: S001 .* \[\*\]$}m, 'marked as fixable with current settings' );
-    like( $out, qr{^2 fixable with --fix$}m,          'fixable with --fix' );
+    like( $out, qr{^2 fixable with --fix$}m, 'fixable with --fix' );
     ( $out, $err, $exit ) = puff( $dir, 'check', '--fix' );
     is( $exit, 0, '--fix applies unsafe fixes' );
     is( $dir->child('rand.pl')->slurp_raw, corpus('S001/basic.fixed.pl')->slurp_raw, 'fixed' );
@@ -190,18 +195,23 @@ sub jsonl ($out) {
 subtest 'check --output-format jsonl' => sub {
     my $dir = project(%FILES);
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', 'missing.pl', '.' );
-    is( $exit, 2,   'exit 2 for a missing file' );
-    is( $err,  q{}, 'nothing on STDERR, not even the missing file' );
+    is( $exit, 2, 'exit 2 for a missing file' );
+    is( $err, q{}, 'nothing on STDERR, not even the missing file' );
     my @events = jsonl($out);
     is( [ map { $_->{type} } @events ], [ 'start', ('file') x 5, 'done' ], 'start, a file event per file, done' );
     is( $events[0], { type => 'start', total => 5 }, 'start has the total' );
     is( $events[-1], { type => 'done', exit_code => 2 }, 'done has the exit code' );
     my @files = @events[ 1 .. $#events - 1 ];
-    is( [ map { $_->{file} } @files ], [qw( missing.pl rand.pl bin/bareword.pl lib/declined.pl lib/two_arg.pl )],
-        'in processing order, not sorted' );
+    is(
+        [ map { $_->{file} } @files ], [qw( missing.pl rand.pl bin/bareword.pl lib/declined.pl lib/two_arg.pl )],
+        'in processing order, not sorted'
+    );
     is(
         $files[0],
-        { type => 'file', file => 'missing.pl', error => 'No such file or directory', fixed => 0, fixes_skipped => undef, violations => [] },
+        {
+            type          => 'file', file      => 'missing.pl', error => 'No such file or directory', fixed => 0,
+            fixes_skipped => undef, violations => []
+        },
         'missing file has its error'
     );
     ok( !exists $files[1]{diff}, 'no diff key outside --diff' );
@@ -233,11 +243,12 @@ subtest 'check --output-format jsonl' => sub {
 };
 
 subtest 'check --output-format jsonl --diff' => sub {
-    my $dir = project( 'rand.pl' => 'S001/basic.pl', 'clean.pl' => 'S002/not-reported.pl' );
+    my $dir    = project( 'rand.pl' => 'S001/basic.pl', 'clean.pl' => 'S002/not-reported.pl' );
     my %before = map { $_ => $dir->child($_)->slurp_raw } qw( rand.pl clean.pl );
-    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001,S002' );
-    is( $exit, 1,   'exit 1: the diff would change something' );
-    is( $err,  q{}, 'no summary on STDERR' );
+    my ( $out, $err, $exit )
+        = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001,S002' );
+    is( $exit, 1, 'exit 1: the diff would change something' );
+    is( $err, q{}, 'no summary on STDERR' );
     my @lines = split /\n/, $out;
     is( scalar( grep { !/\A\{.*\}\z/ } @lines ), 0, 'no plain diff text outside JSON lines' );
     my @events = jsonl($out);
@@ -252,7 +263,8 @@ subtest 'check --output-format jsonl --diff' => sub {
 
 subtest 'check --output-format jsonl --fix' => sub {
     my $dir = project( 'two_arg.pl' => 'S002/fixed.pl' );
-    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S002,S003' );
+    my ( $out, $err, $exit )
+        = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S002,S003' );
     is( $exit, 1, 'exit 1: violations remain' ) or diag $err;
     my @events = jsonl($out);
     my ($file) = grep { $_->{type} eq 'file' } @events;
@@ -265,11 +277,15 @@ subtest 'check --output-format jsonl --fix' => sub {
 subtest 'check --output-format jsonl: CRLF fixes_skipped' => sub {
     my $dir = project( 'rand.pl' => 'S001/basic.pl' );
     $dir->child('crlf.pl')->spew_raw( corpus('S001/basic.pl')->slurp_raw =~ s/\n/\r\n/gr );
-    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S001' );
-    is( $exit, 1,   'violations remain in the CRLF file' );
-    is( $err,  q{}, 'fixes_skipped is not printed to STDERR' );
+    my ( $out, $err, $exit )
+        = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S001' );
+    is( $exit, 1, 'violations remain in the CRLF file' );
+    is( $err, q{}, 'fixes_skipped is not printed to STDERR' );
     my %file = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } jsonl($out);
-    is( $file{'crlf.pl'}{fixes_skipped}, 'CR or CRLF line endings: fixes not applied', 'CRLF file event has fixes_skipped' );
+    is(
+        $file{'crlf.pl'}{fixes_skipped}, 'CR or CRLF line endings: fixes not applied',
+        'CRLF file event has fixes_skipped'
+    );
     ok( exists $file{'rand.pl'}{fixes_skipped}, 'other file event has fixes_skipped' );
     is( $file{'rand.pl'}{fixes_skipped}, undef, '... which is null' );
 };
@@ -277,7 +293,9 @@ subtest 'check --output-format jsonl: CRLF fixes_skipped' => sub {
 subtest 'check --output-format jsonl: one line per event' => sub {
     my $dir   = project();
     my @names = ( 'q"uote{"type":"done","exit_code":0}.pl', "new\nline.pl" );
-    my @made  = grep { eval { corpus('S001/basic.pl')->copy( $dir->child($_) ); 1 } } @names;
+    my @made  = grep {
+        eval { corpus('S001/basic.pl')->copy( $dir->child($_) ); 1 }
+    } @names;
     ok( scalar @made, 'made files with awkward names' );
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S001' );
     is( $exit, 1, 'exit 1' ) or diag $err;
@@ -297,13 +315,17 @@ subtest 'check --output-format jsonl: non-ASCII' => sub {
     my @lines = split /\n/, $out;
     is( [ grep { !/\A[\x00-\x7f]*\z/ } @lines ], [], 'every line is pure ASCII' );
     my @events = map { JSON::PP->new->utf8->decode($_) } @lines;
-    is( $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)", 'message decodes to the original text' );
+    is(
+        $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)",
+        'message decodes to the original text'
+    );
 };
 
 subtest 'check --output-format jsonl: Unicode line separators are escaped' => sub {
     my $dir = project();
     $dir->child('sep.pl')->spew_utf8("use strict;\n# a\x{2028}b\x{85}c\nprint rand(10);\n");
-    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001' );
+    my ( $out, $err, $exit )
+        = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001' );
     is( $exit, 1, 'exit 1: the diff would change something' ) or diag $err;
     my @lines = split /\n/, $out;
     is( scalar @lines, 3, 'start, file, done: one line each' );
@@ -315,13 +337,16 @@ subtest 'check --output-format jsonl: Unicode line separators are escaped' => su
 subtest 'check --output-format jsonl: no files' => sub {
     my $dir = project();
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' );
-    is( $exit, 0,   'exit 0' ) or diag $err;
-    is( $err,  q{}, 'nothing on STDERR' );
-    is( [ jsonl($out) ], [ { type => 'start', total => 0 }, { type => 'done', exit_code => 0 } ], 'just start and done' );
+    is( $exit, 0, 'exit 0' ) or diag $err;
+    is( $err, q{}, 'nothing on STDERR' );
+    is(
+        [ jsonl($out) ], [ { type => 'start', total => 0 }, { type => 'done', exit_code => 0 } ],
+        'just start and done'
+    );
 };
 
 subtest 'check --output-format jsonl: a run that dies still ends with done' => sub {
-    my $dir = project( 'a.pl' => 'S001/basic.pl', 'bad.pl' => 'S001/basic.pl', 'c.pl' => 'S001/basic.pl' );
+    my $dir  = project( 'a.pl' => 'S001/basic.pl', 'bad.pl' => 'S001/basic.pl', 'c.pl' => 'S001/basic.pl' );
     my $code = <<~'END';
         use Puff::Runner;
         no warnings 'redefine';
@@ -330,12 +355,16 @@ subtest 'check --output-format jsonl: a run that dies still ends with done' => s
         do shift;
         die $@;
         END
-    my ( $out, $err, $exit ) = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl', '--select', 'S001' );
+    my ( $out, $err, $exit )
+        = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl', '--select', 'S001' );
     is( $exit, 2, 'exit 2' );
     like( $err, qr/^runner exploded$/m, 'error still on STDERR' );
     my @events = jsonl($out);
     is( [ map { $_->{type} } @events ], [qw( start file done )], 'start, the file before the die, done' );
-    is( $events[-1], { type => 'done', exit_code => 2, error => 'runner exploded' }, 'done has exit code 2 and the error' );
+    is(
+        $events[-1], { type => 'done', exit_code => 2, error => 'runner exploded' },
+        'done has exit code 2 and the error'
+    );
 };
 
 subtest 'check --output-format jsonl: a run that dies before finding files is just done' => sub {
@@ -350,7 +379,10 @@ subtest 'check --output-format jsonl: a run that dies before finding files is ju
     my ( $out, $err, $exit ) = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl' );
     is( $exit, 2, 'exit 2' );
     like( $err, qr/^cannot list files$/m, 'error on STDERR' );
-    is( [ jsonl($out) ], [ { type => 'done', exit_code => 2, error => 'cannot list files' } ], 'no start: just done with the error' );
+    is(
+        [ jsonl($out) ], [ { type => 'done', exit_code => 2, error => 'cannot list files' } ],
+        'no start: just done with the error'
+    );
 };
 
 subtest 'output that cannot be written exits 2' => sub {
@@ -388,8 +420,8 @@ subtest 'rules and rule' => sub {
     ( $out, $err, $exit ) = puff( $dir, 'rule', 'S002' );
     is( $exit, 0, 'rule exits 0' );
     like( $out, qr{\AS002: Use three-argument open\n}, 'code and summary' );
-    like( $out, qr{^Fix safety: unsafe$}m,             'fix safety' );
-    like( $out, qr{^CWE: CWE-78, CWE-73$}m,            'CWE ids' );
+    like( $out, qr{^Fix safety: unsafe$}m, 'fix safety' );
+    like( $out, qr{^CWE: CWE-78, CWE-73$}m, 'CWE ids' );
     like( $out, qr{^Two-argument open takes the mode}m, 'explanation' );
 
     ( $out, $err, $exit ) = puff( $dir, 'rule', 'P001' );
@@ -438,14 +470,14 @@ subtest 'exclude' => sub {
     );
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001' );
     is( $exit, 1, 'vendor/x.pl still checked' );
-    like( $out,   qr{^vendor/x\.pl:}m, 'vendor reported' );
-    unlike( $out, qr{^local/}m,        'local/ skipped' );
-    like( $out,   qr{^t/local/x\.t:}m,  't/local/ checked: default excludes are anchored to the root' );
-    unlike( $out, qr{notes\.txt},      'non-Perl file skipped' );
+    like( $out, qr{^vendor/x\.pl:}m, 'vendor reported' );
+    unlike( $out, qr{^local/}m, 'local/ skipped' );
+    like( $out, qr{^t/local/x\.t:}m, 't/local/ checked: default excludes are anchored to the root' );
+    unlike( $out, qr{notes\.txt}, 'non-Perl file skipped' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001', './local', 't' );
     like( $out, qr{^local/lib/Rand\.pm:}m, 'files under a named ./local are checked' );
-    like( $out,   qr{^t/local/x\.t:}m, 'searching t/ checks t/local' );
+    like( $out, qr{^t/local/x\.t:}m, 'searching t/ checks t/local' );
 
     $dir->child('.puff.toml')->spew_utf8('');
     ( $out, $err, $exit ) = puff( $dir->child('t'), 'check', '--select', 'S001', '--config', '../.puff.toml' );
@@ -468,26 +500,26 @@ subtest 'default excludes when the searched dir is outside the root' => sub {
     my $elsewhere = $dir->parent->child(q{elsewhere});
     $elsewhere->mkpath;
     my ( $out, $err, $exit ) = puff( $elsewhere, 'check', '--select', 'S001', $dir->stringify );
-    like( $out,   qr{lib/x\.pl:}m,          'project files checked from another cwd' ) or diag $err;
+    like( $out, qr{lib/x\.pl:}m, 'project files checked from another cwd' ) or diag $err;
     unlike( $out, qr{/(?:local|blib)/lib/}, 'local/ and blib/ skipped from another cwd' );
 
     $dir->child('ci')->mkpath;
     $dir->child( 'ci', 'puff.toml' )->spew_utf8('');
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S001', '--config', 'ci/puff.toml', '.' );
-    like( $out,   qr{lib/x\.pl:}m,           'checked with a config in a subdirectory' ) or diag $err;
-    unlike( $out, qr{^(?:local|blib)/}m,     'local/ and blib/ skipped with --config ci/puff.toml' );
+    like( $out, qr{lib/x\.pl:}m, 'checked with a config in a subdirectory' ) or diag $err;
+    unlike( $out, qr{^(?:local|blib)/}m, 'local/ and blib/ skipped with --config ci/puff.toml' );
 
     $dir->child('t')->mkpath;
     ( $out, $err, $exit ) = puff( $dir->child('t'), 'check', '--select', 'S001', '..' );
-    like( $out,   qr{lib/x\.pl:}m,              'parent dir checked' ) or diag $err;
+    like( $out, qr{lib/x\.pl:}m, 'parent dir checked' ) or diag $err;
     unlike( $out, qr{\.\./(?:local|blib)/}, 'local/ and blib/ skipped when searching ..' );
 };
 
 subtest 'check --statistics' => sub {
     my $dir = project(%FILES);
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--statistics' );
-    is( $exit, 1,   'exit 1' );
-    is( $err,  q{}, 'nothing on STDERR' );
+    is( $exit, 1, 'exit 1' );
+    is( $err, q{}, 'nothing on STDERR' );
     unlike( $out, qr{^\S+:\d+:\d+: }m, 'no per-violation lines' );
     like( $out, qr{^\s*\d+  S001  \[\*\*\]  \S}m, 'S001 counted with its unsafe-fix marker' );
     like( $out, qr{^\s*\d+  S002  \[\*\*\]  Use three-argument open \(\d+ fixable\)$}m, 'S002 partly fixable' );
@@ -510,9 +542,12 @@ subtest 'check --statistics' => sub {
 subtest 'check --show-files lists files and checks nothing' => sub {
     my $dir = project( %FILES, 'local/lib/Rand.pm' => 'S001/basic.pl', 'lib/notes.txt' => 'S001/basic.pl' );
     my ( $out, $err, $exit ) = puff( $dir, 'check', '--show-files' );
-    is( $exit, 0,  'exit 0 although the files have violations' );
-    is( $err,  q{}, 'nothing on STDERR' );
-    is( [ sort split /\n/, $out ], [qw( bin/bareword.pl lib/declined.pl lib/two_arg.pl rand.pl )], 'one Perl file per line; local/ and notes.txt left out' );
+    is( $exit, 0, 'exit 0 although the files have violations' );
+    is( $err, q{}, 'nothing on STDERR' );
+    is(
+        [ sort split /\n/, $out ], [qw( bin/bareword.pl lib/declined.pl lib/two_arg.pl rand.pl )],
+        'one Perl file per line; local/ and notes.txt left out'
+    );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--show-files', './local', 'missing.pl' );
     is( $exit, 2, 'a missing path exits 2' );
@@ -526,8 +561,8 @@ subtest 'extensionless perl scripts' => sub {
     $dir->child( 'bin', 'tool' )->spew_utf8("#!/usr/bin/env perl\nmy \$x = rand;\n");
     $dir->child( 'bin', 'sh-tool' )->spew_utf8("#!/bin/sh\nmy \$x = rand;\n");
     my ( $out, undef, $exit ) = puff( $dir, 'check', '--select', 'S001' );
-    like( $out,   qr{^bin/tool:2:}m, 'bin/tool with an env perl shebang is linted' );
-    unlike( $out, qr{sh-tool},       'bin/sh-tool is not' );
+    like( $out, qr{^bin/tool:2:}m, 'bin/tool with an env perl shebang is linted' );
+    unlike( $out, qr{sh-tool}, 'bin/sh-tool is not' );
     is( $exit, 1, 'exit 1' );
 };
 
@@ -543,8 +578,10 @@ subtest 'errors exit 2' => sub {
     if ( !-r $unreadable ) {
         ( $out, $err, $exit ) = puff( $dir, 'check', 'unreadable.pl' );
         is( $exit, 2, 'unreadable file exits 2' );
-        like( $err, qr/^unreadable\.pl: error: Cannot read unreadable\.pl: .*Permission denied$/m,
-            'read error without an internal source location' );
+        like(
+            $err, qr/^unreadable\.pl: error: Cannot read unreadable\.pl: .*Permission denied$/m,
+            'read error without an internal source location'
+        );
     }
     chmod 0644, "$unreadable";
     $unreadable->remove;
@@ -562,7 +599,7 @@ subtest 'errors exit 2' => sub {
 
     ( $out, $err, $exit ) = puff( $dir, 'frobnicate' );
     is( $exit, 2, 'unknown command exits 2' );
-    is( $out,  '', 'nothing on STDOUT' );
+    is( $out, '', 'nothing on STDOUT' );
     like( $err, qr/^Unrecognized command: frobnicate$/m, 'error on STDERR' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S999' );
@@ -571,7 +608,7 @@ subtest 'errors exit 2' => sub {
 };
 
 subtest 'CRLF files are linted but not fixed' => sub {
-    my $dir = project();
+    my $dir  = project();
     my $file = $dir->child('crlf.pl');
     $file->spew_raw( corpus('S001/basic.pl')->slurp_raw =~ s/\n/\r\n/gr );
     my $before = $file->slurp_raw;

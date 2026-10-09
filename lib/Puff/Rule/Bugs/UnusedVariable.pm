@@ -68,7 +68,7 @@ sub check ( $self, $elem, $doc ) {
     my @vars = _declared($elem) or return;
     return if $self->option('allow-unused-subroutine-arguments') && _from_arguments($elem);
     return if $self->_computed_by_allowed($elem);
-    my @unused = $self->_unused( $elem, $doc, @vars ) or return;
+    my @unused  = $self->_unused( $elem, $doc, @vars ) or return;
     my $fixable = _fix_kind( $elem, \@vars, \@unused );
     return map {
         $self->violation(
@@ -80,9 +80,9 @@ sub check ( $self, $elem, $doc ) {
 }
 
 sub fix ( $self, $violation, $fix ) {
-    my $var  = $violation->element;
-    my $stmt = _declaration($var) // return 0;
-    my @vars = _declared($stmt) or return 0;
+    my $var    = $violation->element;
+    my $stmt   = _declaration($var) // return 0;
+    my @vars   = _declared($stmt)                           or return 0;
     my @unused = $self->_unused( $stmt, $stmt->top, @vars ) or return 0;
     my $what   = _fix_for( $var, _fix_kind( $stmt, \@vars, \@unused ) ) // return 0;
     if ( $what eq 'delete' ) {
@@ -102,10 +102,9 @@ sub _delete_statement ( $fix, $stmt ) {
     my $end   = $src->end_of($stmt);
     my $from  = rindex( $text, "\n", $start - 1 ) + 1;
     my $to    = index( $text, "\n", $end );
-    if ( $to >= 0
+    if (   $to >= 0
         && substr( $text, $from, $start - $from ) =~ /\A[ \t]*\z/
-        && substr( $text, $end, $to - $end ) =~ /\A[ \t]*\z/ )
-    {
+        && substr( $text, $end, $to - $end )      =~ /\A[ \t]*\z/ ) {
         $fix->replace_range( $from, $to + 1, q{} );
         return;
     }
@@ -115,7 +114,7 @@ sub _delete_statement ( $fix, $stmt ) {
 
 # The my/state statement that declares $var.
 sub _declaration ($var) {
-    for ( my $el = $var->parent; $el; $el = $el->parent ) {
+    for ( my $el = $var->parent ; $el ; $el = $el->parent ) {
         return $el if $el->isa(q{PPI::Statement::Variable});
     }
     return;
@@ -179,15 +178,24 @@ sub _plain_values ($stmt) {
     my $first = $rhs[0] or return 0;
     return 1 if $first->isa(q{PPI::Token::Magic}) && $first->content eq q{@_};
     return 1 if $first->isa(q{PPI::Token::Regexp::Match});
-    return 1 if $first->isa(q{PPI::Token::Word}) && $PLAIN_BUILTIN{ $first->content =~ s/\ACORE:://r } && is_builtin_call($first);
+    return 1
+        if $first->isa(q{PPI::Token::Word})
+        && $PLAIN_BUILTIN{ $first->content =~ s/\ACORE:://r }
+        && is_builtin_call($first);
     my $op = $rhs[1];
-    return $op && $op->isa(q{PPI::Token::Operator}) && $op->content eq q{=~} && $rhs[2] && $rhs[2]->isa(q{PPI::Token::Regexp::Match}) ? 1 : 0;
+    return
+           $op
+        && $op->isa(q{PPI::Token::Operator})
+        && $op->content eq q{=~}
+        && $rhs[2]
+        && $rhs[2]->isa(q{PPI::Token::Regexp::Match}) ? 1 : 0;
 }
 
 # What the fix does for one unused variable.
 sub _fix_for ( $var, $kind ) {
     return unless defined $kind;
     return $kind if $kind eq 'delete';
+
     # An array or hash takes everything after it; only the last one can
     # become undef without shifting the values that follow.
     return 'undef' if $var->raw_type eq q{$};
@@ -244,6 +252,7 @@ sub _mentions ($token) {
         return $token->content =~ /\A\$\#(\w+)\z/ ? "\@$1" : ();
     }
     if ( $token->isa('PPI::Token::Word') ) {
+
         # ${name} and @{name}
         my $block = $token->parent && $token->parent->parent;
         return unless $block && $block->isa('PPI::Structure::Block');
@@ -251,7 +260,7 @@ sub _mentions ($token) {
         return unless $cast && $cast->isa('PPI::Token::Cast');
         return _every_sigil( $token->content );
     }
-    my $text = _interpolated_text($token) // return;
+    my $text  = _interpolated_text($token) // return;
     my %names = map { $_ => 1 } $text =~ /$INTERPOLATED/g;
     return map { _every_sigil($_) } keys %names;
 }
@@ -261,14 +270,16 @@ sub _every_sigil ($name) {
 }
 
 sub _interpolated_text ($token) {
-    return if $token->isa('PPI::Token::Quote::Single') || $token->isa('PPI::Token::Quote::Literal');
+    return if $token->isa('PPI::Token::Quote::Single')    || $token->isa('PPI::Token::Quote::Literal');
     return if $token->isa('PPI::Token::QuoteLike::Words') || $token->isa('PPI::Token::Regexp::Transliterate');
     if ( $token->isa('PPI::Token::HereDoc') ) {
         return if $token->content =~ /\A<<~?\s*'/;
         return join q{}, $token->heredoc;
     }
     return $token->content
-        if $token->isa('PPI::Token::Quote') || $token->isa('PPI::Token::QuoteLike') || $token->isa('PPI::Token::Regexp');
+        if $token->isa('PPI::Token::Quote')
+        || $token->isa('PPI::Token::QuoteLike')
+        || $token->isa('PPI::Token::Regexp');
     return;
 }
 

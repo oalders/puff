@@ -20,11 +20,11 @@ sub load ( $class, %args ) {
     for my $dir ( @{ $args{rule_paths} // [] } ) {
         my $root = path($dir);
         die "rule-paths: '$dir' is not a directory\n" unless $root->is_dir;
-        my @files = sort grep { /\.pm\z/ } map { $_->stringify } _all_files($root);
+        my @files = sort grep {/\.pm\z/} map { $_->stringify } _all_files($root);
         for my $file (@files) {
-            my $text = path($file)->slurp_utf8;
+            my $text     = path($file)->slurp_utf8;
             my @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
-            my $abs = path($file)->absolute->stringify;
+            my $abs      = path($file)->absolute->stringify;
             require $abs;    # puff: ignore S016 - rule-paths come from the user's own config
             push @candidates, @packages;
         }
@@ -61,7 +61,9 @@ sub _all_files ($dir) {
 }
 
 sub instantiate ( $class, $classes, %args ) {
-    my $all     = sub (@list) { map { $_ eq 'ALL' ? '' : $_ } @list };    # '' is a prefix of every code
+    my $all = sub (@list) {
+        map { $_ eq 'ALL' ? '' : $_ } @list;
+    };    # '' is a prefix of every code
     my @select  = $all->( @{ $args{select} // [] }, @{ $args{extend_select} // [] } );
     my @ignore  = $all->( @{ $args{ignore} // [] } );
     my $options = $args{rule_options} // {};

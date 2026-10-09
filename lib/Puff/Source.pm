@@ -65,15 +65,14 @@ sub end_of ( $self, $elem ) {
 
 sub encode ( $self, $text ) {
     my $bytes = eval { Encode::encode( $self->{encoding}, $text, Encode::FB_CROAK | Encode::LEAVE_SRC ) };
-    die "Cannot encode the fixed text as $self->{encoding}: "
-        . ( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n"
+    die "Cannot encode the fixed text as $self->{encoding}: " . ( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n"
         unless defined $bytes;
     return $self->{bom} ? $BOM . $bytes : $bytes;
 }
 
 sub write_file ( $self, $path, $text ) {
     my $bytes = $self->encode($text);
-    my $file  = path($path)->realpath;    # replace a symlink's target, not the link
+    my $file  = path($path)->realpath;                                  # replace a symlink's target, not the link
     my $mode  = ( stat "$file" )[2];
     my $tmp   = $file->sibling( '.' . $file->basename . ".puff-$$" );
     $tmp->spew_raw($bytes);

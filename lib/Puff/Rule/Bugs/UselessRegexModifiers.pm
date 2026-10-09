@@ -43,14 +43,16 @@ sub check ( $self, $elem, $doc ) {
     my $flags = _useless_flags($elem) // return;
     my $name  = _sole_variable($elem) // return;
     return unless $self->_holds_qr( $name, $doc );
-    return $self->violation( $elem,
-        message => "Modifiers /$flags are ignored: the pattern is only $name, a qr// object; move them into the qr//" );
+    return $self->violation(
+        $elem,
+        message => "Modifiers /$flags are ignored: the pattern is only $name, a qr// object; move them into the qr//"
+    );
 }
 
 sub fix ( $self, $violation, $fix ) {
     my $elem    = $violation->element;
     my $content = $elem->content;
-    my ($mods) = $content =~ /([a-z]*)\z/ or return 0;
+    my ($mods)  = $content =~ /([a-z]*)\z/ or return 0;
     ( my $kept = $mods ) =~ s/$COMPILE_FLAGS//g;
     return 0 if $kept eq $mods;
     $fix->replace( $elem, substr( $content, 0, length($content) - length($mods) ) . $kept );
@@ -105,9 +107,8 @@ sub _assigned_qr ($sym) {
         return _in_list_assignment($sym) ? -1 : 0;
     }
     return 0 unless $op->isa('PPI::Token::Operator');
-    my $content = $op->content;
-    my $is_assign
-        = $content =~ /\A(?:\*\*|[-+*\/.%x&|^]|<<|>>|&&|\|\||\/\/)?=\z/
+    my $content   = $op->content;
+    my $is_assign = $content =~ /\A(?:\*\*|[-+*\/.%x&|^]|<<|>>|&&|\|\||\/\/)?=\z/
         || ( ( $content eq '=>' || $content eq ',' ) && _is_readonly($sym) );
     return 0 unless $is_assign;
     return -1 unless $content eq '=' || $content eq '//=' || $content eq '||=' || $content eq '=>' || $content eq ',';
@@ -121,7 +122,7 @@ sub _assigned_qr ($sym) {
 
 # my ( $re, $x ) = ...: the symbol is inside a list that is assigned to.
 sub _in_list_assignment ($sym) {
-    my $expr = $sym->parent or return 0;
+    my $expr = $sym->parent                                               or return 0;
     my $list = $expr->isa('PPI::Structure::List') ? $expr : $expr->parent or return 0;
     return 0 unless $list->isa('PPI::Structure::List');
     my $op = $list->snext_sibling or return 0;
@@ -130,7 +131,7 @@ sub _in_list_assignment ($sym) {
 
 # Readonly my $RE => qr/.../; Readonly::Scalar my $RE, qr/.../;
 sub _is_readonly ($sym) {
-    my $stmt  = $sym->statement or return 0;
+    my $stmt  = $sym->statement  or return 0;
     my $first = $stmt->schild(0) or return 0;
     return $first->isa('PPI::Token::Word') && $first->content =~ /\AReadonly(?:::Scalar)?\z/;
 }

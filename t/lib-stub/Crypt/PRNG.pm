@@ -12,6 +12,9 @@ our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 
 sub rand : prototype(;$) { CORE::rand( @_ ? $_[0] : 1 ) }
 sub irand                { int CORE::rand( 2**32 ) }
-sub random_bytes ($n)    { join q{}, map { chr int CORE::rand 256 } 1 .. $n }
+
+sub random_bytes ($n) {
+    join q{}, map { chr int CORE::rand 256 } 1 .. $n;
+}
 
 1;

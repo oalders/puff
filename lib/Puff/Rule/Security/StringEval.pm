@@ -43,7 +43,10 @@ sub check ( $self, $elem, $doc ) {
 
     my $args = call_args($elem);
     return if @$args == 1 && @{ $args->[0] } == 1 && is_constant_string( $args->[0][0] );
-    return $self->violation( $elem, message => 'String eval of a runtime value (CWE-95); use block eval or a dispatch table' );
+    return $self->violation(
+        $elem,
+        message => 'String eval of a runtime value (CWE-95); use block eval or a dispatch table'
+    );
 }
 
 1;

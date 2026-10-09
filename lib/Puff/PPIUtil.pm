@@ -40,7 +40,8 @@ sub call_args ($word) {
         my $el = $next;
         while ($el) {
             last if $el->isa('PPI::Token::Structure') && $el->content eq ';';
-            last if ( $el->isa('PPI::Token::Word') || $el->isa('PPI::Token::Operator') )
+            last
+                if ( $el->isa('PPI::Token::Word') || $el->isa('PPI::Token::Operator') )
                 && $STOP_WORD{ $el->content };
             push @elements, $el;
             $el = $el->snext_sibling;

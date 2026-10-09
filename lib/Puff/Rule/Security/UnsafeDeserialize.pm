@@ -67,7 +67,8 @@ sub check ( $self, $elem, $doc ) {
         return unless $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
         my $value = $op->snext_sibling;
         return unless $value && _is_true($value);
-        return $self->violation( $elem,
+        return $self->violation(
+            $elem,
             message => "$name loads code or objects from the data (CWE-502); leave it off for untrusted input",
             fixable => 0,
         );
@@ -90,7 +91,8 @@ sub check ( $self, $elem, $doc ) {
         $func = $name;
     }
     return unless $STORABLE_LOADER{$func};
-    return $self->violation( $elem,
+    return $self->violation(
+        $elem,
         message => "Storable $func can run code from untrusted data (CWE-502); use JSON for data you did not write",
         fixable => 0,
     );
@@ -99,7 +101,7 @@ sub check ( $self, $elem, $doc ) {
 sub fix ( $self, $violation, $fix ) {
     my $word   = $violation->element;
     my $module = $self->_yaml_loader( $word, $word->top ) or return 0;
-    my $list   = _call_list($word)                       or return 0;
+    my $list   = _call_list($word)                        or return 0;
     my $source = $fix->source;
     my $start  = $source->start_of($word);
     my $end    = $source->end_of($list);
@@ -136,22 +138,27 @@ sub _call_list ($word) {
 # $word: anywhere in the file, or for `local`, earlier in a block around it.
 sub _turns_off_blessing ( $doc, $module, $word ) {
     my $name = "\$${module}::LoadBlessed";
-    return $doc->find_first( sub ( $top, $el ) {
-        return 0 unless $el->isa('PPI::Token::Symbol') && $el->symbol eq $name;
-        my $op = $el->snext_sibling;
-        return 0 unless $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
-        my $value = $op->snext_sibling;
-        return 0 unless $value && !_is_true($value) && ( $value->isa('PPI::Token::Number') || is_constant_string($value) );
-        my $local = $el->sprevious_sibling;
-        return 1 unless $local && $local->isa('PPI::Token::Word') && $local->content eq 'local';
-        my $statement = $el->statement or return 0;
-        my $scope     = $statement->parent;
-        return $scope->isa('PPI::Document') || ( $word->descendant_of($scope) && _after( $word, $statement ) );
-    } ) ? 1 : 0;
+    return $doc->find_first(
+        sub ( $top, $el ) {
+            return 0 unless $el->isa('PPI::Token::Symbol') && $el->symbol eq $name;
+            my $op = $el->snext_sibling;
+            return 0 unless $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
+            my $value = $op->snext_sibling;
+            return 0
+                unless $value
+                && !_is_true($value)
+                && ( $value->isa('PPI::Token::Number') || is_constant_string($value) );
+            my $local = $el->sprevious_sibling;
+            return 1 unless $local && $local->isa('PPI::Token::Word') && $local->content eq 'local';
+            my $statement = $el->statement or return 0;
+            my $scope     = $statement->parent;
+            return $scope->isa('PPI::Document') || ( $word->descendant_of($scope) && _after( $word, $statement ) );
+        }
+    ) ? 1 : 0;
 }
 
 sub _after ( $word, $statement ) {
-    my @word = @{ $word->location // [0] };
+    my @word = @{ $word->location      // [0] };
     my @stmt = @{ $statement->location // [0] };
     return $word[0] > $stmt[0] || ( $word[0] == $stmt[0] && $word[1] > $stmt[1] );
 }
@@ -166,9 +173,9 @@ sub _is_true ($value) {
 sub _loads_storable ($doc) { return _loads( $doc, 'Storable' ) }
 
 sub _loads ( $doc, $module ) {
-    return $doc->find_first(
-        sub { $_[1]->isa('PPI::Statement::Include') && ( $_[1]->module // '' ) eq $module }
-    ) ? 1 : 0;
+    return $doc->find_first( sub { $_[1]->isa('PPI::Statement::Include') && ( $_[1]->module // '' ) eq $module } )
+        ? 1
+        : 0;
 }
 
 1;

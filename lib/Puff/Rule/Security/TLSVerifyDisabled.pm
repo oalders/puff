@@ -66,9 +66,9 @@ sub fix ( $self, $violation, $fix ) {
     my ( $kind, $value ) = _finding( $violation->element ) or return 0;
     return 0 if $kind eq 'ssh';
     my $text
-        = $kind eq 'insecure'                                        ? '0'
-        : $value->isa('PPI::Token::Word')                            ? $value->content =~ s/SSL_VERIFY_NONE\z/SSL_VERIFY_PEER/r
-        :                                                              '1';
+        = $kind eq 'insecure'             ? '0'
+        : $value->isa('PPI::Token::Word') ? $value->content =~ s/SSL_VERIFY_NONE\z/SSL_VERIFY_PEER/r
+        :                                   '1';
     $fix->replace( $value, $text );
     return 1;
 }
@@ -94,7 +94,7 @@ sub _finding ($elem) {
         if ( _is_op( $op, '=>' ) ) {
             my $value = $op->snext_sibling;
             return ( insecure => $value ) if $name eq 'insecure' && _is_true($value);
-            return ( tls => $value )      if $name ne 'insecure' && _is_false( $value, $name );
+            return ( tls      => $value ) if $name ne 'insecure' && _is_false( $value, $name );
         }
         elsif ( $name eq 'insecure' && _is_op( $elem->sprevious_sibling, '->' ) ) {
             my $list = $elem->snext_sibling;
@@ -120,7 +120,7 @@ sub _finding ($elem) {
 
 sub _name ($elem) {
     return $elem->content if $elem->isa('PPI::Token::Word');
-    return $elem->string  if $elem->isa('PPI::Token::Quote');
+    return $elem->string if $elem->isa('PPI::Token::Quote');
     return;
 }
 
@@ -132,7 +132,8 @@ sub _is_false ( $elem, $name ) {
     return 0 unless $elem;
     return $elem->literal == 0 if $elem->isa('PPI::Token::Number') && $elem->can('literal') && defined $elem->literal;
     return $elem->string eq '' || $elem->string eq '0' if $elem->isa('PPI::Token::Quote');
-    return $elem->content =~ /(?:\A|::)SSL_VERIFY_NONE\z/ if $name eq 'SSL_verify_mode' && $elem->isa('PPI::Token::Word');
+    return $elem->content =~ /(?:\A|::)SSL_VERIFY_NONE\z/
+        if $name eq 'SSL_verify_mode' && $elem->isa('PPI::Token::Word');
     return 0;
 }
 
@@ -141,7 +142,12 @@ sub _is_no ($elem) {
 }
 
 sub _is_true ($elem) {
-    return $elem && $elem->isa('PPI::Token::Number') && $elem->can('literal') && defined $elem->literal && $elem->literal != 0;
+    return
+           $elem
+        && $elem->isa('PPI::Token::Number')
+        && $elem->can('literal')
+        && defined $elem->literal
+        && $elem->literal != 0;
 }
 
 1;

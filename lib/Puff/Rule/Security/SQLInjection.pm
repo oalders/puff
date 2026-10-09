@@ -79,8 +79,8 @@ sub check ( $self, $elem, $doc ) {
     return unless $self->_is_sql( $elem, \@parts, $doc );
     my %safe = _safe_marks( $elem, $doc );
     my %seen;
-    my @found = grep { !_is_marked( \%safe, $_ ) && !$seen{$_}++ }
-        ( map { $self->_injections($_) } @parts ), $self->_sprintf_injections($elem);
+    my @found = grep { !_is_marked( \%safe, $_ ) && !$seen{$_}++ } ( map { $self->_injections($_) } @parts ),
+        $self->_sprintf_injections($elem);
     return unless @found;
     my $what = join q{, }, @found;
     return $self->violation(
@@ -99,9 +99,9 @@ sub _is_marked ( $safe, $name ) {
 
 # A string is checked once, from the first string of its `.` chain.
 sub _is_anchor ($elem) {
-    for ( my $prev = $elem->sprevious_sibling; $prev; $prev = $prev->sprevious_sibling ) {
+    for ( my $prev = $elem->sprevious_sibling ; $prev ; $prev = $prev->sprevious_sibling ) {
         return 0 if _is_string($prev);
-        next     if $prev->isa('PPI::Token::Operator') && ( $prev->content eq q{.} || $prev->content eq '->' );
+        next if $prev->isa('PPI::Token::Operator') && ( $prev->content eq q{.} || $prev->content eq '->' );
         return 1 if $prev->isa('PPI::Token::Operator') || $prev->isa('PPI::Token::Structure');
     }
     return 1;
@@ -129,7 +129,7 @@ sub _chain ($elem) {
 # its subscripts and method calls, or a function call with its arguments.
 sub _operand ($el) {
     return $el if _is_string($el) || $el->isa('PPI::Token::Number');
-    return     if !( $el->isa('PPI::Token::Symbol') || $el->isa('PPI::Token::Word') || $el->isa('PPI::Token::Magic') );
+    return if !( $el->isa('PPI::Token::Symbol') || $el->isa('PPI::Token::Word') || $el->isa('PPI::Token::Magic') );
     my @operand = ($el);
     if ( $el->isa('PPI::Token::Word') && ( my $args = $el->snext_sibling ) ) {
         push @operand, $args if $args->isa('PPI::Structure::List');
@@ -186,7 +186,7 @@ sub _reads_as_sql ( $self, $text ) {
 sub _text ($operand) {
     my $el = $operand->[0];
     return join q{}, $el->heredoc if $el->isa('PPI::Token::HereDoc');
-    return $el->string            if $el->isa('PPI::Token::Quote');
+    return $el->string if $el->isa('PPI::Token::Quote');
     return 'x';
 }
 
@@ -248,6 +248,7 @@ sub _is_safe_function ( $self, $name, $operand ) {
     my %safe = map { $_ => 1 } @{ $self->option('safe-functions') };
     return 1 if $safe{$name};
     return 0 unless $name eq 'join' && is_builtin_call( $operand->[0] );
+
     # join ',', ('?') x @ids  /  join ',', map { $dbh->quote($_) } @ids
     my $args = join q{}, map { $_->content } @$operand[ 1 .. $#$operand ];
     return $args =~ /(['"])\?\1/ || $self->_mentions_quoting($args) ? 1 : 0;
@@ -301,11 +302,11 @@ sub _sprintf_injections ( $self, $elem ) {
     my @found;
     my $i      = 0;
     my $format = $elem->string;
-    while ( $format =~/%(?:%|[-+ 0#]*(?:\*|\d+)?(?:\.(?:\*|\d+))?(?:[hlqLV]|ll)?([a-zA-Z]))/g ) {
+    while ( $format =~ /%(?:%|[-+ 0#]*(?:\*|\d+)?(?:\.(?:\*|\d+))?(?:[hlqLV]|ll)?([a-zA-Z]))/g ) {
         my $conv = $1 // next;
         $i++;
         next unless $conv eq 's';
-        my $arg = $args->[$i] or next;
+        my $arg     = $args->[$i] or next;
         my @operand = _operand( $arg->[0] );
         next unless @operand == @$arg;
         push @found, $self->_injections( \@operand );
@@ -316,7 +317,8 @@ sub _sprintf_injections ( $self, $elem ) {
 sub _sprintf_word ($elem) {
     my $parent = $elem->parent or return;
     my $word;
-    if ( $parent->isa('PPI::Statement::Expression') && $parent->parent && $parent->parent->isa('PPI::Structure::List') ) {
+    if ( $parent->isa('PPI::Statement::Expression') && $parent->parent && $parent->parent->isa('PPI::Structure::List') )
+    {
         $word = $parent->parent->sprevious_sibling;
     }
     else {

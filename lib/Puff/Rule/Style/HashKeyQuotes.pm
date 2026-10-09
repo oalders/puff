@@ -52,7 +52,8 @@ sub fix ( $self, $violation, $fix ) {
 # The key as a bareword if $elem is a quoted hash key that needs no quotes,
 # else undef.
 sub _bare_key ($elem) {
-    return unless $elem->isa('PPI::Token::Quote::Single')
+    return
+           unless $elem->isa('PPI::Token::Quote::Single')
         || $elem->isa('PPI::Token::Quote::Double')
         || $elem->isa('PPI::Token::Quote::Literal')
         || $elem->isa('PPI::Token::Quote::Interpolate');

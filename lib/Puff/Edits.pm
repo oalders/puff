@@ -3,7 +3,7 @@ package Puff::Edits;
 use v5.36;
 
 sub _conflicts ( $edit, $other ) {
-    my ( $s, $e ) = @{$edit}{qw( start end )};
+    my ( $s, $e )   = @{$edit}{qw( start end )};
     my ( $os, $oe ) = @{$other}{qw( start end )};
     if ( $s == $e ) {    # insertion
         return $os < $s && $s < $oe;
@@ -22,14 +22,12 @@ sub _same ( $edit, $other ) {
 }
 
 sub apply ( $text, $fixes ) {
-    my @sorted = sort {
-               $a->{key}[0] <=> $b->{key}[0]
-            || $a->{key}[1] cmp $b->{key}[1]
-            || $a->{key}[2] <=> $b->{key}[2]
-    } @$fixes;
+    my @sorted
+        = sort { $a->{key}[0] <=> $b->{key}[0] || $a->{key}[1] cmp $b->{key}[1] || $a->{key}[2] <=> $b->{key}[2] }
+        @$fixes;
 
     my ( @accepted, @deferred, @edits );
-    FIX: for my $fix (@sorted) {
+FIX: for my $fix (@sorted) {
         my @new;
         for my $edit ( @{ $fix->{edits} } ) {
             next if grep { _same( $edit, $_ ) } @edits, @new;
@@ -42,18 +40,17 @@ sub apply ( $text, $fixes ) {
             push @new, $edit;
         }
         push @accepted, $fix;
-        push @edits,    @new;
+        push @edits, @new;
     }
 
     # Ascending by start; at one offset insertions come first, then in
     # accepted order. Applied backwards so earlier offsets stay valid.
-    my $seq = 0;
-    my @ordered =
-        sort {
-               $a->[0]{start} <=> $b->[0]{start}
+    my $seq     = 0;
+    my @ordered = sort {
+               $a->[0]{start}                     <=> $b->[0]{start}
             || ( $b->[0]{start} == $b->[0]{end} ) <=> ( $a->[0]{start} == $a->[0]{end} )
-            || $a->[1] <=> $b->[1]
-        } map { [ $_, $seq++ ] } @edits;
+            || $a->[1]                            <=> $b->[1]
+    } map { [ $_, $seq++ ] } @edits;
 
     for my $pair ( reverse @ordered ) {
         my $edit = $pair->[0];

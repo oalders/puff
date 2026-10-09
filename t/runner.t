@@ -75,9 +75,11 @@ subtest 'on_file' => sub {
     );
     my $missing = $dir->child('missing.pl')->stringify;
     my $run     = $runner->run( $dir->child('two.pl')->stringify, $missing, $dir->child('one.pl')->stringify );
-    is( [ map { $_->[0] eq 'file' ? 'file' : "progress $_->[1]" } @events ],
+    is(
+        [ map { $_->[0] eq 'file' ? 'file' : "progress $_->[1]" } @events ],
         [ 'progress 0', 'file', 'progress 1', 'file', 'progress 2', 'file', 'progress 3' ],
-        'called once per file, before progress' );
+        'called once per file, before progress'
+    );
     my @results = map { $_->[1] } grep { $_->[0] eq 'file' } @events;
     is( [ map { path( $_->{file} )->basename } @results ], [qw( two.pl missing.pl one.pl )], 'in order' );
     ref_is( $results[$_], $run->{files}[$_], "result $_ is the run's entry" ) for 0 .. 2;
@@ -114,7 +116,7 @@ subtest 'diff headers for an absolute path' => sub {
     my $run  = runner('diff')->run( $dir->child('good.pl')->stringify );
     my $diff = $run->{files}[0]{diff};
     my $rel  = $dir->child('good.pl')->stringify =~ s{\A/+}{}r;
-    like( $diff, qr{^--- a/\Q$rel\E}m,  'a/ header has no double slash' );
+    like( $diff, qr{^--- a/\Q$rel\E}m, 'a/ header has no double slash' );
     like( $diff, qr{^\+\+\+ b/\Q$rel\E}m, 'b/ header has no double slash' );
 };
 
@@ -122,20 +124,20 @@ subtest 'extensionless files with a perl shebang are found' => sub {
     my $tree = tempdir();
     $tree->child('bin')->mkpath;
     my %files = (
-        'tool'        => "#!/usr/bin/env perl\nfoo;\n",
-        'tool-args'   => "#!/usr/bin/env -S perl -w\nfoo;\n",
-        'tool-perl'   => "#!/usr/bin/perl -w\nfoo;\n",
-        'tool-perl5'  => "#! /opt/perl/bin/perl5.36.0\nfoo;\n",
-        'sh-tool'     => "#!/bin/sh\nfoo;\n",
-        'env-sh'      => "#!/usr/bin/env bash\nperl foo;\n",
-        'perlish'     => "#!/usr/bin/perlbrew-wrapper\nfoo;\n",
-        'notperl'     => "#!/usr/bin/superperl\nfoo;\n",
-        'no-shebang'  => "foo;\n",
-        'late'        => "\n#!/usr/bin/perl\nfoo;\n",
-        'binary'      => "\x7fELF\x00\x01perl\x00",
-        'empty'       => '',
-        'script.sh'   => "#!/usr/bin/perl\nfoo;\n",
-        'long'        => '#!/' . ( 'x' x 300 ) . "/perl\nfoo;\n",    # only 256 bytes are read
+        'tool'       => "#!/usr/bin/env perl\nfoo;\n",
+        'tool-args'  => "#!/usr/bin/env -S perl -w\nfoo;\n",
+        'tool-perl'  => "#!/usr/bin/perl -w\nfoo;\n",
+        'tool-perl5' => "#! /opt/perl/bin/perl5.36.0\nfoo;\n",
+        'sh-tool'    => "#!/bin/sh\nfoo;\n",
+        'env-sh'     => "#!/usr/bin/env bash\nperl foo;\n",
+        'perlish'    => "#!/usr/bin/perlbrew-wrapper\nfoo;\n",
+        'notperl'    => "#!/usr/bin/superperl\nfoo;\n",
+        'no-shebang' => "foo;\n",
+        'late'       => "\n#!/usr/bin/perl\nfoo;\n",
+        'binary'     => "\x7fELF\x00\x01perl\x00",
+        'empty'      => '',
+        'script.sh'  => "#!/usr/bin/perl\nfoo;\n",
+        'long'       => '#!/' . ( 'x' x 300 ) . "/perl\nfoo;\n",    # only 256 bytes are read
     );
     $tree->child( 'bin', $_ )->spew_raw( $files{$_} ) for keys %files;
     $tree->child( 'bin', 'unreadable' )->spew_raw("#!/usr/bin/perl\nfoo;\n");

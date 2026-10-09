@@ -5,7 +5,8 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call call_args );
 
-my $HASH_FUNCTION = qr/(?:\A|::)(?:md[245]|sha(?:1|224|256|384|512|512224|512256)|digest_data)(?:_hex|_base64|_b64u?)?\z/;
+my $HASH_FUNCTION
+    = qr/(?:\A|::)(?:md[245]|sha(?:1|224|256|384|512|512224|512256)|digest_data)(?:_hex|_base64|_b64u?)?\z/;
 my %GUESSABLE     = map { $_ => 1 } qw( time localtime gmtime times rand srand gettimeofday clock_gettime refaddr );
 my $PID_IN_STRING = qr/(?<!\\)(?:\\\\)*\$(?:\$(?![\w{])|\{?(?:PID|PROCESS_ID)\b)/;
 my %PID_VARIABLE  = map { $_ => 1 } qw( $PID $PROCESS_ID $English::PID $English::PROCESS_ID );
@@ -60,7 +61,7 @@ sub check ( $self, $elem, $doc ) {
                 my $word = $token->content =~ s/\A(?:CORE|Time::HiRes|Scalar::Util)::(?=\w+\z)//r;
                 $found{$word} = 1 if $GUESSABLE{$word} && is_builtin_call($token);
             }
-            elsif (( $token->isa('PPI::Token::Quote::Double') || $token->isa('PPI::Token::Quote::Interpolate') )
+            elsif ( ( $token->isa('PPI::Token::Quote::Double') || $token->isa('PPI::Token::Quote::Interpolate') )
                 && $token->string =~ $PID_IN_STRING ) {
                 $found{'$$'} = 1;
             }
@@ -68,8 +69,10 @@ sub check ( $self, $elem, $doc ) {
     }
     return unless %found;
     my $sources = join '/', sort keys %found;
-    return $self->violation( $elem,
-        message => "$name of $sources is predictable (CWE-340); use random_bytes from Crypt::PRNG or Crypt::SysRandom" );
+    return $self->violation(
+        $elem,
+        message => "$name of $sources is predictable (CWE-340); use random_bytes from Crypt::PRNG or Crypt::SysRandom"
+    );
 }
 
 1;

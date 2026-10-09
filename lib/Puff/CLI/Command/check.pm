@@ -18,15 +18,15 @@ sub description {'Lint the given files and directories (default: .).'}
 
 sub opt_spec {
     return (
-        [ 'select=s@',        'enable rules with these codes or prefixes (comma-separated)' ],
+        [ 'select=s@', 'enable rules with these codes or prefixes (comma-separated)' ],
         [ 'extend-select=s@', 'enable these rules too (comma-separated)' ],
-        [ 'ignore=s@',        'disable these rules (comma-separated)' ],
-        [ 'fix',              'apply safe fixes' ],
-        [ 'unsafe-fixes!',    'also apply unsafe fixes' ],
-        [ 'diff',             'print the fixes as a unified diff; write nothing' ],
-        [ 'output-format=s',  'text, json or jsonl', { default => 'text' } ],
-        [ 'show-files',       'list the files that would be checked, then exit' ],
-        [ 'statistics',       'one line per rule: how many violations and which are fixable' ],
+        [ 'ignore=s@', 'disable these rules (comma-separated)' ],
+        [ 'fix', 'apply safe fixes' ],
+        [ 'unsafe-fixes!', 'also apply unsafe fixes' ],
+        [ 'diff', 'print the fixes as a unified diff; write nothing' ],
+        [ 'output-format=s', 'text, json or jsonl', { default => 'text' } ],
+        [ 'show-files', 'list the files that would be checked, then exit' ],
+        [ 'statistics', 'one line per rule: how many violations and which are fixable' ],
         Puff::CLI->config_opt_spec,
     );
 }
@@ -59,14 +59,14 @@ sub execute ( $self, $opt, $args ) {
     my $mode     = $opt->diff ? 'diff' : $opt->fix ? 'fix' : 'lint';
     my $fix_mode = $config->unsafe_fixes ? 'unsafe' : 'safe';
     my $engine   = Puff::Engine->new( rules => \@rules, fix_mode => $mode eq 'lint' ? 'none' : $fix_mode );
-    my $jsonl    = $opt->output_format eq 'jsonl' ? Puff::Reporter::JSONL->new( out => \*STDOUT, mode => $mode ) : undef;
-    my $progress = $opt->show_files || $jsonl ? undef : _progress( \*STDERR );
+    my $jsonl = $opt->output_format eq 'jsonl' ? Puff::Reporter::JSONL->new( out => \*STDOUT, mode => $mode ) : undef;
+    my $progress = $opt->show_files || $jsonl  ? undef : _progress( \*STDERR );
     my $runner   = Puff::Runner->new(
         config   => $config,
         engine   => $engine,
         mode     => $mode,
         progress => $jsonl ? sub ( $done, $total ) { $jsonl->start($total) unless $done } : $progress,
-        on_file  => $jsonl ? sub ($result) { $jsonl->file($result) } : undef,
+        on_file  => $jsonl ? sub ($result) { $jsonl->file($result) }                      : undef,
     );
     return _show_files( $runner, $args ) if $opt->show_files;
 
@@ -74,9 +74,9 @@ sub execute ( $self, $opt, $args ) {
     if ( !$run ) {
         my $error = $@;
         $progress->( 0, 0 ) if $progress;    # stop the timer and erase the line
-        # Puff::CLI->main exits 2 when a command dies. The eval keeps a
-        # failure inside abort from replacing $error; that failure is
-        # warned about on STDERR, then $error is still rethrown.
+                                             # Puff::CLI->main exits 2 when a command dies. The eval keeps a
+                                             # failure inside abort from replacing $error; that failure is
+                                             # warned about on STDERR, then $error is still rethrown.
         if ( $jsonl && !eval { $jsonl->abort( 2, $error ); 1 } ) {
             ( my $abort_error = $@ ) =~ s/\s+\z//;
             warn "puff: could not write the final jsonl event: $abort_error\n";
@@ -84,7 +84,7 @@ sub execute ( $self, $opt, $args ) {
         die $error;
     }
     my $reporter
-        = $jsonl                                            ? $jsonl
+        = $jsonl                                           ? $jsonl
         : $opt->output_format eq 'json' && $mode ne 'diff' ? Puff::Reporter::JSON->new
         :   Puff::Reporter::Text->new( fix_mode => $fix_mode, mode => $mode, statistics => $opt->statistics );
     $reporter->report( $run, \*STDOUT, \*STDERR );
@@ -115,7 +115,7 @@ sub _show_files ( $runner, $args ) {
 # erases itself once every file is done.
 sub _progress ( $fh, $tty = -t $fh ) {
     return undef unless $tty;
-    my $utf8   = ( $ENV{LC_ALL} || $ENV{LC_CTYPE} || $ENV{LANG} || q{} ) =~ /UTF-?8/i;
+    my $utf8 = ( $ENV{LC_ALL} || $ENV{LC_CTYPE} || $ENV{LANG} || q{} ) =~ /UTF-?8/i;
     my @frames
         = $utf8
         ? split( //, "\x{280b}\x{2819}\x{2839}\x{2838}\x{283c}\x{2834}\x{2826}\x{2827}\x{2807}\x{280f}" )

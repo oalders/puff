@@ -9,7 +9,7 @@ my @DEFAULT_EXCLUDE = qw( /local /blib /.build /.git );
 my %KNOWN_KEY       = map { $_ => 1 } qw( select extend-select ignore rule-paths exclude unsafe-fixes rules );
 
 sub load ( $class, %args ) {
-    my $cli = $args{cli} // {};
+    my $cli  = $args{cli} // {};
     my %self = (
         select        => [qw( S B )],
         extend_select => [],
@@ -36,7 +36,7 @@ sub load ( $class, %args ) {
 
     $self{select} = [ @{ $cli->{select} } ] if defined $cli->{select};
     push @{ $self{extend_select} }, @{ $cli->{extend_select} // [] };
-    push @{ $self{ignore} },        @{ $cli->{ignore}        // [] };
+    push @{ $self{ignore} }, @{ $cli->{ignore} // [] };
     $self{unsafe_fixes} = $cli->{unsafe_fixes} ? 1 : 0 if defined $cli->{unsafe_fixes};
 
     return bless \%self, $class;
@@ -58,9 +58,9 @@ sub _read_file ( $class, $self, $file ) {
         return [@$value];
     };
 
-    $self->{select}        = $list->('select')        if exists $data->{select};
+    $self->{select}        = $list->('select') if exists $data->{select};
     $self->{extend_select} = $list->('extend-select') if exists $data->{'extend-select'};
-    $self->{ignore}        = $list->('ignore')        if exists $data->{ignore};
+    $self->{ignore}        = $list->('ignore') if exists $data->{ignore};
     push @{ $self->{exclude} }, @{ $list->('exclude') } if exists $data->{exclude};
 
     if ( exists $data->{'rule-paths'} ) {
@@ -87,14 +87,14 @@ sub _read_file ( $class, $self, $file ) {
     return;
 }
 
-sub select ($self)        { return $self->{select} }
+sub select        ($self) { return $self->{select} }
 sub extend_select ($self) { return $self->{extend_select} }
-sub ignore ($self)        { return $self->{ignore} }
-sub rule_paths ($self)    { return $self->{rule_paths} }
-sub exclude ($self)       { return $self->{exclude} }
-sub unsafe_fixes ($self)  { return $self->{unsafe_fixes} }
-sub rule_options ($self)  { return $self->{rule_options} }
-sub root ($self)          { return $self->{root} }
+sub ignore        ($self) { return $self->{ignore} }
+sub rule_paths    ($self) { return $self->{rule_paths} }
+sub exclude       ($self) { return $self->{exclude} }
+sub unsafe_fixes  ($self) { return $self->{unsafe_fixes} }
+sub rule_options  ($self) { return $self->{rule_options} }
+sub root          ($self) { return $self->{root} }
 
 # $relpath is relative to the directory being searched; $base is that
 # directory relative to the root ('' for the root itself, undef when it is
@@ -119,7 +119,9 @@ sub is_excluded ( $self, $relpath, $base = '' ) {
     return 0;
 }
 
-sub _segments ($path) { return grep { length && $_ ne '.' } split m{/}, $path }
+sub _segments ($path) {
+    return grep { length && $_ ne '.' } split m{/}, $path;
+}
 
 sub _has_prefix ( $prefix, $segments ) {
     return 0 if !@$prefix || @$prefix > @$segments;

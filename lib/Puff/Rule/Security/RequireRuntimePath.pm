@@ -39,27 +39,31 @@ sub check ( $self, $elem, $doc ) {
     return if $prev && $prev->isa('PPI::Token::Operator') && $prev->content eq '->';
     my $arg = $elem->snext_sibling or return;
     $arg = ( $arg->schildren )[0] if $arg->isa('PPI::Structure::List') && $arg->schildren == 1;
-    $arg = ( $arg->schildren )[0] if $arg && $arg->isa('PPI::Statement::Expression');
+    $arg = ( $arg->schildren )[0] if $arg                              && $arg->isa('PPI::Statement::Expression');
     return unless $arg;
     return if $arg->isa('PPI::Structure::Block');
-    return if $arg->isa('PPI::Token::Word') || $arg->isa('PPI::Token::Number');
+    return if $arg->isa('PPI::Token::Word')      || $arg->isa('PPI::Token::Number');
     return if $arg->isa('PPI::Token::Structure') || $arg->isa('PPI::Token::Operator');
     return unless _uses_runtime_value($elem);
     return if _checks_module_name($elem);
-    return $self->violation( $elem, message => "$word of a file name computed at runtime (CWE-829); check it against an allowlist, or use require_module" );
+    return $self->violation(
+        $elem,
+        message =>
+            "$word of a file name computed at runtime (CWE-829); check it against an allowlist, or use require_module"
+    );
 }
 
 my %STOP = map { $_ => 1 } qw( or and if unless xor );
 
 # Whether the argument after $word mentions a variable or interpolates one.
 sub _uses_runtime_value ($word) {
-    for ( my $el = $word->snext_sibling; $el; $el = $el->snext_sibling ) {
+    for ( my $el = $word->snext_sibling ; $el ; $el = $el->snext_sibling ) {
         last if $el->isa('PPI::Token::Structure') && $el->content eq ';';
         last if ( $el->isa('PPI::Token::Operator') || $el->isa('PPI::Token::Word') ) && $STOP{ $el->content };
         my @tokens = $el->isa('PPI::Node') ? @{ $el->find('PPI::Token') || [] } : ($el);
         for my $token (@tokens) {
             return 1 if $token->isa('PPI::Token::Symbol') && $token->symbol =~ /\A.\w/;
-            return 1 if $token->isa('PPI::Token::Quote') && !is_constant_string($token);
+            return 1 if $token->isa('PPI::Token::Quote')  && !is_constant_string($token);
         }
     }
     return 0;
@@ -74,11 +78,13 @@ sub _checks_module_name ($elem) {
         last if $scope->isa('PPI::Statement::Sub') || $scope->isa('PPI::Document');
     }
     return 0 unless $scope;
-    return $scope->find_first( sub ( $top, $el ) {
-        return 0 unless $el->isa('PPI::Token::Regexp::Match') || $el->isa('PPI::Token::QuoteLike::Regexp');
-        my $pattern = $el->get_match_string // return 0;
-        return $pattern =~ $NAME_CHECK;
-    } ) ? 1 : 0;
+    return $scope->find_first(
+        sub ( $top, $el ) {
+            return 0 unless $el->isa('PPI::Token::Regexp::Match') || $el->isa('PPI::Token::QuoteLike::Regexp');
+            my $pattern = $el->get_match_string // return 0;
+            return $pattern =~ $NAME_CHECK;
+        }
+    ) ? 1 : 0;
 }
 
 1;

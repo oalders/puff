@@ -51,8 +51,10 @@ sub check ( $self, $elem, $doc ) {
         my ( $delim, $body ) = $elem->content =~ /\A(?:qx\s*(.)|`)(.*)\z/s;
         return if defined $delim && $delim eq q{'};
         return unless $body =~ $INTERPOLATES;
-        return $self->violation( $elem,
-            message => 'Interpolated command runs through the shell (CWE-78); use the list form of system or IPC::Run3' );
+        return $self->violation(
+            $elem,
+            message => 'Interpolated command runs through the shell (CWE-78); use the list form of system or IPC::Run3'
+        );
     }
 
     my $name = $elem->content;
@@ -62,8 +64,10 @@ sub check ( $self, $elem, $doc ) {
         my $args = call_args($elem);
         return unless @$args == 1 && _is_shell_string( $args->[0] );
         ( my $short = $name ) =~ s/\ACORE:://;
-        return $self->violation( $elem,
-            message => "$short with one string runs it through the shell (CWE-78); pass the command as a list" );
+        return $self->violation(
+            $elem,
+            message => "$short with one string runs it through the shell (CWE-78); pass the command as a list"
+        );
     }
 
     if ( $name eq 'open' && is_builtin_call($elem) ) {
@@ -71,8 +75,11 @@ sub check ( $self, $elem, $doc ) {
         return unless @$args == 3 && @{ $args->[1] } == 1 && is_constant_string( $args->[1][0] );
         return unless $args->[1][0]->string =~ /\A\s*(?:-\||\|-)\s*\z/;
         return unless _is_shell_string( $args->[2] );
-        return $self->violation( $elem,
-            message => 'Piped open with one command string runs it through the shell (CWE-78); pass the command as a list' );
+        return $self->violation(
+            $elem,
+            message =>
+                'Piped open with one command string runs it through the shell (CWE-78); pass the command as a list'
+        );
     }
     return;
 }
@@ -82,9 +89,9 @@ sub check ( $self, $elem, $doc ) {
 sub _is_shell_string ($arg) {
     return 0 unless @$arg;
     my $first = $arg->[0];
-    return 0 if @$arg == 1 && is_constant_string($first);
+    return 0 if @$arg == 1                        && is_constant_string($first);
     return 0 if $first->isa('PPI::Token::Symbol') && $first->raw_type eq '@' && @$arg == 1;
-    return 0 if $first->isa('PPI::Token::Cast') && $first->content eq '@';
+    return 0 if $first->isa('PPI::Token::Cast')   && $first->content eq '@';
     return 0 if $first->isa('PPI::Token::ArrayIndex');
     return 1;
 }

@@ -8,7 +8,8 @@ use v5.36;
 sub import {
     my $caller = caller;
     no strict 'refs';
-    *{"${caller}::$_"} = sub { } for qw( has extends with );
+    *{"${caller}::$_"} = sub { }
+        for qw( has extends with );
     return;
 }
 

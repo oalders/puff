@@ -74,8 +74,10 @@ sub check ( $self, $elem, $doc ) {
     my $name = $elem->content;
     return unless $QUALIFIED{$name} || ( $NAME_ONLY{$name} && is_builtin_call($elem) && _is_call($elem) );
     return if $name =~ /(?:\A|File::Temp::)tmpnam\z/ && !_in_scalar_context($elem);
-    return $self->violation( $elem,
-        message => "$name returns a file name without creating the file (CWE-377); use File::Temp's tempfile" );
+    return $self->violation(
+        $elem,
+        message => "$name returns a file name without creating the file (CWE-377); use File::Temp's tempfile"
+    );
 }
 
 sub _check_quote ( $self, $quote ) {
@@ -84,8 +86,10 @@ sub _check_quote ( $self, $quote ) {
         my $next = $quote->snext_sibling;
         return unless $next && $next->isa('PPI::Token::Operator') && $next->content eq '.';
     }
-    return $self->violation( $quote,
-        message => 'Predictable temporary file name (CWE-377); use File::Temp' );
+    return $self->violation(
+        $quote,
+        message => 'Predictable temporary file name (CWE-377); use File::Temp'
+    );
 }
 
 # A bare mktemp(...) or mktemp $x, not a hash key, sub name or method.
@@ -94,7 +98,7 @@ sub _is_call ($word) {
     return 0 if $parent && $parent->isa('PPI::Statement::Include');
     my $next = $word->snext_sibling;
     return 1 unless $next;
-    return 0 if $next->isa('PPI::Token::Operator') && $next->content !~ /\A(?:-|\.|,)\z/;
+    return 0 if $next->isa('PPI::Token::Operator')  && $next->content !~ /\A(?:-|\.|,)\z/;
     return 0 if $next->isa('PPI::Token::Structure') && $next->content ne ';';
     return 1;
 }
@@ -102,7 +106,7 @@ sub _is_call ($word) {
 # True when the call is clearly in scalar context: `scalar(tmpnam())`,
 # `scalar tmpnam`, next to an operator, or assigned to a scalar.
 sub _in_scalar_context ($word) {
-    my $end  = $word->snext_sibling;
+    my $end = $word->snext_sibling;
     $end = $word unless $end && $end->isa('PPI::Structure::List');
     my $prev = $word->sprevious_sibling;
     my $next = $end->snext_sibling;

@@ -10,7 +10,8 @@ our $LoadBlessed = 1;
 sub import {
     my $caller = caller;
     no strict 'refs';
-    *{"${caller}::$_"} = sub { } for qw( Load LoadFile Dump );
+    *{"${caller}::$_"} = sub { }
+        for qw( Load LoadFile Dump );
     return;
 }
 

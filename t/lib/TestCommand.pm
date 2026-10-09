@@ -22,7 +22,8 @@ sub run_capture ( $stderr, @cmd ) {
         exec { $cmd[0] } @cmd;
         POSIX::_exit(127);
     }
-    my $out = do { local $/; <$fh> } // q{};
+    my $out = do { local $/; <$fh> }
+        // q{};
     close $fh;
     return $out;
 }

@@ -41,7 +41,8 @@ sub explanation {
 
 my $DIRECTORY = qr/root|dir|base|home|top|parent|folder|path/i;
 my $BOUNDARY  = '(?:/|\z|(?<=/))';
-my $MESSAGE   = 'Prefix test lets sibling paths (/srv/www-private for /srv/www) pass; match m{\A\Q$root\E(?:/|\z)} instead';
+my $MESSAGE
+    = 'Prefix test lets sibling paths (/srv/www-private for /srv/www) pass; match m{\A\Q$root\E(?:/|\z)} instead';
 
 sub check ( $self, $elem, $doc ) {
     if ( $elem->isa('PPI::Token::Regexp::Match') ) {
@@ -70,9 +71,9 @@ sub fix ( $self, $violation, $fix ) {
         $fix->replace_range( $start, $start + $section->{size}, $prefix . $boundary );
         return 1;
     }
-    my $test = _index_test($elem) or return 0;
-    my $fixed = $test->{fix} or return 0;
-    my $op = $test->{negated} ? '!~' : '=~';
+    my $test  = _index_test($elem) or return 0;
+    my $fixed = $test->{fix}       or return 0;
+    my $op    = $test->{negated} ? '!~' : '=~';
     $fix->replace_range(
         $source->start_of( $test->{first} ),
         $source->end_of( $test->{last} ),
@@ -130,7 +131,13 @@ sub _index_test ($word) {
 
     my $fix;
     if ( _is_plain($haystack) && _is_plain($needle) ) {
-        $fix = [ map { join q{}, map { $_->content } @$_ } $haystack, $needle ];
+        $fix = [
+            map {
+                join q{},
+                    map { $_->content } @$_
+            } $haystack,
+            $needle
+        ];
     }
     return { first => $first, last => $last, negated => $negated, fix => $fix };
 }
@@ -154,7 +161,7 @@ sub _substr_test ($word) {
 sub _is_directory_name ($text) {
     my ($name) = $text =~ /\A[\$\@%]?\{?\$?(\w+)/ or return 0;
     my @keys = $text =~ /(?: \{ \s* ['"]? | -> ) (\w+)/xg;
-    return grep { /$DIRECTORY/ } $name, @keys;
+    return grep {/$DIRECTORY/} $name, @keys;
 }
 
 # A scalar, optionally with ->[...] / ->{...} subscripts: text that

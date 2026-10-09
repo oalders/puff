@@ -49,7 +49,7 @@ my %KEYWORD = map { $_ => 1 } keys %Pod::Functions::Type, qw(
 );
 
 sub check ( $self, $elem, $doc ) {
-    my $object = _indirect_object($elem) // return;
+    my $object  = _indirect_object($elem) // return;
     my ($shape) = _call_shape($object);
     my $call    = $object->content . q{->} . $elem->content;
     $call .= q{(...)} unless defined $shape && $shape eq q{none};
@@ -82,13 +82,17 @@ sub _indirect_object ($method) {
     my $name = $method->content;
     return unless $name =~ /\A[a-z_][a-z0-9_]*\z/ && !$KEYWORD{$name};
     my $stmt = $method->statement;
-    return if !$stmt || $stmt->isa('PPI::Statement::Include') || $stmt->isa('PPI::Statement::Package')
+    return
+           if !$stmt
+        || $stmt->isa('PPI::Statement::Include')
+        || $stmt->isa('PPI::Statement::Package')
         || $stmt->isa('PPI::Statement::Sub');
     my $prev = $method->sprevious_sibling;
     return if $prev && ( $prev->content eq '->' || $prev->content eq '&' );
     my $object = $method->snext_sibling or return;
     my $after  = $object->snext_sibling;
     return if $after && $after->isa('PPI::Token::Operator') && ( $after->content eq '->' || $after->content eq '=>' );
+
     if ( $object->isa('PPI::Token::Word') ) {
         return _is_class_name( $object->content ) ? $object : undef;
     }
@@ -112,10 +116,10 @@ sub _call_shape ($object) {
     return ('list') if $after->isa('PPI::Structure::List');
     return ('none') if _ends_call($after);
     my $last;
-    for ( my $el = $after; $el; $el = $el->snext_sibling ) {
-        last if $el->isa('PPI::Token::Structure') && $el->content eq q{;};
+    for ( my $el = $after ; $el ; $el = $el->snext_sibling ) {
+        last if $el->isa('PPI::Token::Structure')  && $el->content eq q{;};
         return if $el->isa('PPI::Token::Operator') && $LOW_PRECEDENCE{ $el->content };
-        return if $el->isa('PPI::Token::Word') && $MODIFIER{ $el->content };
+        return if $el->isa('PPI::Token::Word')     && $MODIFIER{ $el->content };
         return if $el->isa('PPI::Token::HereDoc');
         $last = $el;
     }

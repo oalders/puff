@@ -26,9 +26,8 @@ sub builtin_rules_info ($class) {
 }
 
 sub process_source ( $self, $src, %args ) {
-    my $file = $args{file};
-    my %result
-        = ( violations => [], fixed_count => 0, new_text => undef, error => undef, fixes_skipped => undef );
+    my $file   = $args{file};
+    my %result = ( violations => [], fixed_count => 0, new_text => undef, error => undef, fixes_skipped => undef );
 
     my $doc = _parse( $src->text );
     if ( !$doc ) {
@@ -154,8 +153,7 @@ sub _lint ( $self, $src, $doc ) {
             fixable => 0,
         );
     }
-    my @sorted
-        = sort { $a->line <=> $b->line || $a->column <=> $b->column || $a->code cmp $b->code } @violations;
+    my @sorted = sort { $a->line <=> $b->line || $a->column <=> $b->column || $a->code cmp $b->code } @violations;
     return ( \@sorted, @errors ? join( '; ', @errors ) : undef );
 }
 

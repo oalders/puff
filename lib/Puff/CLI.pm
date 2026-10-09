@@ -11,6 +11,7 @@ use Puff::Rules  ();
 our $EXIT_CODE = 0;
 
 sub main ($class) {
+
     # :utf8 rather than :encoding(UTF-8): the encoding layer drops write
     # errors (such as a full disk) for all but the last buffer, so the
     # reporters could not tell that output was lost.
@@ -19,7 +20,7 @@ sub main ($class) {
     binmode STDOUT, ':utf8';
     binmode STDERR, ':utf8';
     local $EXIT_CODE = 0;
-    my $ok = eval { $class->run; 1 };
+    my $ok    = eval { $class->run; 1 };
     my $error = $@;
 
     if ( !$ok ) {
@@ -39,22 +40,33 @@ sub get_command ( $self, @args ) {
 
 sub config_opt_spec ($class) {
     return (
-        [ 'config=s',  'read this config file instead of ./.puff.toml' ],
+        [ 'config=s', 'read this config file instead of ./.puff.toml' ],
         [ 'no-config', 'ignore config files' ],
     );
 }
 
 # Loads the config and every rule class; dies on any error.
 sub load_config ( $class, $opt, %cli ) {
-    my $config = Puff::Config->load( path => $opt->config, no_config => $opt->no_config, cli => \%cli );
+    my $config  = Puff::Config->load( path => $opt->config, no_config => $opt->no_config, cli => \%cli );
     my @classes = Puff::Rules->load( rule_paths => $config->rule_paths );
     return ( $config, \@classes );
 }
 
 sub rule_info ( $class, $classes ) {
     return (
-        ( map { { code => $_->code, summary => $_->summary, fix_safety => $_->fix_safety, cwe => [ $_->cwe ], class => $_ } } @$classes ),
-        ( map { { %$_, fix_safety => 'none', cwe => [] } } Puff::Engine->builtin_rules_info ),
+        (
+            map {
+                {
+                    code  => $_->code, summary => $_->summary, fix_safety => $_->fix_safety, cwe => [ $_->cwe ],
+                    class => $_
+                }
+            } @$classes
+        ),
+        (
+            map {
+                { %$_, fix_safety => 'none', cwe => [] }
+            } Puff::Engine->builtin_rules_info
+        ),
     );
 }
 
