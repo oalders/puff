@@ -7,7 +7,7 @@ files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
 By default puff runs the security (`S`) and likely-bug (`B`) rules (except
-S018, B007, B008 and B009, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
+S018, S019, B007, B008 and B009, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -82,7 +82,7 @@ To see which rules fire most and which of them can be fixed, use
 `CODES` is a comma-separated list, and the option can be repeated. A code can
 be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
-rule and applies every fix. A few rules (S018, B007, B008 and B009) are selected only by
+rule and applies every fix. A few rules (S018, S019, B007, B008 and B009) are selected only by
 their exact code or `ALL`, never by a prefix, so `--select S` or `--select B`
 leaves them off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
@@ -319,6 +319,7 @@ reported as `P001`:
 | S016 | RequireRuntimePath | Do not require or do a file name computed at runtime | none | [829](https://cwe.mitre.org/data/definitions/829.html) |
 | S017 | HTMLEscapeQuote | Escape ' in a hand-written HTML escaper | unsafe | [79](https://cwe.mitre.org/data/definitions/79.html) |
 | S018 | ShellString | Constant command string runs /bin/sh | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
+| S019 | RegexInterpolation | Variable interpolated into a regex without `\Q` | unsafe | [625](https://cwe.mitre.org/data/definitions/625.html), [1333](https://cwe.mitre.org/data/definitions/1333.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -560,6 +561,32 @@ list form of `system`, and for captured output use IPC::Run3 or
 Capture::Tiny. On Win32 the list form is joined back into one command line
 and Perl quotes the arguments by its own rules, so the two forms are not
 equivalent in the same way there.
+
+**S019** is not selected by default, and selecting `S` does not turn it on:
+name it (`--extend-select S019`) or use `ALL`. It reports a scalar variable
+(`$x`, `${x}`, `$h{k}`, `$x->{k}[0]` and the like) interpolated into the
+pattern of `m//`, `//`, `s///`, `qr//` or a `split` regex outside
+`\Q...\E`. Metacharacters in the value change what the pattern matches
+(CWE-625), and a crafted value can make the match very slow (CWE-1333). Each
+variable is reported at its own position. The replacement side of `s///`,
+`m'...'` patterns (which do not interpolate), variables after `\Q`,
+punctuation variables such as `$1` and `$&`, `$` used as an anchor, code
+blocks and arrays (including `@{[ ... ]}`) are not reported. Nor are
+variables that look like they hold a pattern on purpose: a name with `re`,
+`rx`, `regex`, `regexp`, `pattern` or `pat` as a `_`-separated word (`$re`,
+`$word_rx`, `$pats`) or with `regex` or `pattern` anywhere in it, also as a
+hash key (`$self->{pattern}`); a plain scalar whose name starts with a
+capital letter (`$WS`, `$DateTime`), by convention a constant; and a plain
+scalar assigned anywhere in the file from an expression containing `qr//`
+or `quotemeta`. That last check ignores scope, to keep it simple.
+
+The unsafe fix wraps the variable, with its subscripts, in `\Q...\E`. When
+the variable is meant to hold a pattern this changes what the regex matches,
+which is why the fix is unsafe and the rule is opt-in. There is no fix when
+the extent of the variable is uncertain: `${ expr }`, a `[` right after the
+name (Perl guesses between a subscript and a character class), postfix
+dereference, or an unusual delimiter. Matching against a variable directly
+(`$s =~ $x`) is not reported.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
