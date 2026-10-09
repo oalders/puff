@@ -6,6 +6,9 @@ use parent 'Puff::Rule';
 my %FUNCTIONS = map { $_ => 1 } qw( map grep CORE::map CORE::grep );
 my %MODIFIERS = map { $_ => 1 } qw( if unless while until for foreach );
 
+# Statement modifiers that repeat the statement, which then has no value.
+my %LOOP_MODIFIERS = map { $_ => 1 } qw( while until for foreach );
+
 # PPI::Statement::Compound->type for loops; `until` is reported as `while`.
 my %LOOPS = map { $_ => 1 } qw( for foreach while );
 
@@ -36,7 +39,14 @@ sub explanation {
         `&map(...)` or `Foo::map(...)`.
 
         The last statement of a `for`, `foreach`, `while` or `until` loop
-        body is reported: a loop has no value to use.
+        body is reported: a loop has no value to use. So is a last statement
+        with a `for`, `foreach`, `while` or `until` modifier, for the same
+        reason; an `if` or `unless` modifier keeps it exempt.
+
+        Not reported, though void: a `map` or `grep` that ends an `if`, bare,
+        `do` or `eval` block inside a loop body, as in
+        `for (@x) { if ($d) { map {...} @$_ } }`. Only the block directly
+        around the statement is checked.
 
         The last statement of a file is reported: a file's last value is
         only used by `require`, and `1;` is the usual way to provide it.
@@ -56,8 +66,13 @@ sub check ( $self, $elem, $doc ) {
     return unless _void_call(@rest);
 
     # The last statement of a block may be the block's value, unless the
-    # block is a loop body (or a loop's `continue` block), which has none.
-    return if $parent->isa('PPI::Structure::Block') && !$elem->snext_sibling && !_in_loop($parent);
+    # block is a loop body (or a loop's `continue` block), which has none,
+    # or the statement has a loop modifier, which leaves it no value.
+    return
+           if $parent->isa('PPI::Structure::Block')
+        && !$elem->snext_sibling
+        && !_in_loop($parent)
+        && !$LOOP_MODIFIERS{ _modifier(@rest) // '' };
 
     my $name = $word->content =~ s/\ACORE:://r;
     return $self->violation( $word, message => "$name in void context; use a for loop", fixable => 0 );
@@ -66,6 +81,14 @@ sub check ( $self, $elem, $doc ) {
 sub _in_loop ($block) {
     my $stmt = $block->parent;
     return $stmt && $stmt->isa('PPI::Statement::Compound') && $LOOPS{ $stmt->type // '' };
+}
+
+# The statement modifier after the map or grep arguments, if any.
+sub _modifier (@rest) {
+    for my $tok (@rest) {
+        return $tok->content if $tok->isa('PPI::Token::Word') && $MODIFIERS{ $tok->content };
+    }
+    return undef;
 }
 
 # True when the tokens after the map or grep word are its arguments and
@@ -120,14 +143,30 @@ The last statement of a sub, anonymous sub, C<do>, C<eval>, C<map>,
 C<grep> or C<sort> block is not reported, since it may be the block's
 value: a sub's return value, the value of a C<do> block, or the result of a
 C<map>, C<grep> or C<sort> block. This applies to C<if>, C<unless>,
-C<elsif>, C<else> and bare blocks too, since puff cannot tell whether such
-a block ends a sub.
+C<elsif>, C<else> and bare blocks too, since such a block may end a sub
+and so provide its value.
+
+=item *
+
+A last statement with a C<for>, C<foreach>, C<while> or C<until> statement
+modifier is reported, even in a sub or other block above: a repeated
+statement has no value to use (C<sub f { map { print } @x for @y }>). An
+C<if> or C<unless> modifier does not change whether a last statement is
+exempt.
 
 =item *
 
 The last statement of a loop body is reported: C<for>, C<foreach> (including
 C-style C<for (;;)>), C<while> and C<until> blocks and their C<continue>
 blocks have no value to use.
+
+=item *
+
+Known limitation: a C<map> or C<grep> that ends an C<if>, C<unless>,
+C<else>, bare, C<do> or C<eval> block nested inside a loop body is not
+reported, though its value is thrown away, as in
+C<for (@x) { if ($d) { map {...} @$_ } }>. Only the block directly around
+the statement is checked, not the blocks that enclose it.
 
 =item *
 

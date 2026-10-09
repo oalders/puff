@@ -27,6 +27,13 @@ is( $class->fix_safety, 'none', 'fix safety is none' );
 is( scalar @{ violations("sub f { map { print } \@x }\n") }, 0, 'last statement of a sub' );
 is( scalar @{ violations("sub f { map { print } \@x; # done\n}\n") }, 0, 'trailing comment is ignored' );
 is( scalar @{ violations("sub f { map { print } \@x;\n1 }\n") }, 1, 'not last statement of a sub' );
+is( scalar @{ violations("sub f { map { print } \@x for \@y }\n") }, 1, 'postfix for on last statement of a sub' );
+is( scalar @{ violations("sub f { grep { 1 } \@x while \$y }\n") }, 1, 'postfix while on last statement of a sub' );
+is( scalar @{ violations("sub f { map { print } \@x if \$y }\n") }, 0, 'postfix if on last statement of a sub' );
+is(
+    scalar @{ violations("sub f { map { print } \@x unless \$y }\n") }, 0,
+    'postfix unless on last statement of a sub'
+);
 is( scalar @{ violations("map { print } \@x\n") }, 1, 'last statement of the file' );
 
 done_testing;

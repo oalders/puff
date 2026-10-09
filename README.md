@@ -669,7 +669,10 @@ passed as an argument, returned, in a condition, joined with `or`) is not
 reported, and neither is the last statement of a sub, `do`, `eval`, `map`,
 `grep`, `sort`, `if`/`else` or bare block, which may be the block's value.
 The last statement of a loop body (`for`, `foreach`, `while`, `until`) or
-of a file is reported.
+of a file is reported, as is a last statement with a `for`, `foreach`,
+`while` or `until` modifier. Only the block directly around the statement is
+checked, so a `map` that ends an `if` or bare block inside a loop body is not
+reported.
 
 ## Writing a rule
 

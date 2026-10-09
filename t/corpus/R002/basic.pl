@@ -87,6 +87,18 @@ if ($y) {
 
 map { print } @list ? 1 : 2; # expect: R002
 
+sub each_row (@rows) {
+    map { print } @$_ for @rows; # expect: R002
+}
+
+sub each_list (@lists) {
+    for my $n (@lists) {
+        map { print } @$n; # expect: R002
+    }
+}
+
 show( @nested, $v );
+each_row( [@list] );
+each_list( [@list] );
 
 map { print } @list; # expect: R002

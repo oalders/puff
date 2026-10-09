@@ -27,6 +27,10 @@ sub doubled (@items) {
     map { $_ * 2 } @items;
 }
 
+sub doubled_if (@items) {
+    map { $_ * 2 } @items if @items;
+}
+
 sub evens (@items) {
     return grep { $_ % 2 == 0 } @items;
 }
@@ -59,7 +63,7 @@ grep { $seen{$_}++ } @list;
 
 =cut
 
-print doubled(@list), evens(@list), $code->(@list), $anon->(@list), @e, @d, @s, @g, @deep, $key, $r, $ar, $str, @x, $n;
+print doubled(@list), doubled_if(@list), evens(@list), $code->(@list), $anon->(@list), @e, @d, @s, @g, @deep, $key, $r, $ar, $str, @x, $n;
 
 __END__
 
