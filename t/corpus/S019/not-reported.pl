@@ -32,17 +32,21 @@ print "1\n" if $str =~ m'$input';
 my ( $re, $rx, $regex, $regexp, $pattern, $pat, $pats, $word_re, $re_word, $word_rx, $alt_regexes, $fooRegex, $filePattern );
 print "1\n" if $str =~ /$re|$rx|$regex|$regexp|$pattern|$pat|$pats/;
 print "1\n" if $str =~ /$word_re|$re_word|$word_rx|$alt_regexes|$fooRegex|$filePattern/;
-print "1\n" if $str =~ /$self->{pattern}/;
-print "1\n" if $str =~ /$self->{config}{regex}/;
-print "1\n" if $str =~ /$opt{re}/;
 
-# Assigned from qr// or quotemeta somewhere in the file.
+# Assigned only a qr// or quotemeta, earlier in this or an enclosing block.
 my $word = qr/\w+/;
 my $quoted = quotemeta $input;
-my $alternation = join '|', map {quotemeta} @words;
-our $maybe;
-$maybe //= qr/x/;
-print "1\n" if $str =~ /^$word$quoted$alternation$maybe/;
+our $called = quotemeta( $self->{config}{regex} );
+my $key = quotemeta $self->{config}->{regex};
+my $either = qr/(?:a|b)/i;
+print "1\n" if $str =~ /^$word$quoted$called$key$either/;
+for my $item (@words) {
+    my $inner = qr/\Q$item\E/;
+    if ($item) {
+        print "1\n" if $str =~ /$word$inner/;
+    }
+}
+sub uses_outer { return $_[0] =~ /$word/ }
 
 # Arrays and code blocks.
 print "1\n" if $str =~ /@words/;
@@ -53,6 +57,6 @@ print "1\n" if $str =~ /(?{ $input })/;
 print "1\n" if $str =~ $input;
 my @parts = split $input, $str;
 
-# An all-caps scalar is a constant, usually a pattern built once.
-our ( $WS, $Foo::CRLF ) = ( ' ', "\r\n" );
-print "1\n" if $str =~ /^$WS*$Foo::CRLF/;
+# An all-caps scalar is taken to be a constant.
+our ( $WS, $Foo::CRLF, $X1_Y ) = ( ' ', "\r\n", 'x' );
+print "1\n" if $str =~ /^$WS*$Foo::CRLF$X1_Y/;

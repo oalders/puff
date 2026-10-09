@@ -35,6 +35,31 @@ is(
     ],
     'each variable is reported at its own line and column'
 );
+my $msg = '$x interpolated into a regex without \Q...\E; metacharacters in it change the match; no fix: ';
+is(
+    [ map { [ $_->message, $_->fixable ] } @{ violations("/\$x+/;\n/[\$x]/;\n/a # \$x\n  \$x/x;\n/\${x}{k}/;\n") } ],
+    [
+        [ $msg . 'a quantifier follows it, and after \Q...\E it would apply to the last character only', 0 ],
+        [ $msg . 'it is inside a character class', 0 ],
+        [ $msg . 'it is inside a /x comment', 0 ],
+        [ $msg =~ s/; no fix: \z//r, 1 ],
+        [ ( $msg =~ s/\A\$x/\${x}/r ) =~ s/; no fix: \z//r, 1 ],
+    ],
+    'no fix, with the reason, after a quantifier, in a class or in a /x comment; ${x} ends at the brace'
+);
+
+# A qr// assigned in another sub does not hide the variable; one in an
+# enclosing block does.
+is(
+    [
+        map { $_->line } @{
+            violations("sub a { my \$t = qr/x/ }\nsub b { my \$t = shift; /\$t/ }\nmy \$u = qr/x/;\nsub c { /\$u/ }\n")
+        }
+    ],
+    [2],
+    'the qr// assignment must be visible from the use'
+);
+
 is( $class->fix_safety, 'unsafe', 'fix safety is unsafe' );
 is( [ $class->cwe ], [ 625, 1333 ], 'CWE categories' );
 

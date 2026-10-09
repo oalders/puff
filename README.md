@@ -567,26 +567,36 @@ name it (`--extend-select S019`) or use `ALL`. It reports a scalar variable
 (`$x`, `${x}`, `$h{k}`, `$x->{k}[0]` and the like) interpolated into the
 pattern of `m//`, `//`, `s///`, `qr//` or a `split` regex outside
 `\Q...\E`. Metacharacters in the value change what the pattern matches
-(CWE-625), and a crafted value can make the match very slow (CWE-1333). Each
-variable is reported at its own position. The replacement side of `s///`,
-`m'...'` patterns (which do not interpolate), variables after `\Q`,
-punctuation variables such as `$1` and `$&`, `$` used as an anchor, code
-blocks and arrays (including `@{[ ... ]}`) are not reported. Nor are
-variables that look like they hold a pattern on purpose: a name with `re`,
-`rx`, `regex`, `regexp`, `pattern` or `pat` as a `_`-separated word (`$re`,
-`$word_rx`, `$pats`) or with `regex` or `pattern` anywhere in it, also as a
-hash key (`$self->{pattern}`); a plain scalar whose name starts with a
-capital letter (`$WS`, `$DateTime`), by convention a constant; and a plain
-scalar assigned anywhere in the file from an expression containing `qr//`
-or `quotemeta`. That last check ignores scope, to keep it simple.
+(CWE-625), and a crafted value can make the regex engine backtrack
+catastrophically when the resulting pattern is vulnerable to it (CWE-1333).
+Each variable is reported at its own position; `${x}` ends at its closing
+brace, so in `${x}{k}` only `${x}` is reported. The replacement side of
+`s///`, `m'...'` patterns (which do not interpolate), variables after `\Q`,
+capture and punctuation variables such as `$1` and `$&` (a capture is
+usually a substring of the string being matched), `$` used as an anchor,
+code blocks and arrays (including `@{[ ... ]}`) are not reported.
+
+Some variables are skipped on heuristics that guess the value is a pattern
+or not input: a variable whose own name has `re`, `rx`, `regex`, `regexp`,
+`pattern` or `pat` as a `_`-separated word (`$re`, `$word_rx`, `$pats`) or
+`regex` or `pattern` anywhere in it (hash keys are not checked, so
+`$args->{pattern}` is reported); a plain scalar with an all-caps name
+(`$WS`, `$Foo::CRLF`, but not `$Input`); and a plain scalar assigned only
+`qr/.../` or `quotemeta ...` (nothing else on the right-hand side) in an
+earlier statement of the same or an enclosing block. `$x = $opt{x} // qr/,/`
+and a same-named variable in another sub do not count. These guesses can be
+wrong and can hide real injection: S019 is not a complete detector.
 
 The unsafe fix wraps the variable, with its subscripts, in `\Q...\E`. When
 the variable is meant to hold a pattern this changes what the regex matches,
-which is why the fix is unsafe and the rule is opt-in. There is no fix when
-the extent of the variable is uncertain: `${ expr }`, a `[` right after the
-name (Perl guesses between a subscript and a character class), postfix
-dereference, or an unusual delimiter. Matching against a variable directly
-(`$s =~ $x`) is not reported.
+which is why the fix is unsafe and the rule is opt-in. The variable is
+reported with no fix, and the message says why, when a quantifier follows it
+(`$x+`, `$x{2,3}`), when it is inside a character class (`[$x]`), or when it
+is inside a `/x` comment. There is also no fix when the extent of the
+variable is uncertain: `${ expr }`, a `[` right after the name (Perl guesses
+between a subscript and a character class), postfix dereference, or an
+unusual delimiter. Matching against a variable directly (`$s =~ $x`) is not
+reported.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
