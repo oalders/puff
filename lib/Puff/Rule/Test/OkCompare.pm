@@ -43,6 +43,10 @@ sub explanation {
         is that it failed. `is($got, $expected, $name)` also prints both
         values, which is usually all you need to see what went wrong.
 
+        The rule is declared unsafe overall, but the fix for `eq` with
+        Test::More or Test::Most is safe; the fixes for `==`, `ne`, `!=` and
+        for Test2 modules are unsafe.
+
         The rule reports `ok` whose first argument is exactly `A eq B`,
         `A == B`, `A ne B` or `A != B`, with or without a test name, when the
         file imports `is` (or `isnt`) from Test::More, Test::Most, Test2::V0,
@@ -61,8 +65,10 @@ sub explanation {
 
         The fix rewrites `ok(A eq B, ...)` as `is(A, B, ...)` and
         `ok(A ne B, ...)` as `isnt(A, B, ...)`. Changing `eq` to Test::More's
-        `is` is safe: it compares with `eq` too, and only an undef that
-        passed as an empty string now fails. Everything else is unsafe:
+        `is` is safe: it compares with `eq` too. The one difference is undef:
+        `ok(undef eq '')` passes (with a warning) but `is(undef, '')` fails.
+        That test was hiding a bug, so the fix is still classed safe.
+        Everything else is unsafe:
 
         - `==` and `!=` compare numbers, `is` and `isnt` compare strings, so
           `ok(1.0 == "1.00")` passes and `is(1.0, "1.00")` fails;
@@ -71,9 +77,10 @@ sub explanation {
           check as a pattern, not a string.
 
         No fix is offered when `ok` has more than two arguments, when an
-        operand is an array, a hash or a parenthesized list (`is` would get
-        its elements if it had no prototype), or when a comment sits next to
-        the operator.
+        operand is an array, a hash or a parenthesized list, or when a
+        comment sits next to the operator. Test2's `is` has no prototype, so
+        `@a` would be flattened into its elements; the fix is declined for
+        every module to keep it simple.
         END
 }
 
@@ -152,7 +159,9 @@ sub _simple_operand ($side) {
 }
 
 # No array, hash or bare parenthesized list at the top of either operand,
-# and nothing but whitespace around the operator.
+# and nothing but whitespace around the operator. Test2's is() has no
+# prototype, so @a would be flattened; declined for every module to keep it
+# simple.
 sub _fixable_operands ($parts) {
     for (
         my $tok = $parts->{lhs}[-1]->last_token->next_token ;
@@ -352,8 +361,10 @@ files that define their own C<ok>, C<is> or C<isnt> are not reported.
 
 The fix rewrites C<ok> as C<is> or C<isnt> and the operator as a comma.
 It is safe only for C<eq> with Test::More or Test::Most, whose C<is>
-compares with C<eq> (an undef that passed as C<''> now fails, with a better
-message). C<==> and C<!=> become string comparisons, Test::More's C<isnt>
+compares with C<eq>. The one difference is undef: C<ok(undef eq '')> passes
+(with a warning) but C<is(undef, '')> fails, so the fix can turn a passing
+test into a failing one. That test was hiding a bug, which is why the fix is
+still classed safe. C<==> and C<!=> become string comparisons, Test::More's C<isnt>
 treats undef as different from C<''>, and Test2's C<is> compares references
 deeply, so those fixes are unsafe.
 
@@ -361,7 +372,9 @@ deeply, so those fixes are unsafe.
 
 No fix is offered for C<ok> with more than two arguments, when an operand
 is an array, a hash or a bare parenthesized list, or when a comment sits
-next to the operator.
+next to the operator. Test::More's C<is> has a C<($$;$)> prototype, but
+Test2's has none, so C<@a> would be flattened into its elements; the fix is
+declined for every module to keep it simple.
 
 =item *
 

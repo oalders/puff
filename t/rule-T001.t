@@ -23,6 +23,12 @@ subtest 'Test::More: only eq is safe' => sub {
     is( $left, [qw( unsafe unsafe )], '== and ne left as unsafe' );
 };
 
+subtest 'Test::Most: eq is safe' => sub {
+    my ( $text, $left ) = fix_safely("use Test::Most;\nok(\$x eq 1);\nok(\$x == 1);\n");
+    is( $text, "use Test::Most;\nis(\$x, 1);\nok(\$x == 1);\n", 'eq fixed' );
+    is( $left, ['unsafe'], '== left as unsafe' );
+};
+
 subtest 'Test2::V0: eq is unsafe' => sub {
     my ( $text, $left ) = fix_safely("use Test2::V0;\nok(\$x eq 1);\n");
     is( $text, "use Test2::V0;\nok(\$x eq 1);\n", 'not fixed' );

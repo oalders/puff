@@ -640,10 +640,12 @@ that could be a list operator (`ok(foo $x eq 'y')`), a method call such as
 `$tb->ok`, and files that define their own `ok`, `is` or `isnt`. The fix
 rewrites `ok(A eq B, $name)` as `is(A, B, $name)` and `ne` as `isnt`. Only
 `eq` with Test::More or Test::Most is a safe fix (an undef that passed as `''`
-now fails); `==` and `!=` become string comparisons, Test::More's `isnt`
+now fails: `ok(undef eq '')` passes, `is(undef, '')` does not, and that test
+was hiding a bug); `==` and `!=` become string comparisons, Test::More's `isnt`
 passes undef against `''`, and Test2's `is` compares references deeply, so
 those fixes are unsafe. No fix is offered with more than two arguments, or for
-an array, hash or parenthesized-list operand.
+an array, hash or parenthesized-list operand (Test2's `is` has no prototype,
+so `@a` would be flattened; declined for every module to keep it simple).
 
 ## Writing a rule
 
