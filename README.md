@@ -321,6 +321,7 @@ reported as `P001`:
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
+| Q004 | AmpersandCall | Call a sub without the & sigil | unsafe |  |
 | B001 | UselessRegexModifiers | Modifiers on a match against a lone qr// object are ignored | unsafe |  |
 | B002 | AggregateAssignRef | Array or hash assigned a `[...]` or `{...}` reference | unsafe |  |
 | B003 | LeadingZeros | Number with a leading zero is octal | safe |  |
@@ -549,6 +550,16 @@ names with `::` or `-`, v-strings, quote-like operator names such as `s` and
 **Q003** is not selected by default either. It reports `''` and `""`, which
 are easy to misread, and the safe fix rewrites them as `q{}`. An empty hash
 key such as `$h{''}` is left alone, since `$h{q{}}` is harder to read.
+
+**Q004** is not selected by default either. It reports the Perl 4 call
+syntax `&foo(...)`, which skips the sub's prototype, and `&foo` without
+parens, which passes the caller's `@_` along. The unsafe fix removes the `&`
+from `&foo(...)`; it changes behaviour when `foo` has a prototype. `&foo`
+without parens is not fixed (the equivalent is `foo(@_)`), and neither is a
+sub named like a builtin, such as `&open(...)`, where the `&` is needed.
+`\&foo`, `goto &foo`, `defined &foo`, `exists &foo`, `&$code(...)`,
+`&{...}(...)`, `&CORE::...` and an `&` that could be bitwise (`$x &foo`) are
+left alone.
 
 **B001** is selected by default. It reports pattern modifiers such as `/i`,
 `/m`, `/s` and `/x` on a match, substitution or `split` whose whole pattern
