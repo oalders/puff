@@ -12,25 +12,25 @@ sub new ( $class, %args ) {
 sub report ( $self, $run, $out, $err ) {
     my @files = sort { $a->{file} cmp $b->{file} } @{ $run->{files} };
     Puff::Reporter::Text->report_errors( \@files, $err );
-    my @items;
-    for my $file (@files) {
-        for my $v ( @{ $file->{violations} } ) {
-            push @items, {
-                code    => $v->code,
-                message => $v->message,
-                file    => $v->file,
-                line    => $v->line + 0,
-                column  => $v->column + 0,
-                fix     => {
-                    safety    => $v->rule ? $v->rule->fix_safety : 'none',
-                    available => $v->fixable ? JSON::PP::true : JSON::PP::false,
-                    applied   => JSON::PP::false,
-                },
-            };
-        }
-    }
+    my @items = map { violation($_) } map { @{ $_->{violations} } } @files;
     print {$out} JSON::PP->new->canonical->pretty->encode( \@items );
     return;
+}
+
+# One remaining violation as a hash ready for encoding.
+sub violation ($v) {
+    return {
+        code    => $v->code,
+        message => $v->message,
+        file    => $v->file,
+        line    => $v->line + 0,
+        column  => $v->column + 0,
+        fix     => {
+            safety    => $v->rule ? $v->rule->fix_safety : 'none',
+            available => $v->fixable ? JSON::PP::true : JSON::PP::false,
+            applied   => JSON::PP::false,
+        },
+    };
 }
 
 1;
@@ -59,5 +59,8 @@ C<available> says whether a fix is offered for this violation; C<applied>
 is always false, because only violations that remain are listed. The
 output is character data: give it a handle with an encoding layer. File
 errors go to the error handle.
+
+C<Puff::Reporter::JSON::violation($v)> returns the object for one
+L<Puff::Violation>, for other reporters that use the same shape.
 
 =cut

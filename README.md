@@ -73,7 +73,7 @@ To see which rules fire most and which of them can be fixed, use
 | `--fix` | Write safe fixes to the files. |
 | `--unsafe-fixes` | Also apply unsafe fixes (with `--fix` or `--diff`). `--no-unsafe-fixes` turns off `unsafe-fixes = true` from the config. |
 | `--diff` | Print the fixes as a unified diff and write nothing. Wins over `--fix`. |
-| `--output-format text\|json` | Output format; default `text`. |
+| `--output-format text\|json\|jsonl` | Output format; default `text`. `jsonl` streams results as each file is checked. |
 | `--show-files` | List the files that would be checked, one per line, and check nothing. |
 | `--statistics` | Print one line per rule instead of one per violation: the count, the fix marker, the rule's summary, and `(N fixable)` when only some can be fixed. Most violations first. |
 | `--config PATH` | Read this config file instead of `./.puff.toml`. |
@@ -120,7 +120,32 @@ violation:
 `fix.safety` is the rule's fix safety, `fix.available` says whether a fix is
 offered for this violation, and `fix.applied` is always `false` because only
 violations that remain are listed. Errors still go to STDERR as text.
-`--diff` always prints a diff, whatever the output format.
+With `--diff`, the output is always a diff unless the format is `jsonl`.
+
+### JSON Lines output
+
+`--output-format jsonl` writes one JSON object per line, as each file is
+checked, so a program running puff can show progress and results before
+the run ends. There is a `start` event, then one `file` event per file in
+the order they are checked, then a `done` event:
+
+    $ puff check --output-format jsonl lib
+    {"total":2,"type":"start"}
+    {"diff":null,"error":null,"file":"lib/Clean.pm","fixed":0,"type":"file","violations":[]}
+    {"diff":null,"error":null,"file":"lib/Demo.pm","fixed":0,"type":"file","violations":[{"code":"S002",...}]}
+    {"exit_code":1,"type":"done"}
+
+- `start.total` is the number of `file` events that follow.
+- `file.violations` uses the same objects as `--output-format json`.
+- `file.error` is the reason the file could not be checked, or `null`. In
+  this format, errors are not printed to STDERR.
+- `file.fixed` is the number of fixes applied (`--fix`) or that would be
+  applied (`--diff`).
+- `file.diff` is the unified diff with `--diff`, or `null`.
+- `done.exit_code` is the code puff exits with.
+
+The spinner is not shown in this format. Ignore event types and fields you
+do not recognize, because new ones may be added.
 
 ## Fix safety
 

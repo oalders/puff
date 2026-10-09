@@ -15,6 +15,7 @@ sub new ( $class, %args ) {
         engine   => $args{engine},
         mode     => $args{mode} // 'lint',    # lint, fix or diff
         progress => $args{progress},          # called as ($done, $total) after each file
+        on_file  => $args{on_file},           # called with each file's result as it is checked
     }, $class;
 }
 
@@ -41,11 +42,12 @@ sub files ( $self, @paths ) {
 
 sub run ( $self, @paths ) {
     my @files    = $self->files(@paths);
-    my $progress = $self->{progress};
+    my ( $progress, $on_file ) = @$self{qw( progress on_file )};
     my @results;
     $progress->( 0, scalar @files ) if $progress;
     for my $file (@files) {
         push @results, ref $file ? $file : $self->_process($file);
+        $on_file->( $results[-1] ) if $on_file;
         $progress->( scalar @results, scalar @files ) if $progress;
     }
     return { files => \@results, exit_code => $self->exit_code( \@results ) };
@@ -189,6 +191,8 @@ C<files> takes the same paths and returns the files C<run> would check, in
 order: a path string for each, or C<< { file => $path, error => $message } >>
 for a path that does not exist. A C<progress> code ref passed to C<new> is
 called as C<< $progress->($done, $total) >> once the files are found and again after each one is checked.
+An C<on_file> code ref is called with each file's entry (see below) as soon
+as that file is checked, before C<progress>.
 
 C<run> returns C<< { files => [...], exit_code => N } >>. Each file entry
 has C<file>, C<violations> (remaining), C<fixed_count>, and when relevant

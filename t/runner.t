@@ -63,6 +63,21 @@ subtest 'progress' => sub {
     is( \@calls, [ [ 0, 2 ], [ 1, 2 ], [ 2, 2 ] ], 'called once the files are found, then after each one' );
     $dir->child($_)->remove for qw( one.pl two.pl );
 };
+
+subtest 'on_file' => sub {
+    $dir->child('one.pl')->spew_utf8("foo;\n");
+    my @seen;
+    my $runner = Puff::Runner->new(
+        config  => $config,
+        engine  => Puff::Engine->new( rules => [ FlagWord->new ], fix_mode => 'none' ),
+        on_file => sub ($result) { push @seen, $result },
+    );
+    my $missing = $dir->child('missing.pl')->stringify;
+    my $run     = $runner->run( $dir->child('one.pl')->stringify, $missing );
+    is( \@seen, $run->{files}, 'called with each result, in order' );
+    is( $seen[1]{error}, 'No such file or directory', 'including a path that does not exist' );
+    $dir->child('one.pl')->remove;
+};
 $dir->child('bad.pl')->spew_utf8("foo;\n");
 $dir->child('good.pl')->spew_utf8("foo;\n");
 

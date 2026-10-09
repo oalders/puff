@@ -171,6 +171,63 @@ subtest 'check --select S002 --output-format json' => sub {
     ok( ( grep { $_->{fix}{available} } @$data ), 'fixable violations are available' );
 };
 
+sub jsonl ($out) {
+    my @lines = split /\n/, $out;
+    return [ map { JSON::PP->new->decode($_) } @lines ];
+}
+
+subtest 'check --output-format jsonl' => sub {
+    my $dir = project(%FILES);
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S002', '--output-format', 'jsonl', '.', 'nope.pl' );
+    is( $exit, 2,  'exit 2 for the missing file' );
+    is( $err,  '', 'errors are events, not STDERR' );
+    my $events = jsonl($out);
+    is( $events->[0],  { type => 'start', total => 5 },       'start gives the total' );
+    is( $events->[-1], { type => 'done',  exit_code => 2 },   'done gives the exit code' );
+    my @files = @$events[ 1 .. $#$events - 1 ];
+    is( [ map { $_->{type} } @files ], [ ('file') x 5 ], 'one file event per file' );
+    my %by = map { $_->{file} => $_ } @files;
+    is(
+        $by{'lib/declined.pl'},
+        {
+            type       => 'file',
+            file       => 'lib/declined.pl',
+            error      => undef,
+            fixed      => 0,
+            diff       => undef,
+            violations => array {
+                item hash {
+                    field code    => 'S002';
+                    field message => 'Use three-argument open';
+                    field file    => 'lib/declined.pl';
+                    field line    => match qr/\A\d+\z/;
+                    field column  => match qr/\A\d+\z/;
+                    field fix     => { safety => 'unsafe', available => bool(0), applied => bool(0) };
+                    end;
+                };
+                etc;
+            },
+        },
+        'file event structure'
+    );
+    is( $by{'nope.pl'}{error},      'No such file or directory', 'missing file is an error event' );
+    is( $by{'nope.pl'}{violations}, [],                          'with no violations' );
+    is( $by{'rand.pl'}{violations}, [],                          'clean file has no violations' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S002', '--output-format', 'jsonl', '--diff', '--unsafe-fixes' );
+    is( $exit, 1, '--diff exits 1' );
+    %by = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } @{ jsonl($out) };
+    like( $by{'lib/two_arg.pl'}{diff}, qr{^\+\+\+ b/lib/two_arg\.pl$}m, '--diff puts the diff in the event' );
+    ok( $by{'lib/two_arg.pl'}{fixed} > 0, 'and counts the fixes' );
+    is( $dir->child('lib/two_arg.pl')->slurp_raw, corpus('S002/fixed.pl')->slurp_raw, 'nothing written' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S002', '--output-format', 'jsonl', '--fix', '--unsafe-fixes' );
+    %by = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } @{ jsonl($out) };
+    ok( $by{'lib/two_arg.pl'}{fixed} > 0, '--fix counts the fixes' );
+    is( $by{'lib/two_arg.pl'}{diff}, undef, 'with no diff' );
+    is( jsonl($out)->[-1], { type => 'done', exit_code => $exit }, 'done matches the exit code' );
+};
+
 subtest 'rules and rule' => sub {
     my $dir = project();
     my ( $out, $err, $exit ) = puff( $dir, 'rules' );
