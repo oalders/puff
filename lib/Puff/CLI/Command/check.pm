@@ -4,12 +4,13 @@ use v5.36;
 
 use Puff::CLI -command;
 
-use Puff::Engine         ();
-use Puff::Reporter::JSON ();
-use Puff::Reporter::Text ();
-use Puff::Rules          ();
-use Puff::Runner         ();
-use Time::HiRes          qw( ualarm );
+use Puff::Engine          ();
+use Puff::Reporter::JSON  ();
+use Puff::Reporter::JSONL ();
+use Puff::Reporter::Text  ();
+use Puff::Rules           ();
+use Puff::Runner          ();
+use Time::HiRes           qw( ualarm );
 
 sub abstract    {'lint (and optionally fix) Perl files'}
 sub usage_desc  {'%c check %o [paths...]'}
@@ -23,7 +24,7 @@ sub opt_spec {
         [ 'fix',              'apply safe fixes' ],
         [ 'unsafe-fixes!',    'also apply unsafe fixes' ],
         [ 'diff',             'print the fixes as a unified diff; write nothing' ],
-        [ 'output-format=s',  'text or json', { default => 'text' } ],
+        [ 'output-format=s',  'text, json or jsonl', { default => 'text' } ],
         [ 'show-files',       'list the files that would be checked, then exit' ],
         [ 'statistics',       'one line per rule: how many violations and which are fixable' ],
         Puff::CLI->config_opt_spec,
@@ -31,8 +32,8 @@ sub opt_spec {
 }
 
 sub validate_args ( $self, $opt, $args ) {
-    $self->usage_error("--output-format must be text or json")
-        unless $opt->output_format =~ /\A(?:text|json)\z/;
+    $self->usage_error("--output-format must be text, json or jsonl")
+        unless $opt->output_format =~ /\A(?:text|json|jsonl)\z/;
     return;
 }
 
@@ -56,12 +57,14 @@ sub execute ( $self, $opt, $args ) {
     my $mode     = $opt->diff ? 'diff' : $opt->fix ? 'fix' : 'lint';
     my $fix_mode = $config->unsafe_fixes ? 'unsafe' : 'safe';
     my $engine   = Puff::Engine->new( rules => \@rules, fix_mode => $mode eq 'lint' ? 'none' : $fix_mode );
-    my $progress = $opt->show_files ? undef : _progress( \*STDERR );
+    my $jsonl    = $opt->output_format eq 'jsonl' ? Puff::Reporter::JSONL->new( out => \*STDOUT, mode => $mode ) : undef;
+    my $progress = $opt->show_files || $jsonl ? undef : _progress( \*STDERR );
     my $runner   = Puff::Runner->new(
         config   => $config,
         engine   => $engine,
         mode     => $mode,
-        progress => $progress,
+        progress => $jsonl ? sub ( $done, $total ) { $jsonl->start($total) unless $done } : $progress,
+        on_file  => $jsonl ? sub ($result) { $jsonl->file($result) } : undef,
     );
     return _show_files( $runner, $args ) if $opt->show_files;
 
@@ -72,9 +75,9 @@ sub execute ( $self, $opt, $args ) {
         die $error;
     }
     my $reporter
-        = $opt->output_format eq 'json' && $mode ne 'diff'
-        ? Puff::Reporter::JSON->new
-        : Puff::Reporter::Text->new( fix_mode => $fix_mode, mode => $mode, statistics => $opt->statistics );
+        = $jsonl                                            ? $jsonl
+        : $opt->output_format eq 'json' && $mode ne 'diff' ? Puff::Reporter::JSON->new
+        :   Puff::Reporter::Text->new( fix_mode => $fix_mode, mode => $mode, statistics => $opt->statistics );
     $reporter->report( $run, \*STDOUT, \*STDERR );
 
     $Puff::CLI::EXIT_CODE = $run->{exit_code};
@@ -137,13 +140,15 @@ __END__
 Lint the given files and directories (default: .). C<--fix> writes safe
 fixes, and unsafe ones too with C<--unsafe-fixes> (or C<unsafe-fixes = true>
 in the config). C<--diff> works out the same fixes, prints them as a unified
-diff and writes nothing; it wins over C<--fix>, and its output is always the
-diff, whatever C<--output-format> says.
+diff and writes nothing; it wins over C<--fix>. With C<--output-format text>
+or C<json> its output is the plain diff; with C<--output-format jsonl> each
+file event carries its diff instead (see L<Puff::Reporter::JSONL>).
 
 C<--statistics> prints one line per rule instead of one per violation (see
 L<Puff::Reporter::Text>). C<--show-files> prints the files that would be
 checked, one per line, and checks nothing. While checking, a spinner and a
 C<Checking N/M files> counter are shown on STDERR when it is a terminal and
-the run takes more than half a second. See L<Puff::Runner> for exit codes.
+the run takes more than half a second (never with C<--output-format jsonl>,
+which streams one JSON object per line as each file is checked). See L<Puff::Runner> for exit codes.
 
 =cut

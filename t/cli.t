@@ -171,6 +171,90 @@ subtest 'check --select S002 --output-format json' => sub {
     ok( ( grep { $_->{fix}{available} } @$data ), 'fixable violations are available' );
 };
 
+# Decodes JSON Lines output, one object per line; fails if any line is not JSON.
+sub jsonl ($out) {
+    my @lines = split /\n/, $out;
+    my @events;
+    for my $line (@lines) {
+        my $event = eval { JSON::PP->new->decode($line) };
+        ok( $event, 'line is JSON on its own' ) or diag $line;
+        push @events, $event if $event;
+    }
+    return @events;
+}
+
+subtest 'check --output-format jsonl' => sub {
+    my $dir = project(%FILES);
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', 'missing.pl', '.' );
+    is( $exit, 2,   'exit 2 for a missing file' );
+    is( $err,  q{}, 'nothing on STDERR, not even the missing file' );
+    my @events = jsonl($out);
+    is( [ map { $_->{type} } @events ], [ 'start', ('file') x 5, 'done' ], 'start, a file event per file, done' );
+    is( $events[0], { type => 'start', total => 5 }, 'start has the total' );
+    is( $events[-1], { type => 'done', exit_code => 2 }, 'done has the exit code' );
+    my @files = @events[ 1 .. $#events - 1 ];
+    is( [ map { $_->{file} } @files ], [qw( missing.pl rand.pl bin/bareword.pl lib/declined.pl lib/two_arg.pl )],
+        'in processing order, not sorted' );
+    is( $files[0], { type => 'file', file => 'missing.pl', error => 'No such file or directory', fixed => 0, violations => [] },
+        'missing file has its error' );
+    ok( !exists $files[1]{diff}, 'no diff key outside --diff' );
+    is( [ grep { defined $_->{error} } @files[ 1 .. 4 ] ], [], 'no errors for files that exist' );
+    my ($rand) = grep { $_->{file} eq 'rand.pl' } @files;
+    is(
+        $rand->{violations}[0],
+        {
+            code    => 'S001',
+            message => match qr/\S/,
+            file    => 'rand.pl',
+            line    => 4,
+            column  => 7,
+            fix     => { safety => 'unsafe', available => bool(1), applied => bool(0) },
+        },
+        'violations have the json reporter shape'
+    );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S001', 'rand.pl' );
+    @events = jsonl($out);
+    is( $exit, 1, 'exit 1 with violations' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'done says 1' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S002', 'rand.pl' );
+    @events = jsonl($out);
+    is( $exit, 0, 'exit 0 when clean' );
+    is( $events[-1], { type => 'done', exit_code => 0 }, 'done says 0' );
+    is( $events[1]{violations}, [], 'no violations' );
+};
+
+subtest 'check --output-format jsonl --diff' => sub {
+    my $dir = project( 'rand.pl' => 'S001/basic.pl', 'clean.pl' => 'S002/not-reported.pl' );
+    my %before = map { $_ => $dir->child($_)->slurp_raw } qw( rand.pl clean.pl );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--diff', '--unsafe-fixes', '--select', 'S001,S002' );
+    is( $exit, 1,   'exit 1: the diff would change something' );
+    is( $err,  q{}, 'no summary on STDERR' );
+    my @lines = split /\n/, $out;
+    is( scalar( grep { !/\A\{.*\}\z/ } @lines ), 0, 'no plain diff text outside JSON lines' );
+    my @events = jsonl($out);
+    my %file   = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } @events;
+    like( $file{'rand.pl'}{diff}, qr{^\+use Crypt::PRNG qw\(rand\);$}m, 'fixable file has its diff' );
+    ok( exists $file{'clean.pl'}{diff}, 'clean file has a diff key' );
+    is( $file{'clean.pl'}{diff}, undef, '... which is null' );
+    is( $file{'rand.pl'}{fixed}, 0, 'nothing written' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'done' );
+    is( { map { $_ => $dir->child($_)->slurp_raw } qw( rand.pl clean.pl ) }, \%before, 'files unchanged' );
+};
+
+subtest 'check --output-format jsonl --fix' => sub {
+    my $dir = project( 'two_arg.pl' => 'S002/fixed.pl' );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S002,S003' );
+    is( $exit, 1, 'exit 1: violations remain' ) or diag $err;
+    my @events = jsonl($out);
+    my ($file) = grep { $_->{type} eq 'file' } @events;
+    ok( $file->{fixed} > 0, 'fixed counts the fixes written' );
+    ok( scalar @{ $file->{violations} }, 'remaining violations listed' );
+    is( [ grep { $_->{fix}{applied} } @{ $file->{violations} } ], [], 'none marked applied' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'done' );
+};
+
 subtest 'rules and rule' => sub {
     my $dir = project();
     my ( $out, $err, $exit ) = puff( $dir, 'rules' );
@@ -339,6 +423,7 @@ subtest 'errors exit 2' => sub {
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'xml' );
     is( $exit, 2, 'bad output format exits 2' );
+    like( $err, qr/--output-format must be text, json or jsonl/, 'and lists the formats' );
 
     ( $out, $err, $exit ) = puff( $dir, 'check', '--bogus' );
     is( $exit, 2, 'unknown option exits 2' );
