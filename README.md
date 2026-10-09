@@ -542,11 +542,15 @@ string that Perl runs through `/bin/sh`, given to `system` or `exec` as the
 only argument, or run by backticks, `qx` or `readpipe`. Perl uses the shell
 only when the string has shell syntax: one of `$&*(){}[]'";\|?<>~` or a
 backtick, a newline before the end, a first word of `.` or `exec`, or a
-leading `VAR=value` assignment. A string without any of these, such as
+leading `VAR=value` assignment. A trailing `2>&1` after whitespace is the
+exception: Perl redirects stderr itself and still skips the shell, so
+`system 'ls -l 2>&1'` is not reported. A string without any of these, such as
 `system 'ls -l /tmp'`, is not reported: Perl splits it on whitespace and
 runs the program directly, so the shell is never involved and the list form
-would change nothing. A command built at runtime is S008's, so the two never
-report the same call.
+would change nothing. S008 owns any command built at runtime, including a
+concatenation of constants such as `'ls ' . '*'`; S018 owns a single constant
+string, so the two never report the same call. A double-quoted string with a
+numeric, `\c`, `\N{}` or case-changing escape is not analysed.
 
 There is no fix. Issue #17 proposed splitting the string into a list, but
 that only works for strings without shell syntax, which already skip the

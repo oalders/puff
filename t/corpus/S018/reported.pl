@@ -29,3 +29,12 @@ $out = qx{ls \$HOME}; # expect: S018
 $out = readpipe('date +%s; uname'); # expect: S018
 $out = CORE::readpipe('uname -a > x'); # expect: S018
 $out = `ssh user\@host uptime | head`; # expect: S018
+system "FOO=1 ls"; # expect: S018
+system "a=b"; # expect: S018
+system "  . foo"; # expect: S018
+system "ls\n\n"; # expect: S018
+system "ls\\x24 | wc"; # expect: S018
+system "ls 2>&1 | wc"; # expect: S018
+system "ls\n 2>&1"; # expect: S018
+system "ls 2>&1x"; # expect: S018
+system "ls>2>&1"; # expect: S018

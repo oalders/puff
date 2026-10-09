@@ -10,8 +10,9 @@ my %PIPE_FUNCTION = map { $_ => 1 } qw( readpipe CORE::readpipe );
 
 # Perl hands a one-string command to /bin/sh when it contains one of these
 # (doio.c, do_exec3), except for a single newline at the very end, which it
-# strips. It also does when the first word is `.` or `exec`, or the command
-# starts with a VAR= assignment.
+# strips, and a trailing ` 2>&1`, which it handles itself with dup2. It also
+# does when the first word is `.` or `exec`, or the command starts with a VAR=
+# assignment.
 my $PERL_SHELL_META = qr/[\$&*(){}\[\]'";\\|?<>~`\n]/;
 
 my $LIST    = 'pass the command and its arguments as a list';
@@ -29,7 +30,9 @@ sub explanation {
         command as one string hand it to /bin/sh when it contains shell
         syntax: one of `$ & * ( ) { } [ ] ' " ; \ | ? < > ~` and backtick, a
         newline before the end, a first word of `.` or `exec`, or a leading
-        `VAR=value` assignment. The shell then parses quoting, globs,
+        `VAR=value` assignment. A trailing `2>&1` after whitespace (and
+        before nothing but whitespace) does not count: Perl redirects stderr
+        itself and runs the program directly. The shell then parses quoting, globs,
         variables, pipes and redirects, which is where injection and
         surprises come from (CWE-78).
 
@@ -44,8 +47,12 @@ sub explanation {
         reported: Perl already skips the shell for it, splitting it on
         whitespace and running the program directly, so the list form would
         change nothing. A command built at runtime (`system("ls $dir")`,
-        `system($cmd)`, interpolating backticks) is S008's; this rule leaves
-        it alone, so a call is never reported by both. The list forms,
+        `system($cmd)`, interpolating backticks, a concatenation even of
+        constants such as `'ls ' . '*'`) is S008's; this rule takes only a
+        single constant string, so a call is never reported by both. A
+        double-quoted string with an escape other than `\n \t \r \f \a \e`
+        or a backslashed punctuation character (such as `\x24`, `\073`,
+        `\c[` or `\N{...}`) is not analysed. The list forms,
         `system { $prog } @args` and `system(@cmd)`, are not reported.
 
         There is no fix. The fix first proposed, splitting the string into a
@@ -67,7 +74,7 @@ sub check ( $self, $elem, $doc ) {
     if ( $elem->isa('PPI::Token::QuoteLike') ) {
         my ( $body, $interpolates ) = command_body($elem);
         return if !defined $body || $interpolates;    # S008 reports the ones that interpolate
-        $body = _unescape($body) unless $elem->content =~ /\Aqx\s*'/;
+        $body = _unescape($body) // return unless $elem->content =~ /\Aqx\s*'/;
         my $syntax = _shell_syntax($body) // return;
         return $self->violation( $elem, message => _message( 'Command', $syntax, $CAPTURE ) );
     }
@@ -104,10 +111,12 @@ sub _call ($elem) {
     }
     return unless @arg == 1 && is_constant_string( $arg[0] );
 
-    return ( $name, _string_value( $arg[0] ) );
+    my $string = _string_value( $arg[0] ) // return;
+    return ( $name, $string );
 }
 
-# The value of a constant string token, with its escapes processed.
+# The value of a constant string token, with its escapes processed, or undef
+# when it has an escape that _unescape declines.
 sub _string_value ($token) {
     if ( $token->isa('PPI::Token::HereDoc') ) {
         my $text = join q{}, $token->heredoc;
@@ -118,9 +127,13 @@ sub _string_value ($token) {
 }
 
 # Processes the escapes of a double-quoted string with nothing interpolated,
-# enough to tell which shell metacharacters the value holds.
+# enough to tell which shell metacharacters the value holds. Returns undef for
+# any other escape (numeric, \c, \N{}, case changes such as \Q) rather than
+# decoding it, so the string is not analysed.
 sub _unescape ($text) {
     state %ESCAPE = ( n => "\n", t => "\t", r => "\r", f => "\f", a => "\a", e => "\e" );
+    return if grep { /\w/ && !exists $ESCAPE{$_} } $text =~ /\\(.)/gs;
+
     $text =~ s{\\(.)}{$ESCAPE{$1} // $1}gse;
     return $text;
 }
@@ -134,6 +147,7 @@ sub _shell_syntax ($string) {
     return 'VAR= assignment' if $cmd =~ /\A\w*=/;
 
     $cmd =~ s/\n\z//;
+    $cmd =~ s/(?<=\s)2>&1\s*\z//;    # Perl does the dup2 itself
     my %seen;
     my @meta = grep { !$seen{$_}++ } $cmd =~ /($PERL_SHELL_META)/g;
     return unless @meta;
@@ -153,8 +167,15 @@ __END__
 Reports C<system>, C<exec>, C<readpipe>, backticks and C<qx> given one
 constant command string that Perl runs through /bin/sh: it has shell
 metacharacters (as listed in F<doio.c>), a newline before the end, a first
-word of C<.> or C<exec>, or a leading C<VAR=value> assignment. There is no
-fix.
+word of C<.> or C<exec>, or a leading C<VAR=value> assignment. A trailing
+C<2E<gt>&1> after whitespace, followed by nothing but whitespace, is not
+shell syntax: F<doio.c> handles it with C<dup2> and runs the program
+directly, so C<system 'ls -l 2E<gt>&1'> is not reported. There is no fix.
+
+A double-quoted string is analysed only when its escapes are C<\n>, C<\t>,
+C<\r>, C<\f>, C<\a>, C<\e> or a backslashed non-word character. Any other
+escape (C<\x24>, C<\073>, C<\c[>, C<\N{...}>, C<\Q>) makes the rule decline
+to analyse the string rather than decode it.
 
 A constant string without shell syntax, such as C<system 'ls -l /tmp'>, is
 not reported. Perl splits it on whitespace and runs the program directly,
@@ -173,12 +194,15 @@ same way there.
 =head1 BOUNDARY WITH S008
 
 S008 (L<Puff::Rule::Security::ShellCommand>) reports a one-string command
-built at runtime: an interpolating string, a concatenation or a variable.
-This rule takes the constant ones. Both decide whether a backtick or C<qx>
+built at runtime: an interpolating string, a variable or a concatenation,
+even of constants such as C<'ls ' . '*'>. This rule takes only a single
+constant string. Both decide whether a backtick or C<qx>
 command interpolates with C<command_body> from L<Puff::PPIUtil>, and whether
 a call argument is constant with C<is_constant_string>, so the two never
-report the same call. This rule is selected only by its exact code, because
-a constant command cannot be injected into by itself; the report is about
-avoiding the shell's parsing, not about untrusted input.
+report the same call. This rule is selected only by its exact code: no
+untrusted input reaches a constant command, so the report is about the
+shell's parsing of it. The environment can still matter, though: C<PATH>,
+C<IFS> and what a glob such as C<rm *> expands to are all outside the
+string.
 
 =cut

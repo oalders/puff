@@ -10,3 +10,6 @@ $out = readpipe("ls $file"); # expect: S008
 open( $fh, '-|', "git log $ref" ) or die; # expect: S008
 open $fh, '|-', $cmd or die; # expect: S008
 $out = qx(ls @{[ $file ]}); # expect: S008
+my ( $x, @a );
+$out = qx(ls $x); # expect: S008
+$out = qx{ls @a}; # expect: S008
