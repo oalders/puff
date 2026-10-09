@@ -343,6 +343,48 @@ subtest 'S002 and S003 fix the same open' => sub {
     is( $result->{fixed_count}, 2, 'two fixed' );
 };
 
+package T014 {    # unsafe rule whose "safe" violations are safe
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T014'}
+    sub fix_safety {'unsafe'}
+    sub from       {'safe'}
+    sub to         {'fixed'}
+
+    sub check ( $self, $elem, $doc ) {
+        my $word = $elem->content;
+        return unless $word eq 'safe' || $word eq 'risky';
+        return $self->violation( $elem, fix_safety => $word eq 'safe' ? 'safe' : 'unsafe' );
+    }
+
+    sub fix ( $self, $violation, $fix ) {
+        $fix->replace( $violation->element, 'fixed' );
+        return 1;
+    }
+}
+
+package T015 {    # passes a fix_safety that is not safe or unsafe
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code                         {'T015'}
+    sub fix_safety                   {'unsafe'}
+    sub check ( $self, $elem, $doc ) { return $self->violation( $elem, fix_safety => 'none' ) }
+}
+
+package main;
+
+subtest 'per-violation fix safety' => sub {
+    my $result = run_engine( engine( 'safe', 'T014' ), "safe; risky;\n" );
+    is( $result->{new_text}, "fixed; risky;\n", 'only the safe violation is fixed in safe mode' );
+    is( [ map { $_->fix_safety } @{ $result->{violations} } ], ['unsafe'], 'the unsafe one remains' );
+
+    $result = run_engine( engine( 'unsafe', 'T014' ), "safe; risky;\n" );
+    is( $result->{new_text}, "fixed; fixed;\n", 'both are fixed in unsafe mode' );
+
+    $result = run_engine( engine( 'none', 'T015' ), "x;\n" );
+    like( $result->{error}, qr/rule T015 failed: rule T015 gave fix_safety 'none'/, 'bad fix_safety dies' );
+};
+
 subtest 'builtin_rules_info' => sub {
     is(
         [ Puff::Engine->builtin_rules_info ],

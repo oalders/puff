@@ -29,6 +29,9 @@ sub option ( $self, $name ) {
 sub violation ( $self, $elem, %args ) {
     my $loc     = $elem->location or die "PPI element has no location\n";
     my $fixable = $self->fix_safety eq 'none' ? 0 : ( $args{fixable} // 1 );
+    my $safety  = $args{fix_safety};
+    die 'rule ' . $self->code . " gave fix_safety '$safety'; use safe or unsafe\n"
+        if defined $safety && $safety ne 'safe' && $safety ne 'unsafe';
     return Puff::Violation->new(
         rule    => $self,
         code    => $self->code,
@@ -37,6 +40,7 @@ sub violation ( $self, $elem, %args ) {
         column  => $loc->[1],
         message => $args{message} // $self->summary,
         fixable => $fixable ? 1 : 0,
+        ( defined $safety ? ( fix_safety => $safety ) : () ),
     );
 }
 
@@ -152,8 +156,9 @@ C<fix> will decline.
 
     sub fix ( $self, $violation, $fix ) { ... }
 
-Called for a violation whose C<fixable> is true and whose rule's
-C<fix_safety> is allowed in the current mode. Record edits on the
+Called for a violation whose C<fixable> is true and whose fix safety (its
+own, see L</violation>, else the rule's C<fix_safety>) is allowed in the
+current mode. Record edits on the
 L</"Puff::Fix object"> C<$fix> and return true. To decline (leave this
 violation unfixed, with no error), return false, record no edits, or call
 C<< Puff::Fix->decline($why) >>; any edits already recorded are thrown away.
@@ -199,6 +204,15 @@ L</summary>.
 
 Optional, default 1. Pass 0 when this particular violation has no fix. It is
 always 0 when C<fix_safety> is C<none>.
+
+=item fix_safety
+
+Optional: C<safe> or C<unsafe>, for a rule whose fixes are not all equally
+safe. It overrides the rule's L</fix_safety> for this violation only, and
+decides whether C<--fix> applies it and how the report marks it. Declare
+the rule's own C<fix_safety> as the least safe of its fixes, since that is
+what C<puff rules> shows. Ignored when the rule's C<fix_safety> is C<none>.
+Any other value dies.
 
 =back
 
@@ -255,7 +269,7 @@ all.
 
 C<check> returns these; C<fix> receives one. Methods: C<rule>, C<code>,
 C<element> (the PPI element), C<line> and C<column> (1-based, in
-characters), C<message>, C<fixable>, and C<file>.
+characters), C<message>, C<fixable>, C<fix_safety>, and C<file>.
 
 =head1 SEE ALSO
 

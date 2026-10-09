@@ -117,7 +117,8 @@ violation:
        }
     ]
 
-`fix.safety` is the rule's fix safety, `fix.available` says whether a fix is
+`fix.safety` is the fix safety of this violation (usually the rule's; T001
+sets it per violation), `fix.available` says whether a fix is
 offered for this violation, and `fix.applied` is always `false` because only
 violations that remain are listed. Errors still go to STDERR as text.
 `--diff` wins over `--output-format json` and prints the plain diff.
@@ -328,6 +329,7 @@ reported as `P001`:
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
+| T001 | OkCompare | Use is/isnt instead of ok with eq, ==, ne or != | safe for `eq` with Test::More, else unsafe |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
 Rule codes follow ruff's prefixes where ruff has an equivalent, so a ruff
@@ -341,6 +343,7 @@ user can guess where a rule lives:
 | `M` | Moose and Mouse classes | none |
 | `U` | Upgrades to newer idioms | `UP` (pyupgrade) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
+| `T` | Test style | `PT` (flake8-pytest-style) |
 | `P` | puff's own checks; always on | none |
 
 `puff rule CODE` prints the full explanation of a rule. When a fix is
@@ -623,6 +626,25 @@ To allow more functions that set `$a` and `$b`:
     [rules.A001]
     extra-pair-functions = ["pairfoo"]
 
+**T001** is not selected by default; turn it on with `--select T`. It
+reports `ok` whose first argument is exactly `A eq B`, `A == B`, `A ne B` or
+`A != B` (with or without a test name or parens), when the file imports `is`
+or `isnt` into the same package before the call from Test::More, Test::Most,
+Test2::V0, Test2::Bundle::Extended, Test2::Bundle::More,
+Test2::Tools::ClassicCompare or Test2::Tools::Compare. A failing `ok` only
+says that it failed; `is` and `isnt` also print both values. Test::Simple
+exports only `ok`, so it does not count, and an explicit import list must
+name the function. Not reported: a second comparison or any lower-precedence
+operator in the argument (`&&`, `||`, `or`, `?:`, assignment), a bareword
+that could be a list operator (`ok(foo $x eq 'y')`), a method call such as
+`$tb->ok`, and files that define their own `ok`, `is` or `isnt`. The fix
+rewrites `ok(A eq B, $name)` as `is(A, B, $name)` and `ne` as `isnt`. Only
+`eq` with Test::More or Test::Most is a safe fix (an undef that passed as `''`
+now fails); `==` and `!=` become string comparisons, Test::More's `isnt`
+passes undef against `''`, and Test2's `is` compares references deeply, so
+those fixes are unsafe. No fix is offered with more than two arguments, or for
+an array, hash or parenthesized-list operand.
+
 ## Writing a rule
 
 A rule is a subclass of `Puff::Rule`. The full API is documented in
@@ -715,7 +737,9 @@ The points to know:
   way, that is a bug in the rule: puff reports an error for the file
   (exit `2`) and writes none of its fixes. The edits are text offsets into
   the file, so you can change part of an element with `replace_range`.
-- Use `fix_safety => 'unsafe'` for any fix that can change behaviour.
+- Use `fix_safety => 'unsafe'` for any fix that can change behaviour. When
+  only some of a rule's fixes are safe, declare the rule `unsafe` and pass
+  `fix_safety => 'safe'` to `$self->violation` for the safe ones.
 - If the rule detects a known weakness, return its CWE numbers from `cwe`
   (`sub cwe { ( 78, 73 ) }`); `puff rule CODE` prints them.
 - Rules that ship with puff go under `lib/Puff/Rule/` and are found
