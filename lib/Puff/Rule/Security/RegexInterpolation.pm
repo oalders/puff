@@ -3,8 +3,10 @@ package Puff::Rule::Security::RegexInterpolation;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::Violation ();
-use Scalar::Util    qw( refaddr weaken );
+use Puff::Violation     ();
+use List::Util          qw( first );
+use Puff::LexicalScopes qw( declarations );
+use Scalar::Util        qw( refaddr weaken );
 
 sub code       {'S019'}
 sub summary    {'Variable interpolated into a regex without \Q'}
@@ -42,12 +44,23 @@ sub explanation {
           (`$re`, `$re_word`, `$word_rx`, `$pats`), or `regex` or
           `pattern` anywhere in it. Hash keys are not checked, so
           `$args->{pattern}` is reported;
-        - a plain scalar whose only assignment visible before the regex
-          is `$x = qr/.../` or `$x = quotemeta ...`, with nothing else on
-          the right-hand side. "Visible" means a statement earlier in the
-          same block or an enclosing block (or the file). A same-named
-          variable in another sub does not count, and
-          `$x = $opt{x} // qr/.../` is reported;
+        - a plain scalar whose nearest declaration visible from the regex
+          is a whole statement `my $x = qr/.../;` or `my $x =
+          quotemeta ...;` (also `our` or `state`), with nothing else on the
+          right-hand side. The search goes from the innermost enclosing
+          block outwards, taking the latest declaration before the regex,
+          and counts `my`, `our` and `state` (list forms included), `for
+          my $v` loop variables and sub signature parameters. So an inner
+          `my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) =
+          @_` hides an outer `my $x = qr/.../`. For a global with no
+          declaration, a qualifying assignment `$x = qr/.../;` in an
+          earlier statement of the same or an enclosing block (or the
+          file) is needed instead. Either way the file must write the name
+          nowhere else: any other assignment (`=`, `.=`, `||=`, `//=` and
+          the like, in any scope), `local $x`, a `foreach` loop over it, or
+          `$x =~ s///` or `tr///` means it is reported. An assignment
+          inside a condition (`if (my $x = qr/a/)`) is not seen, which errs
+          towards reporting, and `$x = $opt{x} // qr/.../` is reported;
         - a plain scalar with an all-caps name (`$WS`, `$CRLF`,
           `$Foo::CRLF`), taken to be a constant. `$Input` is reported;
         - capture and punctuation variables (`$1`, `$&`, `$^N`,
@@ -178,18 +191,19 @@ sub _variables ( $pattern, $x ) {
     while ( pos($pattern) < length $pattern ) {
         if ( $pattern =~ /\G\\([QLUF])/gc ) { push @case, $1; next }
         if ( $pattern =~ /\G\\E/gc )        { pop @case;      next }
+
+        # A /x comment ends at a newline, even one after a backslash, which
+        # the escape skip below would otherwise swallow.
+        if ( $comment && $pattern =~ /\G\\?\n/gc ) { $comment = 0; next }
         next if $pattern =~ /\G\\c./gcs || $pattern =~ /\G\\./gcs;
 
         # Character classes ([]a] and [^]a] start with a literal ]) and,
         # under /x, comments from an unescaped # to the end of the line.
-        if ($comment) {
-            $comment = 0 if $pattern =~ /\G\n/gc;
-        }
-        elsif ($class) {
+        if ($class) {
             next if $pattern =~ /\G\[:\^?\w+:\]/gc;    # [:alpha:]
             if ( $pattern =~ /\G\]/gc ) { $class = 0; next }
         }
-        else {
+        elsif ( !$comment ) {
             if ( $pattern       =~ /\G\[\^?\]?/gc ) { $class   = 1; next }
             if ( $x && $pattern =~ /\G#/gc )        { $comment = 1; next }
         }
@@ -298,47 +312,134 @@ sub _skip_brackets ($ref) {
 
 my ( $cached_doc, $cached );
 
-# Whether $name is assigned a pattern in a statement visible from $elem: a
-# statement before it in the same block, or in a block or document enclosing
-# it. This approximates lexical scope; it does not follow later assignments.
+# Whether $name, a plain scalar used in the regex $elem, is taken to hold a
+# pattern. The document must write $name nowhere but in qualifying
+# assignments (see _pattern_assignment). Then the nearest declaration of
+# $name visible from $elem must be a qualifying `my $x = qr/.../;`. With no
+# visible declaration (a global), a qualifying assignment must be visible
+# instead: a statement before $elem in the same block, or in a block or
+# document enclosing it.
 sub _holds_pattern ( $elem, $doc, $name ) {
-    my $assigned = _pattern_assignments($doc)->{$name} or return 0;
+    my $data = _analysis($doc);
+    return 0 if $data->{writes}{$name};
+    my $loc = $elem->location;
+    if ( my $scopes = $data->{declarations}{"\$$name"} ) {
+        for ( my $p = $elem->parent ; $p ; $p = $p->parent ) {
+            my $decls   = $scopes->{ refaddr $p } or next;
+            my $nearest = first {
+                _before( $_->{elem}->location, $loc ) && !( $_->{statement} && _contains( $_->{statement}, $elem ) )
+                }
+                reverse @$decls;
+            return $data->{qualifying}{ refaddr $nearest->{elem} } ? 1 : 0 if $nearest;
+        }
+    }
+
+    my $assigned = $data->{assigned}{$name} or return 0;
     my %enclosing;
     for ( my $p = $elem->parent ; $p ; $p = $p->parent ) { $enclosing{ refaddr $p } = 1 }
-    my $loc = $elem->location;
     for my $stmt (@$assigned) {
         next if $enclosing{ refaddr $stmt } || !$enclosing{ refaddr $stmt->parent };
-        my $at = $stmt->location;
-        return 1 if $at->[0] < $loc->[0] || ( $at->[0] == $loc->[0] && $at->[1] < $loc->[1] );
+        return 1 if _before( $stmt->location, $loc );
     }
     return 0;
 }
 
-# The statements of the document that assign a plain scalar a pattern, by
-# variable name: `[my|our|state|local] $x = qr/.../;`, `$x = quotemeta(...);`
-# or `$x = quotemeta EXPR;`, with nothing else on the right-hand side.
-sub _pattern_assignments ($doc) {
+sub _before ( $at, $loc ) {
+    return $at->[0] < $loc->[0] || ( $at->[0] == $loc->[0] && $at->[1] < $loc->[1] );
+}
+
+sub _contains ( $outer, $elem ) {
+    for ( my $el = $elem ; $el ; $el = $el->parent ) {
+        return 1 if refaddr($el) == refaddr($outer);
+    }
+    return 0;
+}
+
+# One pass over the document, cached until a different document is passed:
+# - declarations: by symbol ('$x'), then by the refaddr of the block,
+#   document or compound statement it belongs to, the declarations in
+#   document order (see Puff::LexicalScopes::declarations);
+# - assigned: by name, the qualifying assignment statements;
+# - qualifying: the refaddrs of the symbols those statements assign;
+# - writes: by name, the number of other writes.
+sub _analysis ($doc) {
     return $cached if $cached_doc && refaddr($cached_doc) == refaddr($doc);
     $cached_doc = $doc;
     weaken($cached_doc);
-    my %by_name;
-    for my $symbol ( @{ $doc->find('PPI::Token::Symbol') || [] } ) {
-        next unless $symbol->content =~ /\A\$((?:::)?\w+(?:::\w+)*)\z/;
+    my %data = map { $_ => {} } qw( declarations assigned qualifying writes );
+    for my $token ( $doc->tokens ) {
+        for my $decl ( declarations($token) ) {
+            push @{ $data{declarations}{ $decl->{symbol} }{ refaddr $decl->{scope} } }, $decl;
+        }
+        next unless $token->isa('PPI::Token::Symbol') && $token->content =~ /\A\$((?:::)?\w+(?:::\w+)*)\z/;
         my $name = $1;
-        my $stmt = $symbol->parent;
-        next unless $stmt->isa('PPI::Statement') && $stmt->parent;
-        my $prev = $symbol->sprevious_sibling;
-        next if $prev && !( $prev->isa('PPI::Token::Word') && $prev->content =~ /\A(?:my|our|state|local)\z/ );
-        next if $prev && $prev->sprevious_sibling;
-        my $op = $symbol->snext_sibling;
-        next unless $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
-        my $first = $op->snext_sibling or next;
-        my @rhs   = ($first);
-        while ( my $next = $rhs[-1]->snext_sibling ) { push @rhs, $next }
-        pop @rhs if $rhs[-1]->isa('PPI::Token::Structure') && $rhs[-1]->content eq ';';
-        push @{ $by_name{$name} }, $stmt if _is_pattern(@rhs);
+        if ( my $stmt = _pattern_assignment($token) ) {
+            push @{ $data{assigned}{$name} }, $stmt;
+            $data{qualifying}{ refaddr $token } = 1;
+        }
+        elsif ( _is_write($token) ) {
+            $data{writes}{$name}++;
+        }
     }
-    return $cached = \%by_name;
+    return $cached = \%data;
+}
+
+# The statement, if $symbol is a plain scalar assigned a pattern by a whole
+# statement in a block or the document: `[my|our|state|local] $x =
+# qr/.../;`, `$x = quotemeta(...);` or `$x = quotemeta EXPR;`, with nothing
+# else on the right-hand side. An assignment inside a condition is not one.
+sub _pattern_assignment ($symbol) {
+    my $stmt = $symbol->parent;
+    return unless $stmt->isa('PPI::Statement') && _is_scope_body( $stmt->parent );
+    my $prev = $symbol->sprevious_sibling;
+    return if $prev && !( $prev->isa('PPI::Token::Word') && $prev->content =~ /\A(?:my|our|state|local)\z/ );
+    return if $prev && $prev->sprevious_sibling;
+    my $op = $symbol->snext_sibling;
+    return unless $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
+    my $first = $op->snext_sibling or return;
+    my @rhs   = ($first);
+    while ( my $next = $rhs[-1]->snext_sibling ) { push @rhs, $next }
+    pop @rhs if $rhs[-1]->isa('PPI::Token::Structure') && $rhs[-1]->content eq ';';
+    return _is_pattern(@rhs) ? $stmt : undef;
+}
+
+sub _is_scope_body ($elem) {
+    return $elem && ( $elem->isa('PPI::Structure::Block') || $elem->isa('PPI::Document') );
+}
+
+# An assignment operator: =, .=, ||=, //=, x= and the like.
+my $ASSIGN = qr{\A(?:\*\*|\|\||//|&&|<<|>>|[-+*/.x%&|^])?=\z};
+
+# Whether $symbol is written: assigned with any assignment operator (alone
+# or as an element of a list on the left), localized, a foreach loop
+# variable, or changed by s/// or tr/// (without /r).
+sub _is_write ($symbol) {
+    my $target = $symbol;
+    my $expr   = $symbol->parent;
+    my $prev   = $symbol->sprevious_sibling;
+    if (   $expr->isa('PPI::Statement::Expression')
+        && $expr->parent
+        && $expr->parent->isa('PPI::Structure::List')
+        && ( !$prev || ( $prev->isa('PPI::Token::Operator') && $prev->content eq ',' ) ) ) {
+        $target = $expr->parent;                # ($x, $y) = ..., local ($x)
+        $prev   = $target->sprevious_sibling;
+    }
+    return 1 if $prev && $prev->isa('PPI::Token::Word') && $prev->content eq 'local';
+    $prev = $prev->sprevious_sibling
+        if $prev && $prev->isa('PPI::Token::Word') && $prev->content =~ /\A(?:my|our|state)\z/;
+    return 1 if $prev && $prev->isa('PPI::Token::Word') && $prev->content =~ /\Afor(?:each)?\z/;
+
+    for my $el ( $symbol, $target ) {
+        my $op = $el->snext_sibling;
+        return 1 if $op && $op->isa('PPI::Token::Operator') && $op->content =~ $ASSIGN;
+    }
+    my $op = $symbol->snext_sibling;
+    return 0 unless $op && $op->isa('PPI::Token::Operator') && $op->content =~ /\A[=!]~\z/;
+    my $re = $op->snext_sibling;
+    return 0
+        unless $re && ( $re->isa('PPI::Token::Regexp::Substitute') || $re->isa('PPI::Token::Regexp::Transliterate') );
+    my %mod = $re->get_modifiers;
+    return $mod{r} ? 0 : 1;
 }
 
 # Whether the elements of a right-hand side are one qr// or one quotemeta call.
@@ -403,12 +504,28 @@ constant. C<$Input> and C<$Pkg::Const> are reported;
 
 =item *
 
-a plain scalar assigned C<qr/.../> or C<quotemeta(...)> / C<quotemeta EXPR>
-with C<=>, with nothing else on the right-hand side, in a statement before
-the regex in the same block or an enclosing block (or the file). This
-approximates lexical scope: a same-named variable in another sub does not
-count, but a later reassignment is not noticed. C<$x = $opt{x} // qr/,/>,
-C<$x ||= qr/,/> and C<join '|', map {quotemeta} @w> are reported;
+a plain scalar whose nearest declaration visible from the regex is a whole
+statement C<my $x = qr/.../;> or C<my $x = quotemeta(...);> /
+C<quotemeta EXPR;> (or C<our>, C<state>), with nothing else on the
+right-hand side. The enclosing blocks are searched from the innermost
+outwards for the latest declaration of the name before the regex; C<my>,
+C<our> and C<state> (list forms included), a C<for my $v> loop variable
+(owned by its loop) and a sub signature parameter (owned by the sub's body)
+all count. An inner C<my $x = shift>, C<for my $x (...)>, C<sub f ($x)> or
+C<my ($x) = @_> therefore hides an outer C<my $x = qr/.../>. A global with
+no declaration needs a qualifying C<$x = qr/.../;> statement before the
+regex in the same or an enclosing block (or the file).
+
+In both cases the name must have no other write anywhere in the file: any
+assignment operator after it (C<=>, C<.=>, C<||=>, C<//=> and so on, alone
+or in a list on the left), C<local $x>, a C<foreach> loop variable of that
+name, or C<$x =~ s///> or C<tr///> (without C</r>). This is by name, not by
+scope, so a same-named variable written in another sub also counts. Writes
+the rule does not recognise (C<chomp $x>, an alias through C<@_> or a
+reference) are missed. An assignment inside a condition
+(C<if (my $x = qr/a/)>) is not seen as qualifying, which errs towards
+reporting. C<$x = $opt{x} // qr/,/>, C<$x ||= qr/,/> and
+C<join '|', map {quotemeta} @w> are reported;
 
 =item *
 

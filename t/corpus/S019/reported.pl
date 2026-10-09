@@ -58,3 +58,5 @@ print "1\n" if $str =~ /$Pkg::Const/; # expect: S019
 print "1\n" if $str =~ /a # a comment ends at the newline
     $name # expect: S019
 /x;
+print "1\n" if $str =~ /a # a comment ending in a backslash \
+    $input/x; # expect: S019

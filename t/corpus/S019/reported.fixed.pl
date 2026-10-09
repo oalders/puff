@@ -58,3 +58,5 @@ print "1\n" if $str =~ /\Q$Pkg::Const\E/; # expect: S019
 print "1\n" if $str =~ /a # a comment ends at the newline
     \Q$name\E # expect: S019
 /x;
+print "1\n" if $str =~ /a # a comment ending in a backslash \
+    \Q$input\E/x; # expect: S019

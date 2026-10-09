@@ -581,10 +581,19 @@ or not input: a variable whose own name has `re`, `rx`, `regex`, `regexp`,
 `pattern` or `pat` as a `_`-separated word (`$re`, `$word_rx`, `$pats`) or
 `regex` or `pattern` anywhere in it (hash keys are not checked, so
 `$args->{pattern}` is reported); a plain scalar with an all-caps name
-(`$WS`, `$Foo::CRLF`, but not `$Input`); and a plain scalar assigned only
-`qr/.../` or `quotemeta ...` (nothing else on the right-hand side) in an
-earlier statement of the same or an enclosing block. `$x = $opt{x} // qr/,/`
-and a same-named variable in another sub do not count. These guesses can be
+(`$WS`, `$Foo::CRLF`, but not `$Input`); and a plain scalar whose nearest
+declaration visible from the regex is a whole statement `my $x = qr/.../;`
+or `my $x = quotemeta ...;` (nothing else on the right-hand side). The
+nearest declaration is the latest one before the regex in the innermost
+enclosing block that has one; `my`, `our`, `state` (list forms included),
+`for my $v` and sub signature parameters all count, so an inner
+`my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) = @_` hides an
+outer qr//. A global with no declaration needs a `$x = qr/.../;` statement
+earlier in the same or an enclosing block. The name must also have no other
+write anywhere in the file: any other assignment (`=`, `.=`, `||=`, `//=`
+and the like), `local $x`, a `foreach` over it, or `$x =~ s///` or `tr///`.
+`$x = $opt{x} // qr/,/` does not count, and an assignment inside a
+condition is not seen (both err towards reporting). These guesses can be
 wrong and can hide real injection: S019 is not a complete detector.
 
 The unsafe fix wraps the variable, with its subscripts, in `\Q...\E`. When
