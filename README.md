@@ -80,7 +80,9 @@ To see which rules fire most and which of them can be fixed, use
 | `--no-config` | Ignore config files. |
 
 `CODES` is a comma-separated list, and the option can be repeated. A code can
-be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. A
+be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
+means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
+rule and applies every fix. A
 `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
 rules off. An `ignore` entry that matches nothing is allowed.
@@ -202,7 +204,7 @@ does not silently do nothing.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `select` | `["S", "B"]` | Rule codes or prefixes to enable. |
+| `select` | `["S", "B"]` | Rule codes or prefixes to enable. `ALL` enables every rule. |
 | `extend-select` | `[]` | More codes or prefixes to enable. |
 | `ignore` | `[]` | Codes or prefixes to disable. Wins over `select`. |
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
@@ -649,7 +651,8 @@ enables the `X` rules, because only `S` and `B` are enabled by default:
 
 puff loads every `.pm` file under `rule-paths` and treats each package that
 inherits from `Puff::Rule` as a rule. A code must be letters followed by
-three digits and must be unique; `P001` is reserved. Then:
+three digits and must be unique. `P001` is reserved, and so is any code
+starting with `ALL`, because `ALL` selects every rule. Then:
 
     $ puff rules
     S001   unsafe  rand/srand is not cryptographically secure
