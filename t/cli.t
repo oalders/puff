@@ -356,6 +356,10 @@ subtest 'check --output-format jsonl: a run that dies before finding files is ju
 subtest 'output that cannot be written exits 2' => sub {
     plan skip_all => '/dev/full is not available' unless -c '/dev/full' && -w _;
     my $dir = project(%FILES);
+
+    # Over 64KB of output in every format, so a write fails before the final
+    # flush; the long name keeps the text output big without many violations.
+    $dir->child( ( q{x} x 150 ) . q{.pl} )->spew_raw( qq{rand;\n} x 300 );
     for my $format (qw( text json jsonl )) {
         my $err = path( $dir, '..', 'stderr.txt' );
         my $pid = fork // die "fork: $!";
@@ -363,7 +367,7 @@ subtest 'output that cannot be written exits 2' => sub {
             chdir $dir                    or die "chdir $dir: $!";
             open STDOUT, '>', '/dev/full' or die "/dev/full: $!";
             open STDERR, '>', "$err"      or die "$err: $!";
-            exec @PERL, $PUFF, 'check', '--output-format', $format;
+            exec @PERL, $PUFF, 'check', '--output-format', $format, q{--select}, q{S001};
             die "exec: $!";
         }
         waitpid $pid, 0;

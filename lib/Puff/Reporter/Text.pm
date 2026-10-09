@@ -89,7 +89,10 @@ sub report_errors ( $class, $files, $err ) {
 # Flushes $out and dies if writing to it failed (a full disk, a closed
 # handle), so lost output is never silent. Shared with the other reporters.
 sub flush_or_die ( $class, $out ) {
-    $out->flush && !$out->error or die "puff: cannot write output: $!\n";
+    my $flushed = $out->flush;
+    my $errno   = $!;    # before anything else can change it
+    return if $flushed && !$out->error;
+    die "puff: cannot write output: " . ( $flushed ? q{write error} : $errno ) . "\n";
     return;
 }
 

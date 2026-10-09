@@ -14,6 +14,8 @@ sub main ($class) {
     # :utf8 rather than :encoding(UTF-8): the encoding layer drops write
     # errors (such as a full disk) for all but the last buffer, so the
     # reporters could not tell that output was lost.
+    # Unlike that layer, :utf8 writes surrogates and non-characters as they
+    # are rather than as \x{...} escapes; perl warns either way.
     binmode STDOUT, ':utf8';
     binmode STDERR, ':utf8';
     local $EXIT_CODE = 0;
