@@ -336,6 +336,7 @@ reported as `P001`:
 | B009 | FormatArgCount | sprintf/printf argument count does not match the format | none |  |
 | B010 | DecimalMode | File mode given as a decimal literal | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
+| M002 | HasWithoutIs | Attribute declared with has but no is | none |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | U002 | PrintToSay | print with a trailing newline can be say | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -352,7 +353,7 @@ user can guess where a rule lives:
 | `S` | Security; selected by default | `S` (flake8-bandit) |
 | `Q` | Quotes | `Q` (flake8-quotes) |
 | `B` | Likely bugs; selected by default | `B` (flake8-bugbear) |
-| `M` | Moose and Mouse classes | none |
+| `M` | Moose, Mouse and Moo classes | none |
 | `U` | Upgrades to newer idioms | `UP` (pyupgrade) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `T` | Test style | `PT` (flake8-pytest-style) |
@@ -825,6 +826,17 @@ adds your own Moose::Exporter modules. The unsafe fix inserts
 it is unsafe because code that changes the class at runtime dies once the
 class is immutable. Based on Perl::Critic::Policy::Moose::RequireMakeImmutable,
 which checks the whole file at once.
+
+**M002** is not selected by default; turn it on with `--select M`. It reports
+`has` without `is` in a package that uses Moose, Moose::Role, Mouse,
+Mouse::Role, Moo or Moo::Role. Moose and Mouse then make no accessor (Moose
+only warns), and Moo dies, since `is` is required there. In a Moose or Mouse
+package an attribute with `reader`, `writer`, `accessor`, `predicate`,
+`clearer` or `handles` has a method and is not reported; use
+`is => 'bare'` to say it needs no accessor. A Moo package needs `is`
+whatever else is given. `has '+name'` (changing an inherited attribute) and
+a `has` whose name or options are not literal (`%opts`, `@args`, a variable)
+are not reported. There is no fix.
 
 **U001** is not selected by default; turn it on with `--select U`. It reports
 `use base`, which carries on when a parent class fails to load. The unsafe fix
