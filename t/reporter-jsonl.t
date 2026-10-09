@@ -74,6 +74,26 @@ subtest 'one ASCII line per event' => sub {
     is( $event->{error}, "bad\x{2028}\x{85}\n\x{e9}", 'error decodes back' );
 };
 
+subtest 'DEL is escaped' => sub {
+    my ( $reporter, $lines ) = reporter();
+    $reporter->on_file->( { file => "a\x7fb.pl", violations => [] } );
+    my $line = $lines->()->[0];
+    like( $line, qr/"a\\u007fb\.pl"/, 'DEL is \u007f' );
+    like( $line, qr/\A[\x20-\x7e]+\z/, 'printable ASCII only' );
+    is( $json->decode($line)->{file}, "a\x7fb.pl", 'and decodes back' );
+};
+
+subtest 'fatal part way' => sub {
+    my ( $reporter, $lines ) = reporter();
+    $reporter->progress->( 0, 2 );
+    $reporter->on_file->( { file => 'a.pl', violations => [] } );
+    $reporter->fatal("boom\n");
+    my @events = map { $json->decode($_) } grep {length} @{ $lines->() };
+    is( scalar @events, 3, 'three events' );
+    is( [ map { $_->{type} } @events ], [qw( start file done )], 'start, file, done' );
+    is( $events[-1], { type => 'done', exit_code => 2, error => 'boom' }, 'done has exit code 2 and the error' );
+};
+
 subtest 'done and fatal' => sub {
     my ( $reporter, $lines ) = reporter();
     $reporter->report( { exit_code => 1 }, undef, undef );

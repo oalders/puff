@@ -246,8 +246,11 @@ subtest 'check --output-format jsonl when the run dies' => sub {
         chmod 0755, $locked;
         skip_all 'cannot make a directory unreadable';
     }
-    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' );
-    chmod 0755, $locked;
+    my ( $out, $err, $exit );
+    my $ok    = eval { ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' ); 1 };
+    my $error = $@;
+    chmod 0755, $locked;    # restore even if puff() died, so the tempdir can be removed
+    die $error unless $ok;
     is( $exit, 2, 'exit 2' );
     my $events = jsonl($out);
     is(

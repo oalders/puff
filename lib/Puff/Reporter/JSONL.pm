@@ -47,7 +47,8 @@ sub fatal ( $self, $error ) {
 }
 
 sub _emit ( $self, $event ) {
-    print { $self->{out} } $self->{json}->encode($event), "\n";
+    # ascii leaves DEL as is. It can only be inside a string, so escape it.
+    print { $self->{out} } $self->{json}->encode($event) =~ s/\x7f/\\u007f/gr, "\n";
     return;
 }
 
@@ -84,7 +85,8 @@ file as soon as it is checked. Every object has a C<type>:
 =item C<start>
 
 Comes first, once the files have been found. C<total> is how many file
-events will follow.
+events will follow. If puff dies before the files are found, there is no
+C<start>, only C<done>, so do not assume C<start> was seen.
 
 =item C<file>
 
@@ -100,7 +102,8 @@ the unified diff in C<--diff> mode when the file would change, else null.
 =item C<done>
 
 Comes last. C<exit_code> is the code puff exits with. When the run dies
-part way (see C<fatal>), C<exit_code> is 2 and C<error> is the message. A
+part way (see C<fatal>), C<exit_code> is 2 and C<error> is the message;
+unlike per-file errors, the message is also printed to STDERR as text. A
 stream that ends without C<done>, because puff was killed, is a failure.
 
 =back
@@ -112,9 +115,9 @@ and no events.
 Later versions may add event types and fields, so readers should ignore ones
 they do not know. Every string (C<file>, C<error>, C<message>, C<diff>) is
 untrusted text from the files being checked: sanitise it before printing it
-to a terminal. The output is pure ASCII, with every other character
-C<\u>-escaped (U+2028 and U+0085 included), so each event is exactly one
-line.
+to a terminal. The output is printable ASCII, with every other character
+C<\u>-escaped (DEL, U+2028 and U+0085 included), so each event is exactly
+one line.
 
 =head1 METHODS
 

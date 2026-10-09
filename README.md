@@ -136,7 +136,9 @@ the order they are checked, then a `done` event:
     {"diff":null,"error":null,"file":"lib/Demo.pm","fixed":0,"fixes_skipped":null,"type":"file","violations":[{"code":"S002",...}]}
     {"exit_code":1,"type":"done"}
 
-- `start.total` is the number of `file` events that follow.
+- `start.total` is the number of `file` events that follow. If puff fails
+  before it finds the files, there is no `start`, only `done`, so do not
+  assume you have seen `start`.
 - `file.violations` uses the same objects as `--output-format json`.
 - `file.error` is the reason the file could not be checked, or `null`. In
   this format, these per-file errors are not printed to STDERR.
@@ -146,14 +148,15 @@ the order they are checked, then a `done` event:
   or CRLF line endings), or `null`.
 - `file.diff` is the unified diff with `--diff`, or `null`.
 - `done.exit_code` is the code puff exits with. If the run fails part way,
-  `done` has exit code `2` and an `error` field with the message.
+  `done` has exit code `2` and an `error` field with the message. Unlike
+  per-file errors, this message is also printed to STDERR as text.
 
 Usage, config and rule-loading errors happen before any events: they go to
 STDERR as text and puff exits `2`. Treat a stream that ends without `done`
 (for example, because puff was killed) as a failure.
 
-The output is pure ASCII: other characters are `\u`-escaped, so each event
-is exactly one line. The strings (`file`, `error`, `message`, `diff`) are
+The output is printable ASCII: other characters (control characters and
+DEL included) are `\u`-escaped, so each event is exactly one line. The strings (`file`, `error`, `message`, `diff`) are
 untrusted text from the files being checked, so sanitise them before you
 print them to a terminal.
 
