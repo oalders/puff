@@ -338,6 +338,7 @@ reported as `P001`:
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | M002 | HasWithoutIs | Attribute declared with has but no is | none |  |
 | M003 | LazyWithoutBuilder | Lazy attribute has no default or builder | none |  |
+| M004 | RedundantSuperBuild | BUILD or DEMOLISH calls the parent one, which already runs | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | U002 | PrintToSay | print with a trailing newline can be say | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -852,6 +853,17 @@ inherit the method (`extends`, `with`, `use parent`, `use base`, `@ISA`).
 `has '+name'`, a lazy flag that is not a literal, `builder => sub {...}`
 and a `has` whose name or options are not literal are not reported. There
 is no fix.
+
+**M004** is not selected by default; turn it on with `--select M`. Moose,
+Mouse and Moo call every BUILD and DEMOLISH in the hierarchy themselves, so
+it reports `->SUPER::BUILD`, `->next::method` and `->maybe::next::method`
+inside `sub BUILD` (and the same inside `sub DEMOLISH`) in a package that
+uses one of them or their `::Role` modules: the parent's method runs twice.
+Calls inside an anonymous sub in the method are not reported. The unsafe fix
+removes the call when it is a statement of its own, with its line when only
+a comment shares it; a call whose value is used (`return
+$self->SUPER::BUILD(@_)`) has no fix. It is unsafe because a parent outside
+the framework may rely on the call.
 
 **U001** is not selected by default; turn it on with `--select U`. It reports
 `use base`, which carries on when a parent class fails to load. The unsafe fix

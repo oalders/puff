@@ -1,4 +1,4 @@
-package Mouse;
+package Moo;
 
 # Stand-in for t/fixed-compiles.t, so the M fixtures compile without the
 # real (optional) module installed.
