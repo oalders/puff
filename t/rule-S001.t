@@ -18,12 +18,14 @@ sub run_s001 ( $engine, $text ) {
 {
     my $many = "use strict;\n" . join( q{}, map {"my \$x$_ = rand(10);\n"} 1 .. 200 );
     my %calls;
-    no warnings 'redefine';
-    for my $helper (qw( _has_secure_import _import_position )) {
+    my $counted = sub ($helper) {
         my $orig = $class->can($helper);
-        no strict 'refs';
-        *{"${class}::$helper"} = sub { $calls{$helper}++; goto &$orig };
-    }
+        return sub { $calls{$helper}++; goto &$orig };
+    };
+    no strict 'refs';
+    no warnings 'redefine';
+    local *{"${class}::_has_secure_import"} = $counted->('_has_secure_import');
+    local *{"${class}::_import_position"}   = $counted->('_import_position');
 
     my $result = run_s001( Puff::Engine->new( rules => [ $class->new ] ), $many );
     is( scalar @{ $result->{violations} }, 200, 'every rand is reported' );
