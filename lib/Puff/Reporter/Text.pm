@@ -94,7 +94,6 @@ sub flush_or_die ( $class, $out ) {
     my $errno   = $!;            # before anything else can change it
     return if $flushed && !$out->error;
     die "puff: cannot write output: " . ( $flushed ? q{write error} : $errno ) . "\n";
-    return;
 }
 
 sub _marker ( $self, $v ) {

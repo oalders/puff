@@ -53,21 +53,17 @@ sub load_config ( $class, $opt, %cli ) {
 }
 
 sub rule_info ( $class, $classes ) {
-    return (
-        (
-            map {
-                {
-                    code  => $_->code, summary => $_->summary, fix_safety => $_->fix_safety, cwe => [ $_->cwe ],
-                    class => $_
-                }
-            } @$classes
-        ),
-        (
-            map {
-                { %$_, fix_safety => 'none', cwe => [] }
-            } Puff::Engine->builtin_rules_info
-        ),
-    );
+    my @rules = map {
+        +{
+            code       => $_->code,
+            summary    => $_->summary,
+            fix_safety => $_->fix_safety,
+            cwe        => [ $_->cwe ],
+            class      => $_,
+        }
+    } @$classes;
+    my @builtin = map { +{ %$_, fix_safety => 'none', cwe => [] } } Puff::Engine->builtin_rules_info;
+    return ( @rules, @builtin );
 }
 
 1;

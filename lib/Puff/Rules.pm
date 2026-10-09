@@ -49,7 +49,8 @@ sub load ( $class, %args ) {
         $by_code{$code} = $candidate;
         push @classes, $candidate;
     }
-    return sort { $a->code cmp $b->code } @classes;
+    my @sorted = sort { $a->code cmp $b->code } @classes;
+    return @sorted;
 }
 
 sub _all_files ($dir) {
