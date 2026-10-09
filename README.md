@@ -561,8 +561,10 @@ sub named like a builtin, such as `&open(...)`, where the `&` is needed.
 `&{...}(...)` and `&CORE::...` are left alone; `\&foo(...)` calls `foo`, so
 it is reported. The rule is conservative: it does not report `&foo` after a
 term, where the `&` could be bitwise (`$x &foo`), after a filehandle
-(`print STDERR &foo(1)`, `print {$fh} &foo(1)`) or after a block
-(`grep {...} &foo(1)`).
+(`print STDERR &foo(1)`, `print $fh &foo(1)`), after a block
+(`grep {...} &foo(1)`) or after a method name (`$obj->map &foo(1)`).
+`& foo()` with a space after the `&` is not reported; `\&foo (1)` is
+reported and fixed like `\&foo(1)`.
 
 **B001** is selected by default. It reports pattern modifiers such as `/i`,
 `/m`, `/s` and `/x` on a match, substitution or `split` whose whole pattern

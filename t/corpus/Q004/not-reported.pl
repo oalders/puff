@@ -60,3 +60,24 @@ my $fh = \*STDERR;
 print {$fh} &foo(1);
 my @gb = grep { 1 } &foo(1);
 my @mb = map { $_ } &foo(1);
+print $fh &foo(1);
+
+# A method name that matches a word taking an expression: the `&` after it
+# is bitwise, so `$obj->map foo(1)` would not compile.
+{
+    no strict;
+    no warnings;
+    my $obj;
+    my $o1 = $obj->map &foo(1);
+    my $o2 = $obj->reverse &foo(1);
+    my $o3 = $obj->print &foo(1);
+    my $o4 = $obj->return &foo(1);
+    my $o5 = Foo->map &foo(1);
+    my $o6 = $obj->SUPER::map &foo(1);
+}
+
+# `&foo(1)` in a string or heredoc is not code.
+my $str = "&foo(1)";
+my $doc = <<'END';
+&foo(1);
+END

@@ -42,7 +42,11 @@ sub explanation {
         `join`, `map` or `grep`. It does not report `&foo` after a term,
         where the `&` could be the bitwise operator (`$x &foo`,
         `$i++ &foo`), after a filehandle (`print STDERR &foo(1)`,
-        `print {$fh} &foo(1)`) or after a block (`grep {...} &foo(1)`).
+        `print {$fh} &foo(1)`, `print $fh &foo(1)`), after a block
+        (`grep {...} &foo(1)`) or after a method name that happens to match
+        such a word (`$obj->map &foo(1)`). `& foo()` with a space after the
+        `&` is not reported. `\&foo (1)` with a space before the paren is
+        reported and fixed like `\&foo(1)`.
 
         This rule is not selected by default. Turn it on with `--select Q` or
         `extend-select = ["Q"]`.
@@ -125,7 +129,11 @@ sub _starts_term ($prev) {
         my $op = $prev->content;
         return $op ne '++' && $op ne '--' && $op ne '->';
     }
-    return $prev->isa('PPI::Token::Word') && $TAKES_EXPR{ $prev->content };
+    return 0 unless $prev->isa('PPI::Token::Word') && $TAKES_EXPR{ $prev->content };
+
+    # `$obj->map &foo(1)`: `map` is a method name, so the `&` is bitwise.
+    my $arrow = $prev->sprevious_sibling;
+    return !( $arrow && $arrow->isa('PPI::Token::Operator') && $arrow->content eq '->' );
 }
 
 # True when $cast is the `\` in `\&foo(...)` or `\(&foo(...))`. With an
@@ -193,8 +201,12 @@ expression, after an operator, or after a word it knows takes an
 expression (C<return>, C<print>, C<join>, C<map>, C<grep> and the like).
 It does not report C<&foo> after a term, where the C<&> could be the
 bitwise operator (C<$x &foo>, C<$i++ &foo>), after a filehandle
-(C<print STDERR &foo(1)>, C<print {$fh} &foo(1)>) or after a block
-(C<grep {...} &foo(1)>).
+(C<print STDERR &foo(1)>, C<print {$fh} &foo(1)>, C<print $fh &foo(1)>),
+after a block (C<grep {...} &foo(1)>) or after a method name that matches
+such a word (C<< $obj->map &foo(1) >>).
+
+C<& foo()>, with a space after the C<&>, is not reported. C<\&foo (1)>,
+with a space before the paren, is reported and fixed like C<\&foo(1)>.
 
 Not selected by default; select it with C<Q> or C<Q004>.
 

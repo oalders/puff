@@ -33,3 +33,4 @@ my @rv = reverse &foo(1, 2); # expect: Q004
 my @mp = map &foo($_), 1, 2; # expect: Q004
 my @gr = grep &foo($_), 1, 2; # expect: Q004
 my $jn = join &foo(','), 1, 2; # expect: Q004
+sub wa { return wantarray ? &foo(1) : 0 } # expect: Q004
