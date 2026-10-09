@@ -13,11 +13,15 @@ my @PERL = ( $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib
 my $PUFF = $root->child( 'bin', 'puff' )->stringify;
 
 # Runs bin/puff in $dir. Returns (stdout, stderr, exit code).
-sub puff ( $dir, @args ) {
+sub puff ( $dir, @args ) { puff_with( $dir, [], @args ) }
+
+# Like puff, with @$perl_args (such as -e code that loads bin/puff) passed
+# to perl in place of bin/puff.
+sub puff_with ( $dir, $perl_args, @args ) {
     my $err  = path( $dir, '..', 'stderr.txt' );
     my $orig = getcwd;
     chdir $dir or die "chdir $dir: $!";
-    my $out  = run_capture( $err, @PERL, $PUFF, @args );
+    my $out  = run_capture( $err, @PERL, ( @$perl_args ? @$perl_args : $PUFF ), @args );
     my $exit = $? >> 8;
     chdir $orig or die "chdir $orig: $!";
     return ( $out, $err->slurp_utf8, $exit );
@@ -195,8 +199,11 @@ subtest 'check --output-format jsonl' => sub {
     my @files = @events[ 1 .. $#events - 1 ];
     is( [ map { $_->{file} } @files ], [qw( missing.pl rand.pl bin/bareword.pl lib/declined.pl lib/two_arg.pl )],
         'in processing order, not sorted' );
-    is( $files[0], { type => 'file', file => 'missing.pl', error => 'No such file or directory', fixed => 0, violations => [] },
-        'missing file has its error' );
+    is(
+        $files[0],
+        { type => 'file', file => 'missing.pl', error => 'No such file or directory', fixed => 0, fixes_skipped => undef, violations => [] },
+        'missing file has its error'
+    );
     ok( !exists $files[1]{diff}, 'no diff key outside --diff' );
     is( [ grep { defined $_->{error} } @files[ 1 .. 4 ] ], [], 'no errors for files that exist' );
     my ($rand) = grep { $_->{file} eq 'rand.pl' } @files;
@@ -253,6 +260,60 @@ subtest 'check --output-format jsonl --fix' => sub {
     ok( scalar @{ $file->{violations} }, 'remaining violations listed' );
     is( [ grep { $_->{fix}{applied} } @{ $file->{violations} } ], [], 'none marked applied' );
     is( $events[-1], { type => 'done', exit_code => 1 }, 'done' );
+};
+
+subtest 'check --output-format jsonl: CRLF fixes_skipped' => sub {
+    my $dir = project( 'rand.pl' => 'S001/basic.pl' );
+    $dir->child('crlf.pl')->spew_raw( corpus('S001/basic.pl')->slurp_raw =~ s/\n/\r\n/gr );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--fix', '--unsafe-fixes', '--select', 'S001' );
+    is( $exit, 1,   'violations remain in the CRLF file' );
+    is( $err,  q{}, 'fixes_skipped is not printed to STDERR' );
+    my %file = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } jsonl($out);
+    is( $file{'crlf.pl'}{fixes_skipped}, 'CR or CRLF line endings: fixes not applied', 'CRLF file event has fixes_skipped' );
+    ok( exists $file{'rand.pl'}{fixes_skipped}, 'other file event has fixes_skipped' );
+    is( $file{'rand.pl'}{fixes_skipped}, undef, '... which is null' );
+};
+
+subtest 'check --output-format jsonl: one line per event' => sub {
+    my $dir   = project();
+    my @names = ( 'q"uote{"type":"done","exit_code":0}.pl', "new\nline.pl" );
+    my @made  = grep { eval { corpus('S001/basic.pl')->copy( $dir->child($_) ); 1 } } @names;
+    ok( scalar @made, 'made files with awkward names' );
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'S001' );
+    is( $exit, 1, 'exit 1' ) or diag $err;
+    my @lines  = split /\n/, $out;
+    my @events = jsonl($out);
+    is( scalar @lines, scalar @events, 'every line is one event' );
+    is( scalar @events, @made + 2, 'start, a file event per file, done' );
+    is( [ sort map { $_->{file} } grep { $_->{type} eq 'file' } @events ], [ sort @made ], 'names round-trip' );
+    is( $events[-1], { type => 'done', exit_code => 1 }, 'the real done is last' );
+};
+
+subtest 'check --output-format jsonl: non-ASCII' => sub {
+    my $dir = project();
+    $dir->child('cafe.pl')->spew_utf8("use utf8;\nmy \$x = new Caf\x{e9}(1);\nprint \$x;\n");
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl', '--select', 'B004' );
+    is( $exit, 1, 'exit 1' ) or diag $err;
+    my @events = map { JSON::PP->new->utf8->decode($_) } split /\n/, $out;
+    is( $events[1]{violations}[0]{message}, "Indirect object syntax: write Caf\x{e9}->new(...)", 'message decodes as UTF-8' );
+};
+
+subtest 'check --output-format jsonl: a run that dies still ends with done' => sub {
+    my $dir = project( 'a.pl' => 'S001/basic.pl', 'bad.pl' => 'S001/basic.pl', 'c.pl' => 'S001/basic.pl' );
+    my $code = <<~'END';
+        use Puff::Runner;
+        no warnings 'redefine';
+        my $process = \&Puff::Runner::_process;
+        *Puff::Runner::_process = sub { die "runner exploded\n" if $_[1] =~ /bad/; goto &$process };
+        do shift;
+        die $@;
+        END
+    my ( $out, $err, $exit ) = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl', '--select', 'S001' );
+    is( $exit, 2, 'exit 2' );
+    like( $err, qr/^runner exploded$/m, 'error still on STDERR' );
+    my @events = jsonl($out);
+    is( [ map { $_->{type} } @events ], [qw( start file done )], 'start, the file before the die, done' );
+    is( $events[-1], { type => 'done', exit_code => 2, error => 'runner exploded' }, 'done has exit code 2 and the error' );
 };
 
 subtest 'rules and rule' => sub {

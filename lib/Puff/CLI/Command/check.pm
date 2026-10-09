@@ -72,6 +72,7 @@ sub execute ( $self, $opt, $args ) {
     if ( !$run ) {
         my $error = $@;
         $progress->( 0, 0 ) if $progress;    # stop the timer and erase the line
+        $jsonl->abort( 2, $error ) if $jsonl;    # Puff::CLI->main exits 2 when a command dies
         die $error;
     }
     my $reporter
@@ -149,6 +150,7 @@ L<Puff::Reporter::Text>). C<--show-files> prints the files that would be
 checked, one per line, and checks nothing. While checking, a spinner and a
 C<Checking N/M files> counter are shown on STDERR when it is a terminal and
 the run takes more than half a second (never with C<--output-format jsonl>,
-which streams one JSON object per line as each file is checked). See L<Puff::Runner> for exit codes.
+which streams one JSON object per line as each file is checked). See
+L<Puff::Runner> for exit codes.
 
 =cut

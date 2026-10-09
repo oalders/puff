@@ -127,17 +127,23 @@ checked, so a tool can show progress or start work before the run ends:
 
     $ puff check --output-format jsonl lib missing.pl
     {"total":2,"type":"start"}
-    {"error":null,"file":"lib/Demo.pm","fixed":0,"type":"file","violations":[{"code":"S002",...}]}
-    {"error":"No such file or directory","file":"missing.pl","fixed":0,"type":"file","violations":[]}
+    {"error":null,"file":"lib/Demo.pm","fixed":0,"fixes_skipped":null,"type":"file","violations":[{"code":"S002",...}]}
+    {"error":"No such file or directory","file":"missing.pl","fixed":0,"fixes_skipped":null,"type":"file","violations":[]}
     {"exit_code":2,"type":"done"}
 
 `start` comes first, with the number of files to check. Each `file` event
 follows in the order the files are checked: `violations` holds the same
 objects as the JSON output, `error` is the file's error or `null` (errors are
-not printed to STDERR), and `fixed` is the number of fixes `--fix` wrote to
-the file. With `--diff`, each `file` event also has `diff`: the unified diff,
-or `null` when nothing would change. `done` comes last, with the exit code.
-More event types and keys may be added later, so ignore any you do not know.
+not printed to STDERR), `fixes_skipped` is why fixes were not applied (such as
+CRLF line endings) or `null` (also not printed to STDERR), and `fixed` is the
+number of fixes `--fix` wrote to the file (always 0 with `--diff`). With
+`--diff`, each `file` event also has `diff`: the unified diff, or `null` when
+nothing would change. `done` is always the last line of a completed run, with
+the exit code; if puff dies part way it still prints `done` with
+`"exit_code":2` and an `error`. A stream that ends without `done` means puff
+was killed or aborted: treat it as a failure. More event types and keys may be
+added later, so ignore any you do not know. File names, messages, errors and
+diffs come from the linted files: treat them as untrusted data.
 
 ## Fix safety
 

@@ -21,11 +21,12 @@ sub start ( $self, $total ) {
 
 sub file ( $self, $result ) {
     my %event = (
-        type       => 'file',
-        file       => $result->{file},
-        error      => $result->{error},
-        fixed      => $result->{written} ? $result->{fixed_count} + 0 : 0,
-        violations => [ map { Puff::Reporter::JSON->violation_data($_) } @{ $result->{violations} // [] } ],
+        type          => 'file',
+        file          => $result->{file},
+        error         => $result->{error},
+        fixes_skipped => $result->{fixes_skipped},
+        fixed         => $result->{written} ? $result->{fixed_count} + 0 : 0,
+        violations    => [ map { Puff::Reporter::JSON->violation_data($_) } @{ $result->{violations} // [] } ],
     );
     $event{diff} = $result->{diff} if $self->{mode} eq 'diff';
     $self->_emit( $self->{out}, \%event );
@@ -33,10 +34,14 @@ sub file ( $self, $result ) {
 }
 
 sub report ( $self, $run, $out, $err ) {
-    for my $file ( @{ $run->{files} } ) {
-        print {$err} "$file->{file}: $file->{fixes_skipped}\n" if defined $file->{fixes_skipped};
-    }
     $self->_emit( $out, { type => 'done', exit_code => $run->{exit_code} + 0 } );
+    return;
+}
+
+# Prints a final done event for a run that died: the exit code puff will
+# return and the error, so the stream still ends with done.
+sub abort ( $self, $exit_code, $error ) {
+    $self->_emit( $self->{out}, { type => 'done', exit_code => $exit_code + 0, error => "$error" =~ s/\s+\z//r } );
     return;
 }
 
@@ -64,7 +69,7 @@ __END__
         on_file  => sub ($result) { $jsonl->file($result) },
     );
     my $run = $runner->run(@paths);
-    $jsonl->report( $run, \*STDOUT, \*STDERR );
+    $jsonl->report( $run, \*STDOUT, \*STDERR );    # or, if run dies: $jsonl->abort( 2, $@ )
 
 =head1 DESCRIPTION
 
@@ -82,31 +87,41 @@ the run will check (including paths that do not exist).
 
 =item C<file>
 
-    {"error":null,"file":"lib/Foo.pm","fixed":0,"type":"file","violations":[...]}
+    {"error":null,"file":"lib/Foo.pm","fixed":0,"fixes_skipped":null,"type":"file","violations":[...]}
 
 Printed once per file, in the order the files are checked (not sorted), as
 soon as each is done. C<violations> lists the remaining violations, each
 the same object L<Puff::Reporter::JSON> prints. C<error> is the file's error
 (read, parse, rule, engine, fix or write failure, or
 C<No such file or directory>) or null; errors are not printed to the error
-handle. C<fixed> is the number of fixes written to the file: 0 unless
-C<--fix> rewrote it. With C<--diff>, there is also a C<diff> key: the
-unified diff for the file, or null when nothing would change.
+handle. C<fixes_skipped> is the reason fixes were not applied to the file
+(such as C<CR or CRLF line endings: fixes not applied>) or null; it is not
+printed to the error handle either. C<fixed> is the number of fixes written
+to the file: 0 unless C<--fix> rewrote it, and always 0 with C<--diff>,
+whose pending fixes are in C<diff>. With C<--diff>, there is also a C<diff>
+key: the unified diff for the file, or null when nothing would change.
 
 =item C<done>
 
     {"exit_code":1,"type":"done"}
 
-Printed last. C<exit_code> is the exit code puff returns.
+    {"error":"...","exit_code":2,"type":"done"}
+
+Printed last: C<done> is always the last line of a completed run.
+C<exit_code> is the exit code puff returns. If the run dies part way
+(C<abort>), C<done> also has C<error>, the message puff prints to STDERR,
+and C<exit_code> is 2. A stream that ends without C<done> means puff was
+killed or aborted before it could print one: treat it as a failure.
 
 =back
 
 More event types, and more keys in any event, may be added later: ignore
 any C<type> or key you do not know. The output is character data: give it
-a handle with an encoding layer. Notices that fixes were not applied
-(C<fixes_skipped>, such as for CRLF files) still go to the error handle.
+a handle with an encoding layer. C<message>, C<error>, C<fixes_skipped>,
+C<file> and C<diff> contain text derived from the linted files (their
+names and contents): consumers should treat it as untrusted data.
 
-C<start> and C<file> print to the C<out> handle given to C<new>, as the
-run progresses; C<report> prints C<done> to the handle it is given.
+C<start>, C<file> and C<abort> print to the C<out> handle given to C<new>,
+as the run progresses; C<report> prints C<done> to the handle it is given.
 
 =cut
