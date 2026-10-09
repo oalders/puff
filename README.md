@@ -332,6 +332,7 @@ reported as `P001`:
 | B009 | FormatArgCount | sprintf/printf argument count does not match the format | none |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
+| U002 | PrintToSay | print with a trailing newline can be say | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | T001 | OkCompare | Use is/isnt instead of ok with eq, ==, ne or != | safe for `eq` with Test::More, else unsafe |  |
 | R001 | UnlessElse | Use if/else instead of unless/else | safe |  |
@@ -654,6 +655,21 @@ rewrites it as `use parent`, adding `-norequire` when every parent is declared
 in the same file (or is a Tie::StdHash-style class whose module the file
 loads). It is unsafe because `use parent` dies where `use base` quietly went
 on. Based on Perl::Critic::Policy::Tics::ProhibitUseBase.
+
+**U002** is not selected by default; turn it on with `--select U`. When the
+`say` feature is on, it reports `print` whose last argument is a lone
+double-quoted or `qq` string ending in `\n` (`print "hi\n"`,
+`print $fh "x: $x\n"`, `print {$fh} ...`, `print STDERR ...`, `print(...)`),
+and the safe fix rewrites it as `say` without the `\n`. `say` counts as on
+after an earlier `use v5.10` or later, `use feature 'say'`, a `:5.10`+ or
+`:all` feature bundle, or `use` of a module in the `modules` option (default
+Modern::Perl, Mojo::Base, Mojolicious::Lite, common::sense), in the same or
+an enclosing block. A file with `no feature 'say'` (or a bundle, `:all`, or
+no arguments) is skipped. `print $x, "\n"`, single-quoted strings, heredocs
+and expressions such as `"a\n" x 3` are not reported. Because `say` sets
+`$\` to `"\n"`, no fix is offered when the file mentions `$\`, `$ORS`,
+`$OUTPUT_RECORD_SEPARATOR` or `output_record_separator`, or its `#!` line
+has `-l`.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
