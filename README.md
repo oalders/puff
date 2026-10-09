@@ -331,6 +331,7 @@ reported as `P001`:
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
 | T001 | OkCompare | Use is/isnt instead of ok with eq, ==, ne or != | safe for `eq` with Test::More, else unsafe |  |
 | R001 | UnlessElse | Use if/else instead of unless/else | safe |  |
+| R002 | VoidMap | `map` or `grep` in void context | none |  |
 | P001 | (built in) | Suppression comment must list codes | none |  |
 
 Rule codes follow ruff's prefixes where ruff has an equivalent, so a ruff
@@ -658,6 +659,15 @@ modifier `... unless X;` and `unless` without `else` are not reported. No fix
 is offered when a comment or POD sits between the first block and the `else`
 block, or when the statement contains a heredoc, whose body would not move
 with its block.
+
+**R002** is not selected by default; turn it on with `--select R`. It
+reports `map` and `grep` called only for their side effects, with the list
+they build thrown away (`map { print } @list;`), in any form and with or
+without a statement modifier. A `for` loop says what is meant. There is no
+fix. A `map` or `grep` whose value is used (assigned, passed as an argument,
+returned, in a condition, joined with `or`) is not reported, and neither is
+the last statement of a sub or any other block, which may be the block's
+value. The last statement of a file is reported.
 
 ## Writing a rule
 
