@@ -41,6 +41,8 @@ sub load ( $class, %args ) {
             unless defined $code && $code =~ $CODE_RE;
         die "Rule $candidate uses code $code, which is reserved for the puff engine\n"
             if $code eq $RESERVED;
+        die "Rule $candidate uses code $code, but the prefix ALL is reserved for selecting every rule\n"
+            if index( $code, 'ALL' ) == 0;
         if ( my $other = $by_code{$code} ) {
             die "Rules $other and $candidate both use code $code\n";
         }
@@ -59,8 +61,9 @@ sub _all_files ($dir) {
 }
 
 sub instantiate ( $class, $classes, %args ) {
-    my @select  = ( @{ $args{select} // [] }, @{ $args{extend_select} // [] } );
-    my @ignore  = @{ $args{ignore} // [] };
+    my $all     = sub (@list) { map { $_ eq 'ALL' ? '' : $_ } @list };    # '' is a prefix of every code
+    my @select  = $all->( @{ $args{select} // [] }, @{ $args{extend_select} // [] } );
+    my @ignore  = $all->( @{ $args{ignore} // [] } );
     my $options = $args{rule_options} // {};
 
     my @codes = ( $RESERVED, map { $_->code } @$classes );
@@ -112,12 +115,14 @@ C<load> finds every C<Puff::Rule::*> class on C<@INC> plus every C<.pm> file
 under each rule-path directory (loaded by file path). Classes that are
 L<Puff::Rule> subclasses count as rules. It dies if a code does not match
 C</\A[A-Z]+[0-9]{3}\z/>, if two rules share a code (naming both packages), or
-if a rule claims C<P001>, which is reserved for the engine. Classes are
+if a rule claims C<P001>, which is reserved for the engine, or a code starting
+with C<ALL>, which is reserved for the selector that matches every rule. Classes are
 returned sorted by code.
 
 C<instantiate> enables the rules whose code starts with any C<select> or
 C<extend_select> prefix and with no C<ignore> prefix, and returns objects
-sorted by code. It dies if a C<select> or C<extend_select> entry is not a
+sorted by code. The selector C<ALL> matches every rule, in any of the three
+lists. It dies if a C<select> or C<extend_select> entry is not a
 prefix of any loaded rule's code (or of C<P001>) (C<Unknown rule selector:
 X>), or if C<rule_options> names an option a selected rule does not declare.
 An C<ignore> entry that matches nothing is allowed.

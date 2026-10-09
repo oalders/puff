@@ -43,6 +43,13 @@ like( dies { Puff::Rules->instantiate( \@classes, select => ['X'] ) },
 like( dies { Puff::Rules->instantiate( \@classes, select => ['T'], extend_select => ['T9'] ) },
     qr/\AUnknown rule selector: T9\n/, 'extend_select matching no rule dies' );
 ok( lives { Puff::Rules->instantiate( \@classes, select => [ 'T', 'P001' ] ) }, 'P001 is a known code' );
+is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['ALL'] ) ],
+    [qw( T001 T002 T003 )], 'ALL selects every rule' );
+is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T001'], extend_select => ['ALL'] ) ],
+    [qw( T001 T002 T003 )], 'ALL in extend_select' );
+is( [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['ALL'], ignore => ['T002'] ) ],
+    [qw( T001 T003 )], 'ignore wins over ALL' );
+is( [ Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['ALL'] ) ], [], 'ignore ALL' );
 ok( lives { Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['Z'] ) },
     'ignore matching no rule is fine' );
 
@@ -68,6 +75,13 @@ my $res = $tmp->child('res');
 $res->mkpath;
 rule_file( $res, 'B::Res', 'P001' );
 like( dies { Puff::Rules->load( rule_paths => ["$res"] ) }, qr/B::Res.*P001.*reserved/, 'P001 reserved' );
+
+my $all = $tmp->child('all');
+$all->mkpath;
+rule_file( $all, 'B::All', 'ALL001' );
+like( dies { Puff::Rules->load( rule_paths => ["$all"] ) },
+    qr/\ARule B::All uses code ALL001, but the prefix ALL is reserved for selecting every rule\n/,
+    'ALL prefix reserved' );
 
 my $nocode = $tmp->child('nocode');
 $nocode->mkpath;
