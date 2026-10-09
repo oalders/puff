@@ -625,23 +625,46 @@ indefinitely (CWE-400): a `new` call (`Class->new(...)`,
 `Class->new({ ... })` or `new Class(...)`) on LWP::UserAgent,
 WWW::Mechanize, HTTP::Tiny, Furl, Furl::HTTP or Mojo::UserAgent with no
 `timeout` key, or for Mojo::UserAgent neither `request_timeout` (which
-defaults to no limit) nor `inactivity_timeout`; `connect_timeout` alone does
-not count. A missing timeout is reported even when the client's default is
-short, so the limit is written where the client is made. A literal timeout
-of 0, or longer than `max-timeout` seconds (default 60), is reported too;
-for Mojo::UserAgent all three keys are checked. A value in a variable or
-expression, and arguments that are not all `key => value` pairs with
-constant keys (`->new(%opts)`, `->new($args)`), are not reported.
+defaults to no limit) nor `inactivity_timeout` (either one is enough);
+`connect_timeout` alone does not count. A missing timeout is reported even
+when the client's default is short, so the limit is written where the client
+is made. These literal values are reported too:
 
-The constructor is not reported when a setter (`->timeout(...)`, or Mojo's
-`->request_timeout(...)` or `->inactivity_timeout(...)`) is chained onto it,
-or is called later in the same block on the plain scalar it is assigned to
-(`my $ua = LWP::UserAgent->new; $ua->timeout(10);`). A same-named variable
-declared in a nested block is a different variable. Setter values are
-checked like constructor values. A client stored elsewhere
-(`$self->{ua} = ...`) or used straight away
-(`LWP::UserAgent->new->get($url)`) needs the timeout in the constructor.
-There is no fix.
+- 0, which turns the timeout off, and negative numbers;
+- anything longer than `max-timeout` seconds (default 60; it must be a
+  positive, finite number). For Mojo::UserAgent all three keys are checked;
+- `timeout => undef` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny,
+  which leaves the default (180s or 60s), and `->timeout(undef)` for the
+  same clients, which turns the timeout off. For Furl and Mojo::UserAgent
+  `undef` is not checked;
+- a quoted string that is wholly a number (`'300'`, `'1e9'`, `'-5'`).
+  Other strings, such as `'10 s'`, are not checked.
+
+A value in a variable or expression, and arguments that are not all
+`key => value` pairs with constant keys (`->new(%opts)`, `->new($args)`),
+are not reported.
+
+A missing timeout is not reported when a timeout setter is chained onto the
+constructor (`Mojo::UserAgent->new->request_timeout(10)`) or is called by a
+later statement in the same block that is nothing but a setter call on the
+variable (`my $ua = LWP::UserAgent->new; $ua->timeout(10);`). The setters
+are `timeout` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and
+`request_timeout` or `inactivity_timeout` for Mojo::UserAgent
+(`connect_timeout` is checked but not enough); Furl and Furl::HTTP have
+none. The client must be assigned to a plain scalar by the whole statement:
+`my $ua = Class->new(...);` (or `our`, `state`, or no declarator),
+optionally followed by `or die ...` or `|| die ...`, or
+`my $ua = $arg // Class->new;` (or `||`). A setter in a nested block, sub,
+loop or condition, one with a statement modifier (`$ua->timeout(10) if $x;`),
+one before the constructor, and one after the name is declared or assigned
+again do not count. Every setter value is checked like a constructor value,
+even when the constructor already has a good timeout
+(`->new(timeout => 5); $ua->timeout(0);` is reported), and the violation is
+reported at the constructor. A client stored elsewhere (`$self->{ua} = ...`)
+or used straight away (`LWP::UserAgent->new->get($url)`) needs the timeout
+in the constructor. Subclasses, wrapper functions, class names in a variable
+and quoted class names (`'LWP::UserAgent'->new`, `LWP::UserAgent::->new`)
+are not checked. There is no fix.
 
     [rules.S020]
     max-timeout = 30

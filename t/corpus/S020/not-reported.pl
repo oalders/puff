@@ -14,7 +14,9 @@ my $last = LWP::UserAgent->new( timeout => 600, timeout => 20 );
 my $t   = 300;
 my $var = LWP::UserAgent->new( timeout => $t );
 my $exp = HTTP::Tiny->new( timeout => 2 * $t );
-my $neg = HTTP::Tiny->new( timeout => -1 );
+my $str = HTTP::Tiny->new( timeout => '10 s' );
+my $fu  = Furl->new( timeout => undef );
+my $mu  = Mojo::UserAgent->new( request_timeout => undef );
 my %opts;
 my $opt = LWP::UserAgent->new(%opts);
 my $ref = Mojo::UserAgent->new( \%opts );
@@ -32,8 +34,30 @@ sub client {
     return $c;
 }
 
-our $global = LWP::UserAgent->new( agent => 'x' );
-if ($global) { $global->timeout(30) }
+sub last_in_block {
+    my $c = LWP::UserAgent->new;
+    $c->timeout(5)
+}
+
+# Common assignment forms.
+my $od = LWP::UserAgent->new or die 'no client';
+$od->timeout(10);
+my $pd = LWP::UserAgent->new || die 'no client';
+$pd->timeout(10);
+my $arg;
+my $dd = $arg // LWP::UserAgent->new;
+$dd->timeout(10);
+my $oo = $arg || HTTP::Tiny->new;
+$oo->timeout('30');
+
+# Mojo's inactivity_timeout is enough on its own.
+my $ia = Mojo::UserAgent->new;
+$ia->inactivity_timeout(20);
+
+# Assigned again: the setter belongs to the new client.
+my $again = LWP::UserAgent->new( timeout => 5 );
+$again = LWP::UserAgent->new;
+$again->timeout(5);
 
 # A chained setter.
 my $chained = Mojo::UserAgent->new->inactivity_timeout(20);

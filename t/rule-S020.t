@@ -56,12 +56,47 @@ is(
 );
 is( [ map { $_->line } @{ violations( $text, { 'max-timeout' => 29.5 } ) } ], [ 1, 2, 3 ], 'a fractional max' );
 
-for my $bad ( 0, -5, 'abc', [60] ) {
+for my $bad ( 0, -5, 'abc', [60], 'inf', '-inf', 'nan', 9**9**9 ) {
     like(
         dies { $class->new( options => { 'max-timeout' => $bad } ) },
-        qr/rules\.S020\.max-timeout must be a positive number/,
+        qr/rules\.S020\.max-timeout must be a positive, finite number/,
         'max-timeout ' . ( ref $bad ? 'list' : $bad ) . ' is rejected'
     );
+}
+
+is(
+    messages(
+              "my \$a = LWP::UserAgent->new( timeout => 5 );\n\$a->timeout(0);\n"
+            . "my \$b = HTTP::Tiny->new( timeout => undef );\n"
+            . "my \$c = LWP::UserAgent->new;\n\$c->timeout(undef);\n"
+            . "my \$d = Furl->new( timeout => -5 );\n"
+            . "my \$e = LWP::UserAgent->new( timeout => '1e9' );\n"
+            . "my \$f = Mojo::UserAgent->new( request_timeout => 5 );\n\$f->connect_timeout(- 2);\n"
+    ),
+    [
+        [ 1, 9, 'LWP::UserAgent ->timeout(0) means no usable timeout (CWE-400)', 0 ],
+        [ 3, 9, 'HTTP::Tiny timeout => undef leaves the 60s default (CWE-400)', 0 ],
+        [ 4, 9, 'LWP::UserAgent ->timeout(undef) means no timeout (CWE-400)', 0 ],
+        [ 6, 9, 'Furl timeout => -5 is not a usable timeout (CWE-400)', 0 ],
+        [ 7, 9, q{LWP::UserAgent timeout => '1e9' is longer than max-timeout (60s) (CWE-400)}, 0 ],
+        [ 8, 9, 'Mojo::UserAgent ->connect_timeout(-2) is not a usable timeout (CWE-400)', 0 ],
+    ],
+    'setter, undef, negative and quoted values'
+);
+
+# The setters are found by one pass over each statement list, not a scan
+# of the scope per client, so a file with many clients stays fast.
+{
+    my $pairs  = join q{}, map {"my \$ua$_ = LWP::UserAgent->new;\n\$ua$_->timeout(5);\n"} 1 .. 2000;
+    my $text   = "$pairs\nsub f {\n$pairs}\n";
+    my $orig   = \&Puff::Rule::Security::HTTPTimeout::_build_index;
+    my $builds = 0;
+    no warnings 'redefine';
+    local *Puff::Rule::Security::HTTPTimeout::_build_index = sub { $builds++; goto &$orig };
+    my $start = time;
+    is( violations($text), [], 'many clients with setters' );
+    is( $builds, 2, 'one index per statement list' );
+    cmp_ok( time - $start, '<', 10, 'many clients are checked quickly' );
 }
 
 is( $class->fix_safety, 'none', 'no fix' );
