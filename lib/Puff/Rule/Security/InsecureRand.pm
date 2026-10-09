@@ -4,6 +4,7 @@ use v5.36;
 use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call );
+use Scalar::Util  qw( weaken );
 
 my $IMPORT = 'use Crypt::PRNG qw(rand);';
 
@@ -57,11 +58,12 @@ sub check ( $self, $elem, $doc ) {
     return unless $WATCHED{$name} && is_builtin_call($elem);
 
     if ( $name eq 'rand' ) {
-        return if _has_secure_import($doc);
+        my $facts = $self->_doc_facts($doc);
+        return if $facts->{secure_import};
         return $self->violation(
             $elem,
             message => 'rand is not cryptographically secure; use Crypt::PRNG, or random_bytes for keys and tokens',
-            fixable => _import_position($doc) ? 1 : 0,
+            fixable => @{ $facts->{import_position} } ? 1 : 0,
         );
     }
     return $self->violation(
@@ -74,7 +76,7 @@ sub check ( $self, $elem, $doc ) {
 sub fix ( $self, $violation, $fix ) {
     my $elem = $violation->element;
     return 0 unless $elem->content eq 'rand';
-    my ( $where, $stmt ) = _import_position( $elem->top ) or return 0;
+    my ( $where, $stmt ) = @{ $self->_doc_facts( $elem->top )->{import_position} } or return 0;
 
     if ( $where eq 'after' ) {
         $fix->insert_after( $stmt, "\n$IMPORT" );
@@ -83,6 +85,22 @@ sub fix ( $self, $violation, $fix ) {
         $fix->insert_before( $stmt, "$IMPORT\n" );
     }
     return 1;
+}
+
+# Both answers depend only on the whole document, so they are computed once
+# per document rather than once per rand call. The weakened reference goes
+# undef when the document is freed, so a re-parsed document (a new fix pass
+# or the next file) never sees another document's answers.
+sub _doc_facts ( $self, $doc ) {
+    unless ( $self->{facts_doc} && $self->{facts_doc} == $doc ) {
+        $self->{facts_doc} = $doc;
+        weaken( $self->{facts_doc} );
+        $self->{facts} = {
+            secure_import   => _has_secure_import($doc),
+            import_position => [ _import_position($doc) ],
+        };
+    }
+    return $self->{facts};
 }
 
 # Where the import goes so that it is compiled before the first plain rand
