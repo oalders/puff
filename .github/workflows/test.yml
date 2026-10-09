@@ -1,0 +1,29 @@
+---
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Perl ${{ matrix.perl }}
+    runs-on: ubuntu-latest
+    container: perldocker/perl-tester:${{ matrix.perl }}
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ['5.36', '5.38', '5.40', '5.42']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: >
+          cpm install -g --show-build-log-on-failure
+          --cpanfile cpanfile --with-test --with-recommends
+      - name: Run tests
+        run: prove -lr t

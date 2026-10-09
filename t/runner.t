@@ -140,6 +140,8 @@ subtest 'extensionless files with a perl shebang are found' => sub {
     $tree->child( 'bin', $_ )->spew_raw( $files{$_} ) for keys %files;
     $tree->child( 'bin', 'unreadable' )->spew_raw("#!/usr/bin/perl\nfoo;\n");
     chmod 0000, $tree->child( 'bin', 'unreadable' );
+    # root (as in CI containers) reads mode 0000 files, so the file would be linted
+    $tree->child( 'bin', 'unreadable' )->remove if -r $tree->child( 'bin', 'unreadable' );
     require POSIX;
     POSIX::mkfifo( $tree->child( 'bin', 'fifo' )->stringify, 0600 ) or die "mkfifo: $!";    # must not block
 
@@ -150,7 +152,7 @@ subtest 'extensionless files with a perl shebang are found' => sub {
     my $run = runner('lint')->run("$tree");
     is( $run->{exit_code}, 1, 'found files are linted (exit 1), unreadable and binary skipped silently' );
     is( [ grep { defined $_->{error} } @{ $run->{files} } ], [], 'no errors' );
-    chmod 0600, $tree->child( 'bin', 'unreadable' );
+    chmod 0600, $tree->child( 'bin', 'unreadable' ) if $tree->child( 'bin', 'unreadable' )->exists;
 };
 
 done_testing;
