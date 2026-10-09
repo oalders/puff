@@ -15,3 +15,4 @@ say "two\n"; # expect: U002
 say "even \\\\"; # expect: U002
 say "modifier" if $x; # expect: U002
 say "or" or die; # expect: U002
+say "a\$"; # expect: U002

@@ -48,14 +48,26 @@ sub explanation {
         with `\Q` or `\c`, `print $a, "\n"` where the newline is a separate
         argument, a last argument that is an expression (`"a\n" x 3`,
         `$ok ? "y\n" : "n\n"`), `CORE::print`, method calls such as
-        `$fh->print(...)` and `print =>`.
+        `$fh->print(...)` and `print =>`. Nor is a string whose `\n`
+        follows an unescaped `$` or `@`: in `"a$\n"` the `$\` is the
+        variable, so the string does not end in a newline (`"a\$\n"` does,
+        and is reported). A `qq` whose delimiter is a letter, digit or `_`
+        (`qq n a\nn`) is skipped. `use if ..., feature => 'say'` is not
+        recognised, so code that enables `say` that way is not checked.
 
         The fix replaces `print` with `say` and removes the trailing `\n`
         from the string, keeping its quotes. It is safe, except that `say`
         always ends the output with "\n" where `print` adds `$\`. So the
         violation has no fix when the file mentions `$\`,
-        `$OUTPUT_RECORD_SEPARATOR` or `$ORS`, calls
-        `output_record_separator`, or has a `#!` line with an `-l` switch.
+        `$OUTPUT_RECORD_SEPARATOR` or `$ORS` (or the globs `*\`, `*ORS` and
+        `*OUTPUT_RECORD_SEPARATOR`), uses a symbolic `${"..."}` or
+        `*{"..."}` whose name has a backslash, names ORS or interpolates,
+        calls `output_record_separator`, or has a `#!` line with an `-l`
+        switch. A `$\` set in another file or module is not seen.
+
+        Also, `say` passes its newline through `$\`, so a tied handle whose
+        `PRINT` ignores `$\` loses the newline. This is a known caveat of
+        the fix being labelled safe.
         END
 }
 
@@ -93,9 +105,13 @@ sub _last_string ($word) {
     return unless @last == 1;
     my $quote = $last[0];
     return unless $quote->isa('PPI::Token::Quote::Double') || $quote->isa('PPI::Token::Quote::Interpolate');
+    return if $quote->isa('PPI::Token::Quote::Interpolate') && $quote->content =~ /\Aqq\s*\w/;
     my $string = $quote->string;
     return if $string     =~ /\\[Qc]/;
     return unless $string =~ /(?:\A|[^\\])(?:\\\\)*\\n\z/;
+
+    # In `"a$\n"` the `$\` is a variable, not a `$` and a newline.
+    return if $string =~ /(?:\A|[^\\])(?:\\\\)*[\$\@]\\n\z/;
     return if $string eq q{\n} && @$args > 1;    # `print $x, "\n"`
     return unless $quote->content =~ /\\n.\z/s;
     return $quote;
@@ -195,11 +211,42 @@ sub _sets_ors ($doc) {
             return 1 if $elem->isa('PPI::Token::Magic') && $elem->content eq '$\\';
             return 1
                 if $elem->isa('PPI::Token::Symbol')
-                && $elem->content =~ /\A\$(?:\w+::)*(?:ORS|OUTPUT_RECORD_SEPARATOR)\z/;
+                && $elem->content =~ /\A[\$*](?:\w+::)*(?:ORS|OUTPUT_RECORD_SEPARATOR)\z/;
+
+            # `*\` and `*main::\` parse as `*` or `*main::` followed by `\`.
+            if ( $elem->isa('PPI::Token::Cast') && $elem->content eq '\\' ) {
+                my $prev = $elem->previous_token;
+                return 1
+                    if $prev
+                    && ( ( $prev->isa('PPI::Token::Operator') && $prev->content eq '*' )
+                    || ( $prev->isa('PPI::Token::Symbol') && $prev->content =~ /\A\*(?:\w+::)+\z/ ) );
+            }
+
+            # A symbolic `${"\\"}` or `*{"main::ORS"}`, or one whose name is
+            # not a literal.
+            if ( $elem->isa('PPI::Token::Cast') && $elem->content =~ /\A[\$*]\z/ ) {
+                my $block = $elem->snext_sibling;
+                return 1 if $block && $block->isa('PPI::Structure::Block') && _names_ors($block);
+            }
             return 1 if $elem->isa('PPI::Token::Word') && $elem->content =~ /(?:\A|::|->)output_record_separator\z/;
             return 0;
         }
     );
+    return 0;
+}
+
+# Whether a deref block's name may be the output record separator: it
+# holds a string with a backslash or naming ORS, or an interpolating
+# string with a variable in it.
+sub _names_ors ($block) {
+    for my $quote ( @{ $block->find('PPI::Token::Quote') || [] } ) {
+        my $string = $quote->string;
+        return 1 if $string =~ /\\|ORS|OUTPUT_RECORD_SEPARATOR/;
+        return 1
+            if !$quote->isa('PPI::Token::Quote::Single')
+            && !$quote->isa('PPI::Token::Quote::Literal')
+            && $string =~ /[\$\@]/;
+    }
     return 0;
 }
 
@@ -268,12 +315,37 @@ C<CORE::print>, method calls such as C<< $fh->print >>, and C<< print => >>.
 
 =item *
 
+A string whose final C<\n> follows an unescaped C<$> or C<@> is not
+reported. In C<"a$\n"> the C<$\> is a variable followed by an C<n>, not a
+C<$> and a newline, and dropping the C<\n> would not compile. C<"a\$\n">
+has an escaped dollar and is reported.
+
+=item *
+
+A C<qq> whose delimiter is a word character, as in C<qq n a\nn>, is not
+reported.
+
+=item *
+
+C<use if COND, feature =E<gt> 'say'> is not recognised, so code that
+enables C<say> that way is not checked.
+
+=item *
+
 C<say> sets C<local $\ = "\n">, so if the program sets C<$\> the output
 changes: C<print "x\n"> prints C<"x\n"> followed by C<$\>, while C<say "x">
 prints C<"x\n">. The violation is still reported, but with no fix, when the
-file mentions C<$\>, C<$OUTPUT_RECORD_SEPARATOR> or C<$ORS>, calls
-C<output_record_separator>, or has a C<#!> line with an C<-l> switch. A
-C<$\> set in another file is not seen.
+file mentions C<$\>, C<$OUTPUT_RECORD_SEPARATOR> or C<$ORS> (or the globs
+C<*\>, C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>), uses a symbolic
+C<${"..."}> or C<*{"..."}> whose name has a backslash, names ORS or
+interpolates, calls C<output_record_separator>, or has a C<#!> line with an
+C<-l> switch. A C<$\> set in another file or module is not seen.
+
+=item *
+
+C<say> passes its newline through C<$\>, so a tied handle whose C<PRINT>
+ignores C<$\> loses the newline. This is a known caveat of the fix being
+labelled safe.
 
 =back
 
