@@ -139,7 +139,7 @@ sub _conversions ($format) {
         return undef if grep { defined && /\$/ } @part{qw( index vector width precision )};
 
         # A vector flag is only valid with an integer conversion.
-        return undef if defined $part{vector} && $part{letter} !~ /\A[diuoxXbB]\z/;
+        return undef if defined $part{vector} && $part{letter} !~ /\A[diuoxXbBDUO]\z/;
         $count += 1 + grep { defined && /\A\*/ } @part{qw( vector width precision )};
     }
     return $count;
@@ -246,7 +246,7 @@ one more argument, and so does the C<*v> join string of a vector flag
 
 A format with an explicit index (C<%2$s>, C<%*3$d>) or with a conversion
 that is invalid or unusual (such as C<%n>, C<%y>, or C<%vs>: a vector flag
-is only valid with C<d i u o x X b B>) is skipped.
+is only valid with C<d i u o x X b B D U O>) is skipped.
 
 =item *
 

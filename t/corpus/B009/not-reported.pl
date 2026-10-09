@@ -62,3 +62,6 @@ $s = sprintf "%s @list", $x, $y;
 $s = sprintf '%s', \$x, $y;
 $s = sprintf '%s', sub {1}, $y;
 $s = sprintf '%s', [1], $y;
+printf FOO, $x;
+printf STDERR, $x;
+printf __PACKAGE__, $x;
