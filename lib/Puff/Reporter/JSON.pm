@@ -17,6 +17,7 @@ sub report ( $self, $run, $out, $err ) {
         push @items, map { $self->violation_data($_) } @{ $file->{violations} };
     }
     print {$out} JSON::PP->new->canonical->pretty->encode( \@items );
+    Puff::Reporter::Text->flush_or_die($out);
     return;
 }
 

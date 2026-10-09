@@ -11,8 +11,11 @@ use Puff::Rules  ();
 our $EXIT_CODE = 0;
 
 sub main ($class) {
-    binmode STDOUT, ':encoding(UTF-8)';
-    binmode STDERR, ':encoding(UTF-8)';
+    # :utf8 rather than :encoding(UTF-8): the encoding layer drops write
+    # errors (such as a full disk) for all but the last buffer, so the
+    # reporters could not tell that output was lost.
+    binmode STDOUT, ':utf8';
+    binmode STDERR, ':utf8';
     local $EXIT_CODE = 0;
     my $ok = eval { $class->run; 1 };
     my $error = $@;

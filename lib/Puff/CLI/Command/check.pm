@@ -34,6 +34,8 @@ sub opt_spec {
 sub validate_args ( $self, $opt, $args ) {
     $self->usage_error("--output-format must be text, json or jsonl")
         unless $opt->output_format =~ /\A(?:text|json|jsonl)\z/;
+    $self->usage_error("--statistics only works with --output-format text")
+        if $opt->statistics && $opt->output_format ne q{text};
     return;
 }
 
@@ -152,13 +154,13 @@ or C<json> its output is the plain diff; with C<--output-format jsonl> each
 file event carries its diff instead (see L<Puff::Reporter::JSONL>).
 
 C<--statistics> prints one line per rule instead of one per violation (see
-L<Puff::Reporter::Text>). C<--show-files> prints the files that would be
-checked, one per line, and checks nothing: they are plain paths and
-C<--statistics> does not apply, whatever C<--output-format> says. While
-checking, a spinner and a C<Checking N/M files> counter are shown on STDERR
-when it is a terminal and the run takes more than half a second (never with
-C<--output-format jsonl>, which streams one JSON object per line as each
-file is checked). See
-L<Puff::Runner> for exit codes.
+L<Puff::Reporter::Text>). It needs C<--output-format text>, the default:
+with C<json> or C<jsonl> it is a usage error. C<--show-files> prints the
+files that would be checked, one per line, and checks nothing: they are
+plain paths and C<--statistics> does not apply, whatever C<--output-format>
+says. While checking, a spinner and a C<Checking N/M files> counter are
+shown on STDERR when it is a terminal and the run takes more than half a
+second (never with C<--output-format jsonl>, which streams one JSON object
+per line as each file is checked). See L<Puff::Runner> for exit codes.
 
 =cut

@@ -2,6 +2,8 @@ package Puff::Reporter::Text;
 
 use v5.36;
 
+use IO::Handle ();
+
 sub new ( $class, %args ) {
     return bless {
         fix_mode   => $args{fix_mode} // 'safe',    # the fixes --fix would apply
@@ -37,6 +39,7 @@ sub report ( $self, $run, $out, $err ) {
         my $count = 0;
         $count += $_->{fixed_count} for @changed;
         printf {$err} "Would fix %s in %s.\n", _n( $count, 'violation' ), _n( scalar @changed, 'file' );
+        $self->flush_or_die($out);
         return;
     }
 
@@ -71,6 +74,7 @@ sub report ( $self, $run, $out, $err ) {
         $count += $_->{fixed_count} for @written;
         printf {$out} "Fixed %s in %s.\n", _n( $count, 'violation' ), _n( scalar @written, 'file' );
     }
+    $self->flush_or_die($out);
     return;
 }
 
@@ -79,6 +83,13 @@ sub report_errors ( $class, $files, $err ) {
         print {$err} "$file->{file}: error: $file->{error}\n"   if defined $file->{error};
         print {$err} "$file->{file}: $file->{fixes_skipped}\n" if defined $file->{fixes_skipped};
     }
+    return;
+}
+
+# Flushes $out and dies if writing to it failed (a full disk, a closed
+# handle), so lost output is never silent. Shared with the other reporters.
+sub flush_or_die ( $class, $out ) {
+    $out->flush && !$out->error or die "puff: cannot write output: $!\n";
     return;
 }
 
@@ -132,6 +143,8 @@ N violations in M files.> on the error handle.
 
 File errors and skipped fixes go to the error handle;
 C<< Puff::Reporter::Text->report_errors(\@files, $err) >> prints them and is
-shared with L<Puff::Reporter::JSON>.
+shared with L<Puff::Reporter::JSON>. So is
+C<< Puff::Reporter::Text->flush_or_die($out) >>, which flushes the output
+handle and dies if any write to it failed.
 
 =cut
