@@ -4,7 +4,7 @@ use v5.36;
 
 use Puff::CLI -command;
 
-use Puff::Engine         ();
+use Puff::Engine          ();
 use Puff::Reporter::JSON  ();
 use Puff::Reporter::JSONL ();
 use Puff::Reporter::Text  ();
@@ -72,6 +72,7 @@ sub execute ( $self, $opt, $args ) {
     if ( !$run ) {
         my $error = $@;
         $progress->( 0, 0 ) if $progress;    # stop the timer and erase the line
+        $stream->fatal($error) if $stream;
         die $error;
     }
     my $reporter
@@ -145,6 +146,9 @@ diff, unless C<--output-format> is C<jsonl>.
 
 C<--output-format jsonl> streams one JSON object per line as each file is
 checked, putting any diff in the file's event; see L<Puff::Reporter::JSONL>.
+If the run dies, a C<done> event with the error is written before puff
+exits 2. C<--show-files> ignores the output format, and C<--statistics> has
+no effect with C<jsonl>.
 
 C<--statistics> prints one line per rule instead of one per violation (see
 L<Puff::Reporter::Text>). C<--show-files> prints the files that would be

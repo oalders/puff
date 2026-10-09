@@ -78,6 +78,25 @@ subtest 'on_file' => sub {
     is( $seen[1]{error}, 'No such file or directory', 'including a path that does not exist' );
     $dir->child('one.pl')->remove;
 };
+
+subtest 'on_file before progress' => sub {
+    $dir->child('one.pl')->spew_utf8("foo;\n");
+    $dir->child('two.pl')->spew_utf8("1;\n");
+    my @log;
+    my $runner = Puff::Runner->new(
+        config   => $config,
+        engine   => Puff::Engine->new( rules => [ FlagWord->new ], fix_mode => 'none' ),
+        progress => sub ( $done, $total ) { push @log, "progress $done" },
+        on_file  => sub ($result) { push @log, 'on_file ' . path( $result->{file} )->basename },
+    );
+    $runner->run("$dir");
+    is(
+        \@log,
+        [ 'progress 0', 'on_file one.pl', 'progress 1', 'on_file two.pl', 'progress 2' ],
+        'each file is reported before progress counts it'
+    );
+    $dir->child($_)->remove for qw( one.pl two.pl );
+};
 $dir->child('bad.pl')->spew_utf8("foo;\n");
 $dir->child('good.pl')->spew_utf8("foo;\n");
 

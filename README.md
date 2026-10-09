@@ -120,7 +120,8 @@ violation:
 `fix.safety` is the rule's fix safety, `fix.available` says whether a fix is
 offered for this violation, and `fix.applied` is always `false` because only
 violations that remain are listed. Errors still go to STDERR as text.
-With `--diff`, the output is always a diff unless the format is `jsonl`.
+With `--diff`, the output is a diff, except with `jsonl`, which puts each
+diff in its file event.
 
 ### JSON Lines output
 
@@ -131,20 +132,33 @@ the order they are checked, then a `done` event:
 
     $ puff check --output-format jsonl lib
     {"total":2,"type":"start"}
-    {"diff":null,"error":null,"file":"lib/Clean.pm","fixed":0,"type":"file","violations":[]}
-    {"diff":null,"error":null,"file":"lib/Demo.pm","fixed":0,"type":"file","violations":[{"code":"S002",...}]}
+    {"diff":null,"error":null,"file":"lib/Clean.pm","fixed":0,"fixes_skipped":null,"type":"file","violations":[]}
+    {"diff":null,"error":null,"file":"lib/Demo.pm","fixed":0,"fixes_skipped":null,"type":"file","violations":[{"code":"S002",...}]}
     {"exit_code":1,"type":"done"}
 
 - `start.total` is the number of `file` events that follow.
 - `file.violations` uses the same objects as `--output-format json`.
 - `file.error` is the reason the file could not be checked, or `null`. In
-  this format, errors are not printed to STDERR.
+  this format, these per-file errors are not printed to STDERR.
 - `file.fixed` is the number of fixes applied (`--fix`) or that would be
   applied (`--diff`).
+- `file.fixes_skipped` is the reason fixes were wanted but not applied (CR
+  or CRLF line endings), or `null`.
 - `file.diff` is the unified diff with `--diff`, or `null`.
-- `done.exit_code` is the code puff exits with.
+- `done.exit_code` is the code puff exits with. If the run fails part way,
+  `done` has exit code `2` and an `error` field with the message.
 
-The spinner is not shown in this format. Ignore event types and fields you
+Usage, config and rule-loading errors happen before any events: they go to
+STDERR as text and puff exits `2`. Treat a stream that ends without `done`
+(for example, because puff was killed) as a failure.
+
+The output is pure ASCII: other characters are `\u`-escaped, so each event
+is exactly one line. The strings (`file`, `error`, `message`, `diff`) are
+untrusted text from the files being checked, so sanitise them before you
+print them to a terminal.
+
+The spinner is not shown in this format, `--statistics` has no effect, and
+`--show-files` ignores the output format. Ignore event types and fields you
 do not recognize, because new ones may be added.
 
 ## Fix safety

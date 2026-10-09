@@ -190,12 +190,13 @@ subtest 'check --output-format jsonl' => sub {
     is(
         $by{'lib/declined.pl'},
         {
-            type       => 'file',
-            file       => 'lib/declined.pl',
-            error      => undef,
-            fixed      => 0,
-            diff       => undef,
-            violations => array {
+            type          => 'file',
+            file          => 'lib/declined.pl',
+            error         => undef,
+            fixed         => 0,
+            fixes_skipped => undef,
+            diff          => undef,
+            violations    => array {
                 item hash {
                     field code    => 'S002';
                     field message => 'Use three-argument open';
@@ -226,6 +227,35 @@ subtest 'check --output-format jsonl' => sub {
     ok( $by{'lib/two_arg.pl'}{fixed} > 0, '--fix counts the fixes' );
     is( $by{'lib/two_arg.pl'}{diff}, undef, 'with no diff' );
     is( jsonl($out)->[-1], { type => 'done', exit_code => $exit }, 'done matches the exit code' );
+};
+
+subtest 'check --output-format jsonl with no files' => sub {
+    my $dir = project();
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' );
+    is( $exit, 0,  'exit 0' );
+    is( $err,  '', 'nothing on STDERR' );
+    is( jsonl($out), [ { type => 'start', total => 0 }, { type => 'done', exit_code => 0 } ], 'start then done' );
+};
+
+subtest 'check --output-format jsonl when the run dies' => sub {
+    my $dir    = project( 'lib/ok.pl' => 'S002/fixed.pl' );
+    my $locked = $dir->child('locked');
+    $locked->mkpath;
+    chmod 0, $locked or die "chmod $locked: $!";
+    if ( opendir my $dh, $locked ) {    # root, or chmod had no effect
+        chmod 0755, $locked;
+        skip_all 'cannot make a directory unreadable';
+    }
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--output-format', 'jsonl' );
+    chmod 0755, $locked;
+    is( $exit, 2, 'exit 2' );
+    my $events = jsonl($out);
+    is(
+        $events,
+        [ { type => 'done', exit_code => 2, error => match qr/locked.*\S\z/ } ],
+        'finding files died, so the only event is done, with the error'
+    );
+    like( $err, qr/locked/, 'the error is still on STDERR' );
 };
 
 subtest 'rules and rule' => sub {
@@ -420,6 +450,11 @@ subtest 'CRLF files are linted but not fixed' => sub {
     is( $file->slurp_raw, $before, 'file unchanged' );
     like( $err, qr/^crlf\.pl: CR or CRLF line endings: fixes not applied$/m, 'reported' );
     unlike( $out, qr/\[\*\*?\]|fixable/, 'no fix offered' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--fix', '--unsafe-fixes', '--output-format', 'jsonl' );
+    is( $err, '', 'jsonl: nothing on STDERR' );
+    my ($event) = grep { $_->{type} eq 'file' } @{ jsonl($out) };
+    is( $event->{fixes_skipped}, 'CR or CRLF line endings: fixes not applied', 'jsonl: fixes_skipped' );
 };
 
 done_testing;
