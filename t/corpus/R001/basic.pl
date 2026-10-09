@@ -50,3 +50,5 @@ else {
 }
 
 unless ( ready(1) ) {} else { go() } # expect: R001
+
+unless ( my $v = ready(1) ) { wait_() } else { go($v) } # expect: R001

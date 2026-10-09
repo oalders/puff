@@ -150,6 +150,11 @@ a heredoc (its body follows the line it starts on, not its block).
 A label before C<unless> stays where it is, and a C<my> in the condition is
 in scope in both blocks before and after the fix.
 
+=item *
+
+The swap moves code to other lines, so C<__LINE__>, and the line numbers
+in C<die> and C<warn> messages, can change. What the code does is the same.
+
 =back
 
 Not selected by default; select it with C<--select R>.
