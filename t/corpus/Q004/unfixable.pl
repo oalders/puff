@@ -27,3 +27,7 @@ sub ADJUST { return 1 }
 &method(1); # expect: Q004
 &field(1); # expect: Q004
 &ADJUST(1); # expect: Q004
+sub qx { return 1 }
+sub __CLASS__ { return 1 }
+&qx(1); # expect: Q004
+&__CLASS__(1); # expect: Q004

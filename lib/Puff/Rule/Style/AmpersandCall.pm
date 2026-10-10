@@ -27,7 +27,10 @@ sub explanation {
         `&print(...)` or `&open(...)`, is reported but not fixed either,
         since there the `&` is what makes Perl call your sub. The same
         goes for newer keywords such as `&any(...)` and `&all(...)` (perl
-        5.42), `&isa(...)` and the `class` feature keywords.
+        5.42), `&isa(...)`, and `&method(...)`, `&field(...)` and
+        `&ADJUST(...)` (the `class` feature). Most of these are keywords
+        only when their feature is on, but the fix leaves them alone
+        either way.
 
         Uses of `&foo` that do not call the sub are left alone: `\&foo`,
         `\(&foo)`, `goto &foo`, `defined &foo`, `exists &foo`, `undef &foo`
@@ -69,14 +72,16 @@ my %TAKES_EXPR = map { $_ => 1 } qw(
 my %PRINT = map { $_ => 1 } qw( print printf say );
 
 # Names that a bare `name(...)` would not call as a user sub.
-# `any` and `all` are keywords under perl 5.42 (keyword_any, keyword_all).
+# `any` and `all` are keywords under perl 5.42 (keyword_any, keyword_all);
+# `isa` (5.32) and class/method/field/ADJUST (5.38) are keywords once their
+# feature is on. The feature set is not tracked, so they are always kept.
 my %BUILTIN = map { $_ => 1 } keys %Pod::Functions::Type, qw(
     if unless while until for foreach else elsif given when default
     try catch finally defer
     my our local state return and or not xor x lt gt le ge eq ne cmp
-    q qq qw qr m s tr y sub package use no require do eval format
+    q qq qw qr qx m s tr y sub package use no require do eval format
     BEGIN END INIT CHECK UNITCHECK AUTOLOAD DESTROY
-    __FILE__ __LINE__ __PACKAGE__ __SUB__ __DATA__ __END__
+    __FILE__ __LINE__ __PACKAGE__ __SUB__ __CLASS__ __DATA__ __END__
     any all isa class method field ADJUST
 );
 
@@ -192,8 +197,9 @@ it changes behaviour when the sub has a prototype. C<&foo> without parens
 is reported but not fixed, since the equivalent call is C<foo(@_)>. A sub
 named like a Perl builtin or keyword (C<&print(...)>, C<&open(...)>) is
 reported but not fixed, because there the C<&> is needed to call the user
-sub. This includes the newer keywords C<any> and C<all> (perl 5.42), C<isa>
-and the C<class> feature keywords.
+sub. This includes the newer keywords C<any> and C<all> (perl 5.42), C<isa>,
+and C<class>, C<method>, C<field> and C<ADJUST>, whether or not their
+feature is enabled.
 
 Not reported, because the C<&> does not make a call: C<\&foo>,
 C<\(&foo)>, C<goto &foo>, C<defined &foo>, C<defined(&foo)>,
