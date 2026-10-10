@@ -481,9 +481,12 @@ other-writable"), while `chmod 777, $dir` sets 01411, which is not, but would
 be world-writable as the 0777 it was meant to be ("decimal 777 is mode 01411;
 read as octal 0777 it would make the file world-writable"). The sticky bit
 exempts only the octal reading, never the mode a decimal literal really sets:
-`chmod 1755, $f` really sets 03333, which is other-writable, and is reported.
-A decimal literal whose value is a common mode (`chmod 511, $f` is 0777) is
-taken as written. B010 reports the missing zero. There is no fix.
+`chmod 1755, $f` really sets 03333 and `chmod 999, $f` 01747, both
+other-writable, and both are reported. Messages about the real mode of a
+decimal literal say "other-writable"; "world-writable" describes the octal
+mode it was meant to be. A decimal literal whose value is a common mode
+(`chmod 511, $f` is 0777) is taken as written. B010 reports the missing zero.
+There is no fix.
 
 **S010** reports md2, md4, md5 and sha* digest functions (`md5_hex`,
 `sha256_hex`, `sha256_b64u` and the rest) and Crypt::Digest's `digest_data*`
@@ -816,8 +819,9 @@ and as the octal one it was meant to be. A literal whose decimal value is a
 common mode or umask is taken as deliberate and not reported: `mkdir $d, 511`
 is 0777, `chmod 493, $f` is 0755 and `umask 18` is 022 (the decimals of 0777,
 0775, 0770, 0755, 0750, 0711, 0700, 0666, 0664, 0660, 0644, 0640, 0600, 0444,
-0400, 022, 027, 077, 002 and 007). Only the options-hash form of `->mkdir` and `->mkpath` is
-checked; a positional mode (`$p->mkdir( $d, 755 )`, `->mkpath(...)`) is not.
+0400, 022, 027, 077, 002 and 007). Only the options-hash form of `->mkdir`
+and `->mkpath` is checked; a positional mode (`$p->mkdir( $d, 755 )`,
+`->mkpath(...)`) is not.
 
 The fix sets the mode the author wrote, which can be wider than the mode the
 code set by accident: `chmod 664, $f` really sets 01230, and the fix makes it

@@ -33,11 +33,11 @@ sub explanation {
 
         `umask` with two digits (`umask 22`, `umask 77`) is reported too,
         since `022`, `027` and `077` are its usual values; the message calls
-        its argument a mask rather than a mode. One digit is the
-        same in decimal and octal, and other two-digit modes are rare, so
-        neither is reported. Neither are literals with an 8 or 9, octal
-        (`0755`, `0o755`), hex or binary literals, `oct('755')`, variables
-        and expressions.
+        its argument a mask rather than a mode. One digit is the same in
+        decimal and octal, and other two-digit modes are rare, so neither is
+        reported. Neither are literals with an 8 or 9, octal (`0755`,
+        `0o755`), hex or binary literals, `oct('755')`, variables and
+        expressions.
 
         A literal whose decimal value is a common mode or umask is taken as
         deliberate: `mkdir $dir, 511` is 0777, `chmod 493, $f` is 0755 and

@@ -75,9 +75,36 @@ is(
     'a decimal mode with an accidental sticky bit is checked without the exemption'
 );
 
+is(
+    messages("umask 1000;\n"),
+    ['umask 1000: decimal 1000 is mask 01750, which leaves new files other-writable (CWE-732); use 022 or 077'],
+    'a decimal umask with a sticky bit is checked without the exemption'
+);
+
+# The real mode of any decimal literal is checked without the exemption,
+# including ones B010 does not take for octal (underscores, an 8 or 9, five
+# digits). Their messages have no octal reading.
+for my $case (
+    [ '1002', '01752' ],
+    [ '1666', '03202' ],
+    [ '1_755', '03333' ],
+    [ '999', '01747' ],
+    [ '1999', '03717' ],
+    [ '10755', '025003' ],
+) {
+    my ( $digits, $real ) = @$case;
+    is(
+        messages("chmod $digits, \$f;\n"),
+        ["chmod $digits: decimal $digits is mode $real, which is other-writable (CWE-732); use 0755 or 0644"],
+        "decimal chmod $digits is checked without the sticky exemption"
+    );
+}
+
 # 1777 really sets 03361, which is group-writable but not other-writable, and
 # the octal reading 01777 keeps the sticky exemption. B010 reports it.
 is( messages("chmod 1777, \$f;\n"), [], 'decimal 1777 is not other-writable' );
 is( messages("chmod 01777, \$f;\n"), [], 'an octal sticky mode is still exempt' );
+is( messages("chmod 0x3ff, \$f;\n"), [], 'a hex sticky mode is still exempt' );
+is( messages("chmod 0b1111111111, \$f;\n"), [], 'a binary sticky mode is still exempt' );
 
 done_testing;

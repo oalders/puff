@@ -49,13 +49,18 @@ sub explanation {
           was meant to be is: "decimal 777 is mode 01411; read as octal 0777
           it would make the file world-writable".
 
+        Messages about the mode a decimal literal really sets say
+        "other-writable"; "world-writable" describes the octal mode it was
+        meant to be.
+
         The sticky bit never exempts the mode a decimal literal really sets,
-        whether it is there by accident (755 is 01363) or was meant
-        (`chmod 1755, $f` really sets 03333, which is other-writable): the
-        file it lands on is not the shared directory the author had in mind.
-        Only the octal reading keeps the exemption, so `chmod 1777, $d`,
-        which really sets 03361, is not reported. A decimal literal whose
-        value is a common mode (`chmod 511, $f` is 0777) is taken as written.
+        whether it is there by accident (755 is 01363, 999 is 01747) or was
+        meant (`chmod 1755, $f` really sets 03333, which is other-writable):
+        the file it lands on is not the shared directory the author had in
+        mind. Only the octal reading keeps the exemption, so `chmod 1777,
+        $d`, which really sets 03361, is not reported. A decimal literal
+        whose value is a common mode (`chmod 511, $f` is 0777) is taken as
+        written.
 
         Use 0755 or 0644, or 0700 and 0600 for anything private. There is no
         fix.
@@ -112,9 +117,11 @@ sub check ( $self, $elem, $doc ) {
 # decimal_mode), as that octal reading too. The real value wins: a decimal
 # literal whose real value is fine is reported only for the octal reading,
 # with a message that says the code does not set it. The sticky bit never
-# excuses the real value of a decimal literal: whether it is an accident
-# (755 is 01363) or meant (1755 is 03333), the file it lands on is not a
-# shared directory. Only the octal reading keeps the exemption.
+# excuses the real value of any decimal integer literal, whether or not
+# decimal_mode takes it for octal: whether the bit is an accident (755 is
+# 01363, 999 is 01747) or meant (1755 is 03333), the file it lands on is
+# almost certainly not a shared directory. Octal, hex and binary literals,
+# and the octal reading, keep the exemption.
 sub _message ( $call, $elem, $how ) {
     return undef unless $elem->can('literal');
     my $real   = $elem->literal // return undef;
@@ -123,7 +130,8 @@ sub _message ( $call, $elem, $how ) {
     my $tail   = "(CWE-732); $how->{use}";
     my $meant  = decimal_mode($elem) ? oct $digits : undef;
 
-    if ( $how->{bad}->( defined $meant ? $real & ~$STICKY : $real ) ) {
+    # Float, Exp, Octal, Hex and Binary are all subclasses.
+    if ( $how->{bad}->( ref $elem eq 'PPI::Token::Number' ? $real & ~$STICKY : $real ) ) {
         my $decimal = $real >= 8 && !grep { $elem->isa("PPI::Token::Number::$_") } qw( Octal Hex Binary );
         return "$what $how->{is} $tail" unless $decimal;
         return sprintf '%s: decimal %s is %s %#o, %s %s', $what, $digits, $how->{noun}, $real, $how->{which}, $tail;
@@ -154,6 +162,8 @@ C<chmod 755, $f> is checked both as the mode it really sets (01363) and as
 the octal mode it was probably meant to be (0755), and the message says
 which one is the problem. The sticky bit exempts only the octal reading, not
 the mode a decimal literal really sets: C<chmod 1755, $f> really sets 03333,
-which is other-writable, and is reported. There is no fix.
+which is other-writable, and is reported. Messages about the real mode of a
+decimal literal say "other-writable"; "world-writable" describes the octal
+mode it was meant to be. There is no fix.
 
 =cut
