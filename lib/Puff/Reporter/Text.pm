@@ -98,7 +98,7 @@ sub flush_or_die ( $class, $out ) {
 
 sub _marker ( $self, $v ) {
     return '' unless $v->fixable && $v->rule;
-    my $safety = $v->rule->fix_safety;
+    my $safety = $v->fix_safety;
     return ' [*]' if $safety eq 'safe';
     return '' if $safety ne 'unsafe';
     return $self->{fix_mode} eq 'unsafe' ? ' [*]' : ' [**]';

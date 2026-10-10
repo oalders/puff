@@ -23,71 +23,71 @@ PM
 
 my $d = $tmp->child('basic');
 $d->mkpath;
-rule_file( $d, 'T::R::Three', 'T003' );
-rule_file( $d, 'T::R::One', 'T001', q{sub options { { foo => 0 } }} );
+rule_file( $d, 'T::R::Three', 'Y003' );
+rule_file( $d, 'T::R::One', 'Y001', q{sub options { { foo => 0 } }} );
 $d->child('sub')->mkpath;
-rule_file( $d->child('sub'), 'T::R::Two', 'T002' );
+rule_file( $d->child('sub'), 'T::R::Two', 'Y002' );
 $d->child('Helper.pm')->spew_utf8("package T::Helper;\n1;\n");
 
-my @classes = grep { $_->code =~ /\AT/ } Puff::Rules->load( rule_paths => ["$d"] );
-is( [ map { $_->code } @classes ], [qw( T001 T002 T003 )], 'loaded and sorted by code' );
+my @classes = grep { $_->code =~ /\AY/ } Puff::Rules->load( rule_paths => ["$d"] );
+is( [ map { $_->code } @classes ], [qw( Y001 Y002 Y003 )], 'loaded and sorted by code' );
 
 is(
-    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['T002'] ) ],
-    [qw( T001 T003 )], 'ignore removes'
+    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['Y'], ignore => ['Y002'] ) ],
+    [qw( Y001 Y003 )], 'ignore removes'
 );
 is(
-    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T00'], ignore => ['T003'] ) ],
-    [qw( T001 T002 )], 'prefix select'
+    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['Y00'], ignore => ['Y003'] ) ],
+    [qw( Y001 Y002 )], 'prefix select'
 );
 is(
-    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T001'], extend_select => ['T003'] ) ],
-    [ 'T001', 'T003' ], 'extend_select'
+    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['Y001'], extend_select => ['Y003'] ) ],
+    [ 'Y001', 'Y003' ], 'extend_select'
 );
 like(
     dies { Puff::Rules->instantiate( \@classes, select => ['X'] ) },
     qr/\AUnknown rule selector: X\n/, 'select matching no rule dies'
 );
 like(
-    dies { Puff::Rules->instantiate( \@classes, select => ['T'], extend_select => ['T9'] ) },
-    qr/\AUnknown rule selector: T9\n/, 'extend_select matching no rule dies'
+    dies { Puff::Rules->instantiate( \@classes, select => ['Y'], extend_select => ['Y9'] ) },
+    qr/\AUnknown rule selector: Y9\n/, 'extend_select matching no rule dies'
 );
-ok( lives { Puff::Rules->instantiate( \@classes, select => [ 'T', 'P001' ] ) }, 'P001 is a known code' );
+ok( lives { Puff::Rules->instantiate( \@classes, select => [ 'Y', 'P001' ] ) }, 'P001 is a known code' );
 is(
     [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['ALL'] ) ],
-    [qw( T001 T002 T003 )], 'ALL selects every rule'
+    [qw( Y001 Y002 Y003 )], 'ALL selects every rule'
 );
 is(
-    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['T001'], extend_select => ['ALL'] ) ],
-    [qw( T001 T002 T003 )], 'ALL in extend_select'
+    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['Y001'], extend_select => ['ALL'] ) ],
+    [qw( Y001 Y002 Y003 )], 'ALL in extend_select'
 );
 is(
-    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['ALL'], ignore => ['T002'] ) ],
-    [qw( T001 T003 )], 'ignore wins over ALL'
+    [ map { $_->code } Puff::Rules->instantiate( \@classes, select => ['ALL'], ignore => ['Y002'] ) ],
+    [qw( Y001 Y003 )], 'ignore wins over ALL'
 );
-is( [ Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['ALL'] ) ], [], 'ignore ALL' );
+is( [ Puff::Rules->instantiate( \@classes, select => ['Y'], ignore => ['ALL'] ) ], [], 'ignore ALL' );
 ok(
-    lives { Puff::Rules->instantiate( \@classes, select => ['T'], ignore => ['Z'] ) },
+    lives { Puff::Rules->instantiate( \@classes, select => ['Y'], ignore => ['Z'] ) },
     'ignore matching no rule is fine'
 );
 
-my ($one) = Puff::Rules->instantiate( \@classes, select => ['T001'], rule_options => { T001 => { foo => 5 } } );
+my ($one) = Puff::Rules->instantiate( \@classes, select => ['Y001'], rule_options => { Y001 => { foo => 5 } } );
 is( $one->option('foo'), 5, 'rule option passed' );
 like(
-    dies { Puff::Rules->instantiate( \@classes, select => ['T001'], rule_options => { T001 => { bar => 1 } } ) },
-    qr/Unknown option 'bar' for rule T001/, 'unknown option dies'
+    dies { Puff::Rules->instantiate( \@classes, select => ['Y001'], rule_options => { Y001 => { bar => 1 } } ) },
+    qr/Unknown option 'bar' for rule Y001/, 'unknown option dies'
 );
 ok(
-    lives { Puff::Rules->instantiate( \@classes, select => ['T002'], rule_options => { T001 => { bar => 1 } } ) },
+    lives { Puff::Rules->instantiate( \@classes, select => ['Y002'], rule_options => { Y001 => { bar => 1 } } ) },
     'options for unselected rule ignored'
 );
 
 my $dup = $tmp->child('dup');
 $dup->mkpath;
-rule_file( $dup, 'D::A', 'T001' );
-rule_file( $dup, 'D::B', 'T001' );
+rule_file( $dup, 'D::A', 'Y001' );
+rule_file( $dup, 'D::B', 'Y001' );
 like(
-    dies { Puff::Rules->load( rule_paths => ["$dup"] ) }, qr/D::A.*D::B.*T001|D::B.*D::A.*T001/,
+    dies { Puff::Rules->load( rule_paths => ["$dup"] ) }, qr/D::A.*D::B.*Y001|D::B.*D::A.*Y001/,
     'duplicate code names both'
 );
 

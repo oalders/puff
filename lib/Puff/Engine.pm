@@ -107,7 +107,7 @@ sub _collect_fixes ( $self, $src, $violations ) {
 
 sub _fixable_in_mode ( $self, $v ) {
     return 0 unless $v->fixable && $v->rule;
-    my $safety = $v->rule->fix_safety;
+    my $safety = $v->fix_safety;
     my $mode   = $self->{fix_mode};
     return 1 if $safety eq 'safe'   && ( $mode eq 'safe' || $mode eq 'unsafe' );
     return 1 if $safety eq 'unsafe' && $mode eq 'unsafe';
@@ -172,8 +172,9 @@ __END__
 
 =head1 DESCRIPTION
 
-C<fix_mode> is C<none>, C<safe> (apply fixes of rules whose C<fix_safety> is
-C<safe>) or C<unsafe> (C<safe> and C<unsafe> fixes).
+C<fix_mode> is C<none>, C<safe> (apply fixes of violations whose
+C<fix_safety> is C<safe>) or C<unsafe> (C<safe> and C<unsafe> fixes). A
+violation's C<fix_safety> is its rule's unless the rule set one for it.
 
 C<process_source> parses the text with PPI, runs each rule's C<check> on the
 elements matching its C<applies_to>, drops suppressed violations and adds a
