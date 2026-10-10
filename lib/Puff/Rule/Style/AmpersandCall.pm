@@ -67,6 +67,7 @@ my %TAKES_EXPR = map { $_ => 1 } qw(
 my %PRINT = map { $_ => 1 } qw( print printf say );
 
 # Names that a bare `name(...)` would not call as a user sub.
+# `any` and `all` are keywords under perl 5.42 (keyword_any, keyword_all).
 my %BUILTIN = map { $_ => 1 } keys %Pod::Functions::Type, qw(
     if unless while until for foreach else elsif given when default
     try catch finally defer
@@ -74,6 +75,7 @@ my %BUILTIN = map { $_ => 1 } keys %Pod::Functions::Type, qw(
     q qq qw qr m s tr y sub package use no require do eval format
     BEGIN END INIT CHECK UNITCHECK AUTOLOAD DESTROY
     __FILE__ __LINE__ __PACKAGE__ __SUB__ __DATA__ __END__
+    any all
 );
 
 sub check ( $self, $elem, $doc ) {
@@ -186,7 +188,7 @@ prototype, and C<&foo> without parens passes the caller's C<@_> along.
 The unsafe fix removes the C<&> from C<&foo(...)> and C<&Foo::bar(...)>;
 it changes behaviour when the sub has a prototype. C<&foo> without parens
 is reported but not fixed, since the equivalent call is C<foo(@_)>. A sub
-named like a Perl builtin or keyword (C<&print(...)>, C<&open(...)>) is
+named like a Perl builtin or keyword (C<&print(...)>, C<&open(...)>, or C<&any(...)>, C<&all(...)> for the perl 5.42 keywords) is
 reported but not fixed, because there the C<&> is needed to call the user
 sub.
 

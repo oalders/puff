@@ -13,3 +13,7 @@ my $r = &foo->(1); # expect: Q004
 &print(1); # expect: Q004
 &open( my $fh, '<', 'x' ); # expect: Q004
 print &foo (1); # expect: Q004
+sub any { return 1 }
+sub all { return 1 }
+&any(1); # expect: Q004
+&all(1); # expect: Q004
