@@ -476,12 +476,14 @@ since the umask filters them. A mode written in decimal is checked both as
 the mode it really sets and as the octal mode it was probably meant to be,
 and either is reported: `chmod 755, $f` really sets 01363 and `umask 77` the
 mask 0115, both world-writable ("decimal 755 is mode 01363, which is
-world-writable"), while `chmod 777, $dir` sets 01411, which is not, but would
+other-writable"), while `chmod 777, $dir` sets 01411, which is not, but would
 be world-writable as the 0777 it was meant to be ("decimal 777 is mode 01411;
 read as octal 0777 it would make the file world-writable"). The sticky bit a
 decimal literal sets by accident does not exempt it, and a decimal literal
 whose value is a common mode (`chmod 511, $f` is 0777) is taken as written.
-B010 reports the missing zero. There is no fix.
+A decimal literal meant with a sticky bit is exempt like any sticky mode:
+`chmod 1755, $f` really sets 03333, which has the sticky bit. B010 reports the
+missing zero. There is no fix.
 
 **S010** reports md2, md4, md5 and sha* digest functions (`md5_hex`,
 `sha256_hex`, `sha256_b64u` and the rest) and Crypt::Digest's `digest_data*`
@@ -729,8 +731,10 @@ zero, which Perl reads as octal: `my $count = 010` is 8. The mode argument of
 argument of `->chmod(...)`, a value after a `mode` or `perm` key or a `mask`
 key in a `make_path` or `->mkdir` options hash, and an operand of a bitwise operator
 (`$mode & 07777`) are octal by convention and not reported unless the `strict`
-option is on. The safe fix rewrites the literal as `oct('0755')`, which
-compiles to the same constant. Based on
+option is on. These are the positions where B010 adds a leading zero; `strict`
+reports all of them, `mask` values and `->chmod(...)` included. The safe fix
+rewrites the literal as `oct('0755')`, which compiles to the same constant.
+Based on
 Perl::Critic::Policy::ValuesAndExpressions::ProhibitLeadingZeros.
 
 **B004** is selected by default. It reports indirect object syntax such as
@@ -806,9 +810,9 @@ reported too, since `022` and `077` are its usual values. Octal, hex and
 binary literals, strings (Path::Tiny's `->chmod('0755')`), `oct('755')`,
 variables and expressions are not reported. Method calls cannot be typed,
 so any class's `chmod`, `mkdir` or `mkpath` method is checked. The unsafe fix
-adds the leading zero (`0755`); B003 does not report the result, and S009
-checks a decimal mode both as its real value and as the octal one it was
-meant to be. A literal whose decimal value is a common mode or umask is taken
+adds the leading zero (`0755`); B003 does not report the result unless its
+`strict` option is on, and S009 checks a decimal mode both as its real value
+and as the octal one it was meant to be. A literal whose decimal value is a common mode or umask is taken
 as deliberate and not reported: `mkdir $d, 511` is 0777, `chmod 493, $f` is
 0755 and `umask 18` is 022 (the decimals of 0777, 0775, 0770, 0755, 0750,
 0711, 0700, 0666, 0664, 0660, 0644, 0640, 0600, 0444, 0400, 022, 027, 077,

@@ -43,14 +43,17 @@ sub explanation {
 
         - `chmod 755, $f` really sets 01363, which is other-writable, and
           `umask 77` really sets the mask 0115, which does not mask it:
-          "decimal 755 is mode 01363, which is world-writable";
+          "decimal 755 is mode 01363, which is other-writable";
         - `chmod 777, $dir` really sets 01411, which is not, but the 0777 it
           was meant to be is: "decimal 777 is mode 01411; read as octal 0777
           it would make the file world-writable".
 
         The sticky bit that a decimal literal sets by accident (755 is 01363)
-        does not count as a shared directory. A decimal literal whose value
-        is a common mode (`chmod 511, $f` is 0777) is taken as written.
+        does not count as a shared directory. A decimal literal meant with a
+        sticky bit is exempt like any sticky mode: `chmod 1755, $f` really
+        sets 03333, which has the sticky bit, and B010 reports the missing
+        zero. A decimal literal whose value is a common mode
+        (`chmod 511, $f` is 0777) is taken as written.
 
         Use 0755 or 0644, or 0700 and 0600 for anything private. There is no
         fix.
@@ -63,7 +66,7 @@ my %CHMOD = (
     noun  => 'mode',
     bad   => sub ($m) { $m & $OTHER_WRITE && !( $m & $STICKY ) },
     is    => 'makes the file world-writable',
-    which => 'which is world-writable',
+    which => 'which is other-writable',
     would => 'it would make the file world-writable',
     use   => 'use 0755 or 0644',
 );
@@ -147,6 +150,8 @@ Reports C<chmod> with a constant world-writable mode and C<umask> with a
 constant mask that does not mask other-write. A decimal mode such as
 C<chmod 755, $f> is checked both as the mode it really sets (01363) and as
 the octal mode it was probably meant to be (0755), and the message says
-which one is world-writable. There is no fix.
+which one is world-writable. A decimal mode meant with a sticky bit, such as
+C<chmod 1755, $f> (really 03333), is exempt like any sticky mode; B010
+reports its missing zero. There is no fix.
 
 =cut

@@ -54,7 +54,9 @@ sub explanation {
         unsafe because it changes the mode the code sets, and the new mode
         can be wider than the accidental one: `chmod 664, $f` really sets
         01230, and the fix makes it 0664, which is world-readable. Review
-        each fixed mode. B003 does not report the fixed literal. S009 checks
+        each fixed mode. B003 skips the same mode positions, so it does not
+        report the fixed literal unless its `strict` option is on, which
+        reports a leading zero in every mode. S009 checks
         a decimal mode both as its real value and as the octal one it was
         meant to be, so `chmod 777, $dir` is reported by both rules: here
         for the missing zero, there for the world-writable mode it would be.
@@ -66,11 +68,12 @@ sub explanation {
 sub check ( $self, $elem, $doc ) {
     my $call   = decimal_mode($elem) // return;
     my $digits = $elem->content;
+    my $noun   = $call eq 'umask' ? 'mask' : 'mode';
     return $self->violation(
         $elem,
         message => sprintf(
-            '%s mode %s is decimal (octal %#o); write 0%s',
-            $call, $digits, $digits, $digits
+            '%s %s %s is decimal (octal %#o); write 0%s',
+            $call, $noun, $digits, $digits, $digits
         ),
     );
 }

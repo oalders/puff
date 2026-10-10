@@ -30,7 +30,7 @@ is(
 );
 is(
     [ map { $_->message } @{ violations( "umask 22;\n", 'B010' ) } ],
-    ['umask mode 22 is decimal (octal 026); write 022'],
+    ['umask mask 22 is decimal (octal 026); write 022'],
     'two-digit umask message'
 );
 is(

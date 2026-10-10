@@ -20,8 +20,8 @@ sub messages ($text) {
 # mode it was probably meant to be; the message says which is world-writable.
 is(
     messages("chmod 755, \$f;\n"),
-    ['chmod 755: decimal 755 is mode 01363, which is world-writable (CWE-732); use 0755 or 0644'],
-    'decimal chmod whose real mode is world-writable'
+    ['chmod 755: decimal 755 is mode 01363, which is other-writable (CWE-732); use 0755 or 0644'],
+    'decimal chmod whose real mode is other-writable, despite its accidental sticky bit'
 );
 is(
     messages("umask 77;\n"),
@@ -51,9 +51,13 @@ is(
 );
 is(
     messages("chmod 511, \$f;\n"),
-    ['chmod 511: decimal 511 is mode 0777, which is world-writable (CWE-732); use 0755 or 0644'],
+    ['chmod 511: decimal 511 is mode 0777, which is other-writable (CWE-732); use 0755 or 0644'],
     'deliberate decimal mode is checked as its real value'
 );
 is( messages("chmod 1023, \$f;\n"), [], 'an intended sticky bit still exempts the real mode' );
+
+# 1755 really sets 03333: other-writable, but with the sticky bit the author
+# meant (01755), so it is exempt like /tmp. B010 reports the missing zero.
+is( messages("chmod 1755, \$f;\n"), [], 'a decimal mode meant with a sticky bit is exempt' );
 
 done_testing;
