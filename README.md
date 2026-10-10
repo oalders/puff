@@ -7,7 +7,7 @@ files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
 By default puff runs the security (`S`) and likely-bug (`B`) rules (except
-S018, B007, B008 and B009, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
+S018, S019, B007, B008 and B009, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -82,7 +82,7 @@ To see which rules fire most and which of them can be fixed, use
 `CODES` is a comma-separated list, and the option can be repeated. A code can
 be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
-rule and applies every fix. A few rules (S018, B007, B008 and B009) are selected only by
+rule and applies every fix. A few rules (S018, S019, B007, B008 and B009) are selected only by
 their exact code or `ALL`, never by a prefix, so `--select S` or `--select B`
 leaves them off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
@@ -319,6 +319,7 @@ reported as `P001`:
 | S016 | RequireRuntimePath | Do not require or do a file name computed at runtime | none | [829](https://cwe.mitre.org/data/definitions/829.html) |
 | S017 | HTMLEscapeQuote | Escape ' in a hand-written HTML escaper | unsafe | [79](https://cwe.mitre.org/data/definitions/79.html) |
 | S018 | ShellString | Constant command string runs /bin/sh | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
+| S019 | RegexInterpolation | Variable interpolated into a regex without `\Q` | unsafe | [625](https://cwe.mitre.org/data/definitions/625.html), [1333](https://cwe.mitre.org/data/definitions/1333.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -560,6 +561,51 @@ list form of `system`, and for captured output use IPC::Run3 or
 Capture::Tiny. On Win32 the list form is joined back into one command line
 and Perl quotes the arguments by its own rules, so the two forms are not
 equivalent in the same way there.
+
+**S019** is not selected by default, and selecting `S` does not turn it on:
+name it (`--extend-select S019`) or use `ALL`. It reports a scalar variable
+(`$x`, `${x}`, `$h{k}`, `$x->{k}[0]` and the like) interpolated into the
+pattern of `m//`, `//`, `s///`, `qr//` or a `split` regex outside
+`\Q...\E`. Metacharacters in the value change what the pattern matches
+(CWE-625), and a crafted value can make the regex engine backtrack
+catastrophically when the resulting pattern is vulnerable to it (CWE-1333).
+Each variable is reported at its own position; `${x}` ends at its closing
+brace, so in `${x}{k}` only `${x}` is reported. The replacement side of
+`s///`, `m'...'` patterns (which do not interpolate), variables after `\Q`,
+capture and punctuation variables such as `$1` and `$&` (a capture is
+usually a substring of the string being matched), `$` used as an anchor,
+code blocks and arrays (including `@{[ ... ]}`) are not reported.
+
+Some variables are skipped on heuristics that guess the value is a pattern
+or not input: a variable whose own name has `re`, `rx`, `regex`, `regexp`,
+`pattern` or `pat` as a `_`-separated word (`$re`, `$word_rx`, `$pats`) or
+`regex` or `pattern` anywhere in it (hash keys are not checked, so
+`$args->{pattern}` is reported); a plain scalar with an all-caps name
+(`$WS`, `$Foo::CRLF`, but not `$Input`); and a plain scalar whose nearest
+declaration visible from the regex is a whole statement `my $x = qr/.../;`
+or `my $x = quotemeta ...;` (nothing else on the right-hand side). The
+nearest declaration is the latest one before the regex in the innermost
+enclosing block that has one; `my`, `our`, `state` (list forms included),
+`for my $v` and sub signature parameters all count, so an inner
+`my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) = @_` hides an
+outer qr//. A global with no declaration needs a `$x = qr/.../;` statement
+earlier in the same or an enclosing block. The name must also have no other
+write anywhere in the file: any other assignment (`=`, `.=`, `||=`, `//=`
+and the like), `local $x`, a `foreach` over it, or `$x =~ s///` or `tr///`.
+`$x = $opt{x} // qr/,/` does not count, and an assignment inside a
+condition is not seen (both err towards reporting). These guesses can be
+wrong and can hide real injection: S019 is not a complete detector.
+
+The unsafe fix wraps the variable, with its subscripts, in `\Q...\E`. When
+the variable is meant to hold a pattern this changes what the regex matches,
+which is why the fix is unsafe and the rule is opt-in. The variable is
+reported with no fix, and the message says why, when a quantifier follows it
+(`$x+`, `$x{2,3}`), when it is inside a character class (`[$x]`), or when it
+is inside a `/x` comment. There is also no fix when the extent of the
+variable is uncertain: `${ expr }`, a `[` right after the name (Perl guesses
+between a subscript and a character class), postfix dereference, or an
+unusual delimiter. Matching against a variable directly (`$s =~ $x`) is not
+reported.
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no

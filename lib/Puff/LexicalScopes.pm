@@ -5,7 +5,7 @@ use v5.36;
 use Exporter     qw( import );
 use Scalar::Util qw( refaddr weaken );
 
-our @EXPORT_OK = qw( conflicts_at );
+our @EXPORT_OK = qw( conflicts_at declarations );
 
 my %DECLARATOR = map { $_ => 1 } qw( my our state );
 
@@ -13,6 +13,12 @@ my %DECLARATOR = map { $_ => 1 } qw( my our state );
 # of { kind => 'redeclared' or 'shadowed', symbol => '$x', line => N }.
 sub conflicts_at ( $elem, $doc ) {
     return @{ _conflicts($doc)->{ refaddr $elem } // [] };
+}
+
+# The lexical declarations $token starts, outside any package: a list of
+# { elem, symbol, scope, statement, kind }. See _declarations.
+sub declarations ($token) {
+    return _declarations( $token, q{} );
 }
 
 # The analysis depends only on the whole document, so it is done once per
@@ -259,6 +265,15 @@ __END__
 
 The analysis behind B007 (a lexical redeclared in the same scope) and B008
 (a lexical that shadows one from an enclosing scope).
+
+C<declarations($token)> returns the declarations that C<$token> starts: the
+variables after C<my>, C<our> or C<state> (including list forms and C<for my
+$v>), or the parameters of a sub signature. Each is a hash reference with
+C<elem> (the declaring symbol, or the signature token), C<symbol> (such as
+C<$x>), C<kind> (C<my> or C<our>), C<scope> (the block, document or compound
+statement the name belongs to; a signature's parameters belong to the sub's
+body block) and C<statement> (the statement holding the declaration, or
+undef for a loop variable or a signature parameter).
 
 C<conflicts_at($elem, $doc)> returns the conflicts reported at C<$elem>, a
 L<PPI::Token::Symbol> in a C<my>, C<our> or C<state> declaration or a
