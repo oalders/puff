@@ -49,11 +49,12 @@ sub explanation {
         argument, a last argument that is an expression (`"a\n" x 3`,
         `$ok ? "y\n" : "n\n"`), `CORE::print`, method calls such as
         `$fh->print(...)` and `print =>`. Nor is a string whose `\n`
-        follows an unescaped `$` or `@`: in `"a$\n"` the `$\` is the
-        variable, so the string does not end in a newline (`"a\$\n"` does,
-        and is reported). A `qq` whose delimiter is a letter, digit or `_`
-        (`qq n a\nn`) is skipped. `use if ..., feature => 'say'` is not
-        recognised, so code that enables `say` that way is not checked.
+        follows an unescaped `$`: in `"a$\n"` the `$\` is the variable, so
+        the string does not end in a newline (`"a\$\n"`, `"$$\n"` and
+        `"a@\n"` do, and are reported). A `qq` whose delimiter is a
+        letter, digit or `_` (`qq n a\nn`) is skipped. `use if ...,
+        feature => 'say'` is not recognised, so code that enables `say`
+        that way is not checked.
 
         The fix replaces `print` with `say` and removes the trailing `\n`
         from the string, keeping its quotes. It is safe, except that `say`
@@ -61,9 +62,13 @@ sub explanation {
         violation has no fix when the file mentions `$\`,
         `$OUTPUT_RECORD_SEPARATOR` or `$ORS` (or the globs `*\`, `*ORS` and
         `*OUTPUT_RECORD_SEPARATOR`), uses a symbolic `${"..."}` or
-        `*{"..."}` whose name has a backslash, names ORS or interpolates,
-        calls `output_record_separator`, or has a `#!` line with an `-l`
-        switch. A `$\` set in another file or module is not seen.
+        `*{"..."}` whose name has a backslash, names ORS or interpolates a
+        variable (`*{"${class}::foo"}` does not count), calls
+        `output_record_separator`, or has a `#!` line with an `-l` switch.
+        Only a name written as a string, or strings joined with `.`, is
+        checked. Not seen: a `$\` set in another file or module, a name
+        built at run time (`${ chr(92) }`), stash access (`$::{"\\"}`),
+        and a `$\` set in a string `eval`.
 
         Also, `say` passes its newline through `$\`, so a tied handle whose
         `PRINT` ignores `$\` loses the newline. This is a known caveat of
@@ -110,11 +115,20 @@ sub _last_string ($word) {
     return if $string     =~ /\\[Qc]/;
     return unless $string =~ /(?:\A|[^\\])(?:\\\\)*\\n\z/;
 
-    # In `"a$\n"` the `$\` is a variable, not a `$` and a newline.
-    return if $string =~ /(?:\A|[^\\])(?:\\\\)*[\$\@]\\n\z/;
+    # In `"a$\n"` the `$\` is a variable, not a `$` and a newline. `$$` is
+    # the process ID, and `"$$\n"` ends in a newline.
+    return if _ors_before_newline($string);
     return if $string eq q{\n} && @$args > 1;    # `print $x, "\n"`
     return unless $quote->content =~ /\\n.\z/s;
     return $quote;
+}
+
+# Whether the `\n` that ends a string is really `$\` followed by `n`: it
+# follows a run of unescaped `$` other than `$$`.
+sub _ors_before_newline ($string) {
+    my ( $backslashes, $dollars ) = $string =~ /(\\*)(\$+)\\n\z/ or return 0;
+    my $unescaped = length($dollars) - length($backslashes) % 2;
+    return $unescaped > 0 && $unescaped != 2;
 }
 
 sub _is_filehandle ($elem) {
@@ -235,19 +249,31 @@ sub _sets_ors ($doc) {
     return 0;
 }
 
-# Whether a deref block's name may be the output record separator: it
-# holds a string with a backslash or naming ORS, or an interpolating
-# string with a variable in it.
+# Whether a deref block's name may be the output record separator. Only
+# a block that is a string, or strings joined with `.`, counts. It may name
+# ORS when a string has a backslash or names ORS, or when one interpolates
+# a variable, unless the name ends in a literal `}::name`, as in
+# `*{"${class}::foo"}`.
 sub _names_ors ($block) {
-    for my $quote ( @{ $block->find('PPI::Token::Quote') || [] } ) {
-        my $string = $quote->string;
-        return 1 if $string =~ /\\|ORS|OUTPUT_RECORD_SEPARATOR/;
-        return 1
-            if !$quote->isa('PPI::Token::Quote::Single')
-            && !$quote->isa('PPI::Token::Quote::Literal')
-            && $string =~ /[\$\@]/;
+    my @statements = $block->schildren;
+    return 0 unless @statements == 1;
+    my @parts = $statements[0]->schildren;
+    pop @parts if @parts && $parts[-1]->isa('PPI::Token::Structure') && $parts[-1]->content eq ';';
+    return 0 unless @parts % 2;
+    for my $i ( 0 .. $#parts ) {
+        my $part = $parts[$i];
+        return 0
+            unless $i % 2
+            ? $part->isa('PPI::Token::Operator') && $part->content eq '.'
+            : $part->isa('PPI::Token::Quote');
     }
-    return 0;
+
+    my @quotes = grep { $_->isa('PPI::Token::Quote') } @parts;
+    return 1 if grep { $_->string =~ /\\|ORS|OUTPUT_RECORD_SEPARATOR/ } @quotes;
+    my @interpolating
+        = grep { !$_->isa('PPI::Token::Quote::Single') && !$_->isa('PPI::Token::Quote::Literal') } @quotes;
+    return 0 unless grep { $_->string =~ /[\$\@]/ } @interpolating;
+    return $quotes[-1]->string !~ /\}::\w+\z/;
 }
 
 1;
@@ -315,10 +341,11 @@ C<CORE::print>, method calls such as C<< $fh->print >>, and C<< print => >>.
 
 =item *
 
-A string whose final C<\n> follows an unescaped C<$> or C<@> is not
-reported. In C<"a$\n"> the C<$\> is a variable followed by an C<n>, not a
-C<$> and a newline, and dropping the C<\n> would not compile. C<"a\$\n">
-has an escaped dollar and is reported.
+A string whose final C<\n> follows an unescaped C<$> is not reported. In
+C<"a$\n"> the C<$\> is a variable followed by an C<n>, not a C<$> and a
+newline, and dropping the C<\n> would not compile. C<"a\$\n"> has an
+escaped dollar and is reported, as are C<"$$\n"> (the process ID) and
+C<"a@\n">.
 
 =item *
 
@@ -338,8 +365,14 @@ prints C<"x\n">. The violation is still reported, but with no fix, when the
 file mentions C<$\>, C<$OUTPUT_RECORD_SEPARATOR> or C<$ORS> (or the globs
 C<*\>, C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>), uses a symbolic
 C<${"..."}> or C<*{"..."}> whose name has a backslash, names ORS or
-interpolates, calls C<output_record_separator>, or has a C<#!> line with an
-C<-l> switch. A C<$\> set in another file or module is not seen.
+interpolates a variable, calls C<output_record_separator>, or has a C<#!>
+line with an C<-l> switch. Only a name written as a string, or as strings
+joined with C<.>, is checked, and one that ends in a literal C<}::name>,
+as in C<*{"${class}::foo"}>, does not count.
+
+Not seen: a C<$\> set in another file or module, a name built at run time
+(C<${ chr(92) }>, C<${ "main::" . chr(92) }>), stash access
+(C<$main::{ORS}>, C<$::{"\\"}>), and a C<$\> set in a string C<eval>.
 
 =item *
 

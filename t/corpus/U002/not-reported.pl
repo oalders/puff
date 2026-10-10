@@ -26,5 +26,6 @@ print "$\n";
 print "a $\n";
 print qq{cost: 5$\n};
 print "a\\$\n";
-print "a@\n";
+print "a\$$\n";
+print "$$$\n";
 print qq n a\nn;

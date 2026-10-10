@@ -16,3 +16,7 @@ say "even \\\\"; # expect: U002
 say "modifier" if $x; # expect: U002
 say "or" or die; # expect: U002
 say "a\$"; # expect: U002
+say "a@"; # expect: U002
+say "@"; # expect: U002
+say "pid $$"; # expect: U002
+say "$@"; # expect: U002
