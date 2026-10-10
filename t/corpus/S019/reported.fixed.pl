@@ -60,3 +60,9 @@ print "1\n" if $str =~ /a # a comment ends at the newline
 /x;
 print "1\n" if $str =~ /a # a comment ending in a backslash \
     \Q$input\E/x; # expect: S019
+
+# A \L, \U or \F replaces an active one and ends any \Q after it, so the
+# second \E here ends the outer \Q.
+print "1\n" if $str =~ /\Qa\Ub\Lc\E\E\Q$input\E/; # expect: S019
+print "1\n" if $str =~ /\Qa\Fb\Uc\E\E\Q$input\E/; # expect: S019
+print "1\n" if $str =~ /\Ua\Qb\Lc\E\Q$input\E/; # expect: S019

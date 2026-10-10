@@ -8,6 +8,8 @@ my $self = { pattern => 'x', config => { regex => 'y' } };
 print "1\n" if $str =~ /\Q$input\E/;
 print "1\n" if $str =~ /^\Q$input/;
 print "1\n" if $str =~ /\Q\L$input\E$str\E/;
+print "1\n" if $str =~ /\Qa\Ub\Lc\E$input/;
+print "1\n" if $str =~ /\Qa\Ub\Qc\Ld\E$input/;
 
 # Escaped sigils, anchors and punctuation variables.
 print "1\n" if $str =~ /\$input/;

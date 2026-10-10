@@ -34,7 +34,10 @@ sub explanation {
 
         It does not report the replacement side of `s///`, a pattern with
         `'` delimiters (`m'...'`), which does not interpolate, or a
-        variable inside `\Q...\E` (or after a `\Q` with no `\E`). It also
+        variable inside `\Q...\E` (or after a `\Q` with no `\E`). As in
+        Perl, a `\L`, `\U` or `\F` ends an active `\L`, `\U` or `\F` and
+        any `\Q` after it, so in `\Qa\Ub\Lc\E\E$x` the second `\E` ends
+        the first `\Q` and `$x` is reported. It also
         skips some variables on heuristics that guess the value is a
         pattern or not input. The guesses can be wrong, so these skips can
         hide real injection; S019 is not a complete detector:
@@ -58,7 +61,8 @@ sub explanation {
           file) is needed instead. Either way the file must write the name
           nowhere else: any other assignment (`=`, `.=`, `||=`, `//=` and
           the like, in any scope), `local $x`, a `foreach` loop over it, or
-          `$x =~ s///` or `tr///` means it is reported. An assignment
+          `$x =~ s///` or `tr///` means it is reported. A write to
+          `$Pkg::x` or `$::x` counts as a write to `$x`. An assignment
           inside a condition (`if (my $x = qr/a/)`) is not seen, which errs
           towards reporting, and `$x = $opt{x} // qr/.../` is reported;
         - a plain scalar with an all-caps name (`$WS`, `$CRLF`,
@@ -136,10 +140,18 @@ sub check ( $self, $elem, $doc ) {
     return @violations;
 }
 
+# The findings of the last element fixed: fix is called once per violation,
+# and a regex can have many.
+my ( $fixing, %fixing );
+
 sub fix ( $self, $violation, $fix ) {
     my $elem = $violation->element;
-    my ($found)
-        = grep { $_->{line} == $violation->line && $_->{column} == $violation->column } _findings( $elem, $elem->top );
+    unless ( $fixing && refaddr($fixing) == refaddr($elem) ) {
+        %fixing = map { ( "$_->{line}:$_->{column}" => $_ ) } _findings( $elem, $elem->top );
+        $fixing = $elem;
+        weaken($fixing);
+    }
+    my $found = $fixing{ $violation->line . q{:} . $violation->column };
     return 0 unless $found && $found->{fixable};
     my $start = $fix->source->start_of($elem) + $found->{offset};
     $fix->replace_range( $start, $start, '\Q' );
@@ -154,9 +166,14 @@ sub _findings ( $elem, $doc ) {
     my $open    = substr $section->{type}, 0, 1;
     return if $open eq q{'};
 
-    my $pattern = substr $elem->content, $section->{position}, $section->{size};
+    my $content = $elem->content;
+    my $pattern = substr $content, $section->{position}, $section->{size};
     my %mod     = $elem->get_modifiers;
     my $loc     = $elem->location or return;
+
+    # The line and column of offset $at in the token, moved forward from one
+    # variable to the next so that the token is scanned once.
+    my ( $line, $column, $at ) = ( @$loc[ 0, 1 ], 0 );
     my @found;
     for my $var ( _variables( $pattern, $mod{x} ) ) {
         next if $var->{short} =~ $REGEX_NAME;
@@ -168,13 +185,20 @@ sub _findings ( $elem, $doc ) {
             next if $var->{short} =~ $CONSTANT_NAME || _holds_pattern( $elem, $doc, $var->{name} );
         }
         my $offset = $section->{position} + $var->{start};
-        my $before = substr $elem->content, 0, $offset;
-        my $nl     = () = $before =~ /\n/g;
+        my $skip   = substr $content, $at, $offset - $at;
+        if ( my $nl = $skip =~ tr/\n// ) {
+            $line += $nl;
+            $column = length($skip) - rindex $skip, "\n";
+        }
+        else {
+            $column += length $skip;
+        }
+        $at = $offset;
         push @found, {
             text    => $var->{text},
             offset  => $offset,
-            line    => $loc->[0] + $nl,
-            column  => $nl ? length( $before =~ s/.*\n//sr ) + 1                   : $loc->[1] + $offset,
+            line    => $line,
+            column  => $column,
             fixable => $var->{certain} && !$var->{no_fix} && $FIX_DELIM{$open} ? 1 : 0,
             no_fix  => $var->{no_fix},
         };
@@ -189,8 +213,19 @@ sub _variables ( $pattern, $x ) {
     my ( @found, @case, $class, $comment );
     pos($pattern) = 0;
     while ( pos($pattern) < length $pattern ) {
-        if ( $pattern =~ /\G\\([QLUF])/gc ) { push @case, $1; next }
-        if ( $pattern =~ /\G\\E/gc )        { pop @case;      next }
+
+        # As in Perl, a \L, \U or \F ends an active \L, \U or \F and every
+        # escape started after it: in \Q\Ua\Lb\E\E only \Q\L remain to end.
+        if ( $pattern =~ /\G\\([QLUF])/gc ) {
+            my $esc = $1;
+            if ( $esc ne 'Q' ) {
+                my $active = first { $case[$_] ne 'Q' } 0 .. $#case;
+                splice @case, $active if defined $active;
+            }
+            push @case, $esc;
+            next;
+        }
+        if ( $pattern =~ /\G\\E/gc ) { pop @case; next }
 
         # A /x comment ends at a newline, even one after a backslash, which
         # the escape skip below would otherwise swallow.
@@ -323,45 +358,65 @@ sub _holds_pattern ( $elem, $doc, $name ) {
     my $data = _analysis($doc);
     return 0 if $data->{writes}{$name};
     my $loc = $elem->location;
+    my @parents;
+    for ( my $p = $elem->parent ; $p ; $p = $p->parent ) { push @parents, $p }
+    my %enclosing = map { refaddr($_) => 1 } @parents;
+
     if ( my $scopes = $data->{declarations}{"\$$name"} ) {
-        for ( my $p = $elem->parent ; $p ; $p = $p->parent ) {
-            my $decls   = $scopes->{ refaddr $p } or next;
-            my $nearest = first {
-                _before( $_->{elem}->location, $loc ) && !( $_->{statement} && _contains( $_->{statement}, $elem ) )
-                }
-                reverse @$decls;
-            return $data->{qualifying}{ refaddr $nearest->{elem} } ? 1 : 0 if $nearest;
+        for my $p (@parents) {
+            my $decls = $scopes->{ refaddr $p } or next;
+
+            # The latest declaration before $elem, skipping one whose
+            # statement holds $elem: in `my $x = qr/$x/` the regex sees an
+            # earlier $x. Only the statement holding $elem is skipped over.
+            for ( my $i = _count_before( $decls, $loc ) - 1 ; $i >= 0 ; $i-- ) {
+                my $decl = $decls->[$i];
+                next if $decl->{statement} && $enclosing{ refaddr $decl->{statement} };
+                return $data->{qualifying}{ refaddr $decl->{elem} } ? 1 : 0;
+            }
         }
     }
 
+    # A qualifying assignment in a scope enclosing $elem, before it. The
+    # earliest one in each scope is enough: if it holds $elem, the others
+    # come after $elem.
     my $assigned = $data->{assigned}{$name} or return 0;
-    my %enclosing;
-    for ( my $p = $elem->parent ; $p ; $p = $p->parent ) { $enclosing{ refaddr $p } = 1 }
-    for my $stmt (@$assigned) {
-        next if $enclosing{ refaddr $stmt } || !$enclosing{ refaddr $stmt->parent };
-        return 1 if _before( $stmt->location, $loc );
+    for my $p (@parents) {
+        my $stmts = $assigned->{ refaddr $p } or next;
+        my $first = $stmts->[0];
+        return 1 if !$enclosing{ refaddr $first->{elem} } && _before( $first->{at}, $loc );
     }
     return 0;
+}
+
+# The number of entries in $list, a list of { at } in document order, whose
+# location is before $loc.
+sub _count_before ( $list, $loc ) {
+    my ( $lo, $hi ) = ( 0, scalar @$list );
+    while ( $lo < $hi ) {
+        my $mid = int( ( $lo + $hi ) / 2 );
+        if   ( _before( $list->[$mid]{at}, $loc ) ) { $lo = $mid + 1 }
+        else                                        { $hi = $mid }
+    }
+    return $lo;
 }
 
 sub _before ( $at, $loc ) {
     return $at->[0] < $loc->[0] || ( $at->[0] == $loc->[0] && $at->[1] < $loc->[1] );
 }
 
-sub _contains ( $outer, $elem ) {
-    for ( my $el = $elem ; $el ; $el = $el->parent ) {
-        return 1 if refaddr($el) == refaddr($outer);
-    }
-    return 0;
-}
-
 # One pass over the document, cached until a different document is passed:
 # - declarations: by symbol ('$x'), then by the refaddr of the block,
 #   document or compound statement it belongs to, the declarations in
-#   document order (see Puff::LexicalScopes::declarations);
-# - assigned: by name, the qualifying assignment statements;
+#   document order as { elem, statement, at } (see
+#   Puff::LexicalScopes::declarations), at being the location;
+# - assigned: by name, then by the refaddr of the enclosing block or
+#   document, the qualifying assignment statements in document order as
+#   { elem, at };
 # - qualifying: the refaddrs of the symbols those statements assign;
-# - writes: by name, the number of other writes.
+# - writes: by name, the number of other writes. A write to a qualified name
+#   ($main::x, $::x) also counts for its last component, which may be an
+#   `our` variable.
 sub _analysis ($doc) {
     return $cached if $cached_doc && refaddr($cached_doc) == refaddr($doc);
     $cached_doc = $doc;
@@ -369,16 +424,18 @@ sub _analysis ($doc) {
     my %data = map { $_ => {} } qw( declarations assigned qualifying writes );
     for my $token ( $doc->tokens ) {
         for my $decl ( declarations($token) ) {
-            push @{ $data{declarations}{ $decl->{symbol} }{ refaddr $decl->{scope} } }, $decl;
+            push @{ $data{declarations}{ $decl->{symbol} }{ refaddr $decl->{scope} } },
+                { elem => $decl->{elem}, statement => $decl->{statement}, at => $decl->{elem}->location };
         }
         next unless $token->isa('PPI::Token::Symbol') && $token->content =~ /\A\$((?:::)?\w+(?:::\w+)*)\z/;
         my $name = $1;
         if ( my $stmt = _pattern_assignment($token) ) {
-            push @{ $data{assigned}{$name} }, $stmt;
+            push @{ $data{assigned}{$name}{ refaddr $stmt->parent } }, { elem => $stmt, at => $stmt->location };
             $data{qualifying}{ refaddr $token } = 1;
         }
         elsif ( _is_write($token) ) {
             $data{writes}{$name}++;
+            $data{writes}{$1}++ if $name =~ /::(\w+)\z/;
         }
     }
     return $cached = \%data;
@@ -476,7 +533,9 @@ resulting pattern is vulnerable to it (CWE-1333). The violation is reported
 at the variable, so a regex with two such variables has two.
 
 The pattern is scanned the way Perl interpolates it: backslash escapes,
-C<\Q>, C<\L>, C<\U> and C<\F> (each ended by its own C<\E>), C<$> as an
+C<\Q>, C<\L>, C<\U> and C<\F> (each ended by its own C<\E>, except that a
+C<\L>, C<\U> or C<\F> ends an active one and any C<\Q> after it, as in
+Perl), C<$> as an
 anchor before C<)>, C<|>, whitespace or the end, code blocks such as
 C<(?{ ... })>, character classes, C<#> comments under C</x>, and a C<{...}>
 after a variable that is a quantifier rather than a subscript. C<${x}> ends
@@ -520,7 +579,9 @@ In both cases the name must have no other write anywhere in the file: any
 assignment operator after it (C<=>, C<.=>, C<||=>, C<//=> and so on, alone
 or in a list on the left), C<local $x>, a C<foreach> loop variable of that
 name, or C<$x =~ s///> or C<tr///> (without C</r>). This is by name, not by
-scope, so a same-named variable written in another sub also counts. Writes
+scope, so a same-named variable written in another sub also counts, and a
+write to a package-qualified name (C<$main::x>, C<$::x>) counts for the
+last component of the name. Writes
 the rule does not recognise (C<chomp $x>, an alias through C<@_> or a
 reference) are missed. An assignment inside a condition
 (C<if (my $x = qr/a/)>) is not seen as qualifying, which errs towards
