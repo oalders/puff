@@ -72,7 +72,9 @@ sub _read_file ( $class, $self, $file ) {
 
     # TOML gives characters; paths are bytes, like the config file's own
     # path and the paths is_excluded is given.
-    push @{ $self->{exclude} }, map { Encode::encode_utf8($_) } @{ $list->('exclude') } if exists $data->{exclude};
+    if ( exists $data->{exclude} ) {
+        push @{ $self->{exclude} }, map { Encode::encode_utf8($_) } @{ $list->('exclude') };
+    }
     if ( exists $data->{'rule-paths'} ) {
         my $base = $file->absolute->parent;
         $self->{rule_paths} = [
@@ -169,6 +171,9 @@ key and file.
 Defaults: C<select> C<["S", "B"]>, C<extend-select> and C<ignore> empty,
 C<exclude> C</local /blib /.build /.git>, C<unsafe-fixes> false. Entries in the
 file's C<exclude> are added to the default list (the defaults always apply).
+Entries are UTF-8 encoded on load, so C<exclude> and L</is_excluded> work on
+byte strings, like filesystem paths. A character string pushed onto
+C<< ->exclude >> would silently match nothing.
 Relative C<rule-paths> are resolved against the config file's directory;
 absolute ones are used as they are. C<unsafe-fixes> must be a TOML boolean.
 C<[rules.CODE]> tables become C<rule_options>.

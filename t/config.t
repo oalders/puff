@@ -111,6 +111,15 @@ ok( !$c->is_excluded('xt/corpus/x.pl'), 'prefix not mid-segment' );
 ok( !$c->is_excluded('t/corpusx/x.pl'), 'prefix at segment boundary' );
 ok( !$c->is_excluded('a/t/corpus/x.pl'), 'prefix anchored at start' );
 
+subtest 'non-ASCII exclude entries are UTF-8 bytes' => sub {
+    my $proj = $tmp->child('utf8');
+    $proj->mkpath;
+    $proj->child('.puff.toml')->spew_utf8(qq{exclude = ["caf\x{e9}"]\n});
+    my $c = Puff::Config->load( path => $proj->child('.puff.toml')->stringify, cli => {} );
+    is( $c->exclude->[-1], "caf\xc3\xa9", 'entry is encoded to UTF-8 bytes' );
+    ok( $c->is_excluded("a/caf\xc3\xa9/x.pm"), 'matches a byte-string path' );
+};
+
 subtest 'root is the config file directory' => sub {
     my $proj = $tmp->child('proj');
     $proj->child('sub')->mkpath;
