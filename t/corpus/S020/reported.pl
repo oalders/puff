@@ -169,3 +169,16 @@ $c_style->timeout(5);
 # A setter followed by `||` or `or` is not counted.
 my $or_die = LWP::UserAgent->new;    # expect: S020
 $or_die->timeout(10) || die 'no timeout';
+
+# An assignment later in the setter's own statement voids the setter.
+my $same_stmt = LWP::UserAgent->new;    # expect: S020
+$same_stmt->timeout(10), $same_stmt = HTTP::Tiny->new( timeout => 5 );
+
+# `local` in an argument list redeclares the name.
+our $local_arg = LWP::UserAgent->new;    # expect: S020
+print( local $local_arg );
+$local_arg->timeout(10);
+
+# A setter followed by `? ... : ...` is not counted.
+my $ternary = LWP::UserAgent->new;    # expect: S020
+$ternary->timeout(10) ? 1 : 0;

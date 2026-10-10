@@ -100,9 +100,9 @@ sub explanation {
         onto the constructor (`Mojo::UserAgent->new->request_timeout(10)`)
         or called by a later statement in the same block that starts
         with a setter chain on the client's variable: `$ua->timeout(10);`,
-        optionally followed by `, ...`, `&& ...` or `and ...` (not `|| ...`
-        or `or ...`). The setters are `timeout` for LWP::UserAgent,
-        WWW::Mechanize and HTTP::Tiny, and `request_timeout` or
+        optionally followed by `, ...`, `&& ...` or `and ...` (not `|| ...`,
+        `or ...` or `? ... : ...`). The setters are `timeout` for
+        LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and `request_timeout` or
         `inactivity_timeout` for Mojo::UserAgent (`connect_timeout` is
         checked but not enough); Furl has none. The client must be
         assigned to a plain scalar by the whole statement:
@@ -116,13 +116,13 @@ sub explanation {
         (`my $d = $ua; $d->timeout(10);`), or comes after the variable is
         redeclared (`my`, `our`, `state`, `local`, or a `for` loop
         variable) or assigned again (with `=`, `||=`, `//=` or any other
-        assignment operator). A redeclaration or assignment is seen
-        anywhere in a statement of the same block, argument lists and
-        conditions included (`foo($ua = Other->new);`,
+        assignment operator, even later in the same statement). A
+        redeclaration or assignment is seen anywhere in a statement of
+        the same block, argument lists and conditions included (`foo($ua = Other->new);`,
         `while (my $ua = ...)`), but not inside a nested block
         (`if ($x) { $ua = Other->new }`), where the client may stay the
         same on some paths, nor in `foreach my ($k, $v) (...)`.
-
+        `local $ua->{timeout} = 5;` does not redeclare `$ua`.
 
         Every setter value is checked like a constructor value, even when
         the constructor already sets a good timeout, and is reported at
@@ -430,10 +430,15 @@ sub _build_index ($parent) {
     my $i = 0;
     for my $stmt ( $parent->schildren ) {
         $position{ refaddr $stmt } = ++$i;
-        if ( my ( $symbol, $setters ) = _setter_statement($stmt) ) {
+        my @assigned = _assigned_names($stmt);
+        my ( $symbol, $setters ) = _setter_statement($stmt);
+
+        # A setter does not count when its own statement assigns the name
+        # again: `$ua->timeout(10), $ua = Other->new;`.
+        if ( $setters && !grep { $_ eq $symbol } @assigned ) {
             push @{ $uses{$symbol} }, [ $i, $setters ];
         }
-        for my $symbol ( _assigned_names($stmt) ) {
+        for my $symbol (@assigned) {
             push @{ $uses{$symbol} }, [ $i, undef ];
             $slot{$symbol}{$i} = $#{ $uses{$symbol} };
         }
@@ -462,10 +467,15 @@ sub _setter_statement ($stmt) {
 # The names of the scalars that $stmt declares (`my`, `our`, `state`,
 # `local`, a `for` loop variable) or assigns with an assignment operator,
 # anywhere in its own expression: argument lists and conditions included,
-# nested blocks not. One pass over the statement.
+# nested blocks not. One pass over the statement. Only a bare scalar counts,
+# so `local $ua->{timeout} = 5;` and `($h{$k}, $b) = ...` leave `$ua` and
+# `$k` alone.
 sub _assigned_names ($stmt) {
     my %names;
-    if ( $stmt->isa('PPI::Statement::Variable') ) {
+
+    # PPI's variables() also returns `$ua` for `local $ua->{timeout}`, so
+    # `local` is left to the word check below.
+    if ( $stmt->isa('PPI::Statement::Variable') && $stmt->type ne 'local' ) {
         $names{$_} = 1 for $stmt->variables;
     }
     if ( my $var = _loop_variable($stmt) ) {
@@ -476,17 +486,31 @@ sub _assigned_names ($stmt) {
         if ( $el->isa('PPI::Node') ) {
             push @todo, $el->schildren unless $el->isa('PPI::Structure::Block');
             next unless $el->isa('PPI::Structure::List') && _is_assign( $el->snext_sibling );
-            $names{ $_->symbol } = 1 for grep { _is_scalar($_) } @{ $el->find('PPI::Token::Symbol') || [] };
+            $names{$_} = 1 for _named_scalars($el);
             next;
         }
         if ( $el->isa('PPI::Token::Word') && ( $DECLARATOR{ $el->content } || $el->content eq 'local' ) ) {
-            my $var = $el->snext_sibling;
-            $names{ $var->symbol } = 1 if _is_scalar($var);
+            $names{$_} = 1 for _named_scalars( $el->snext_sibling );
             next;
         }
         $names{ $el->symbol } = 1 if _is_scalar($el) && _is_assign( $el->snext_sibling );
     }
     return keys %names;
+}
+
+# The names of $elem when it is a bare scalar, or of the bare scalars at
+# the top level of the list $elem (nested lists included, subscripts not).
+sub _named_scalars ($elem) {
+    return $elem->symbol if _is_bare_scalar($elem);
+    return unless $elem && $elem->isa('PPI::Structure::List');
+    return map { _named_scalars($_) } map { $_->schildren } $elem->schildren;
+}
+
+# A scalar not followed by `->` or a subscript.
+sub _is_bare_scalar ($elem) {
+    return unless _is_scalar($elem);
+    my $next = $elem->snext_sibling;
+    return !( $next && ( $next->isa('PPI::Structure::Subscript') || _is_op( $next, '->' ) ) );
 }
 
 # The scalar a `for`/`foreach` loop statement sets, or undef.
@@ -594,7 +618,7 @@ block (or at the same file level) that starts with a setter chain on that
 variable: C<< $ua->timeout(10); >>, or the same followed by C<, ...>,
 C<&& ...> or C<and ...>, as in C<< $ua->timeout(10), $ua->get($url); >>,
 with no statement modifier anywhere in the statement. A setter followed
-by C<|| ...> or C<or ...> does not count, which may report a client that
+by C<|| ...>, C<or ...> or C<? ... : ...> does not count, which may report a client that
 has a timeout. The setters are:
 
 =over
@@ -632,8 +656,8 @@ the earlier client's setters (the last two conservatively, since their
 C<$ua> is a new variable that ends with the loop). One inside a nested
 block (C<< if ($x) { $ua = Other->new } >>) is not seen, since the client
 may be the same one on some paths, and neither is
-C<< foreach my ($k, $v) (...) >>.
-
+C<< foreach my ($k, $v) (...) >>. Only the variable itself counts:
+C<< local $ua->{timeout} = 5; >> does not redeclare C<$ua>.
 
 Every setter value is checked like a constructor value, even when the
 constructor already sets a good timeout

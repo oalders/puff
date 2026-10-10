@@ -654,9 +654,8 @@ A missing timeout is not reported when a timeout setter is chained onto the
 constructor (`Mojo::UserAgent->new->request_timeout(10)`) or is called by a
 later statement in the same block that starts with a setter call on the
 variable (`my $ua = LWP::UserAgent->new; $ua->timeout(10);`), optionally
-followed by `, ...`, `&& ...` or `and ...` (not `|| ...` or `or ...`).
-The setters
-are `timeout` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and
+followed by `, ...`, `&& ...` or `and ...` (not `|| ...`, `or ...` or
+`? ... : ...`). The setters are `timeout` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and
 `request_timeout` or `inactivity_timeout` for Mojo::UserAgent
 (`connect_timeout` is checked but not enough); Furl and Furl::HTTP have
 none. The client must be assigned to a plain scalar by the whole statement:
@@ -666,16 +665,16 @@ none. The client must be assigned to a plain scalar by the whole statement:
 loop or condition, one with a statement modifier (`$ua->timeout(10) if $x;`,
 also after `, ...`), one before the constructor, one after the name is
 declared again (`my`, `our`, `state`, `local` or a `for` loop variable) or
-assigned again (`=`, `||=`, `//=` or any other assignment operator), and one
-on an alias (`my $d = $ua; $d->timeout(10);`) do not count. A redeclaration
+assigned again (`=`, `||=`, `//=` or any other assignment operator, even
+later in the setter's own statement), and one on an alias (`my $d = $ua; $d->timeout(10);`) do not count. A redeclaration
 or assignment is seen anywhere in a statement of the same block, argument
 lists and conditions included (`foo($ua = Other->new);`,
 `while (my $ua = ...)`), but not inside a nested block
 (`if ($x) { $ua = Other->new }`), where the client may stay the same on
-some paths, nor in `foreach my ($k, $v) (...)`. Every setter value is
+some paths, nor in `foreach my ($k, $v) (...)`.
+`local $ua->{timeout} = 5;` does not redeclare `$ua`. Every setter value is
 checked like a constructor value, even when the constructor already has a
 good timeout
-
 (`->new(timeout => 5); $ua->timeout(0);` is reported), and the violation is
 reported at the constructor. A client stored elsewhere (`$self->{ua} = ...`)
 or used straight away (`LWP::UserAgent->new->get($url)`) needs the timeout

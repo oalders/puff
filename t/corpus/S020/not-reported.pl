@@ -101,3 +101,17 @@ $relocal->timeout(10);
 my $nested_again = LWP::UserAgent->new;
 if ($arg) { $nested_again = LWP::UserAgent->new( timeout => 5 ) }
 $nested_again->timeout(10);
+
+# Localizing an element through the client is not a redeclaration.
+our $local_elem = LWP::UserAgent->new;
+local $local_elem->{timeout} = 5;
+local $local_elem->[0];
+local $$local_elem{agent} = 'x';
+$local_elem->timeout(10);
+
+# A list assignment names only its top-level scalars, not those in a
+# subscript.
+my $subscript = LWP::UserAgent->new;
+my ( %seen, $other );
+( $seen{$subscript}, $other ) = ( 1, 2 );
+$subscript->timeout(10);
