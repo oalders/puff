@@ -106,10 +106,10 @@ sub _collect_fixes ( $self, $src, $violations ) {
 }
 
 sub _fixable_in_mode ( $self, $v ) {
-    return 0 unless $v->fixable && $v->rule;
 
-    # A rule with no fix never gets one, whatever its violations claim.
-    return 0 if $v->rule->fix_safety eq 'none';
+    # fixable is 0 and fix_safety none for a rule with no fix (see
+    # Puff::Violation); any safety but safe or unsafe is never fixed.
+    return 0 unless $v->fixable && $v->rule;
     my $safety = $v->fix_safety;
     my $mode   = $self->{fix_mode};
     return 1 if $safety eq 'safe'   && ( $mode eq 'safe' || $mode eq 'unsafe' );

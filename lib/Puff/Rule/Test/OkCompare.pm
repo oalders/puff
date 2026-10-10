@@ -125,18 +125,25 @@ sub fix ( $self, $violation, $fix ) {
     return 1;
 }
 
-my %EXPR_BLOCK = map { $_ => 1 } qw( map grep sort do );
+# Functions whose block is an expression: core's map, grep, sort and do,
+# and List::Util's functions that take a block. A word is matched by name
+# only, so a same-named function from elsewhere counts too.
+my %EXPR_BLOCK
+    = map { $_ => 1 } qw( map grep sort do first any all none notall reduce reductions pairmap pairgrep pairfirst );
 
 # True for a statement such as `ok($x eq $y), 'name';`: the name never
 # reaches ok(), so the call is likely a bug in the test, not something to
-# rewrite. Only a plain statement that starts with ok counts. Inside a list
-# (`(ok($x eq $y), 'g')`), after `return` or as the value of a map, grep,
-# sort or do block, the comma separates list items and the fix is fine.
+# rewrite. Only a plain statement that starts with ok counts; PPI parses a
+# leading label as a statement of its own, so `LBL: ok(...), 'name';` counts
+# too. A statement modifier (`ok(...), 'name' for @list;`) is still a plain
+# statement. Inside a list (`(ok($x eq $y), 'g')`), after `return` or as the
+# value of an expression block (see %EXPR_BLOCK), the comma separates list
+# items and the fix is fine.
 sub _name_outside_call ($elem) {
     my $stmt = $elem->parent;
     return 0 unless ref $stmt eq 'PPI::Statement' && $stmt->schild(0) == $elem;
     my $block = $stmt->parent;
-    if ( $block && $block->isa('PPI::Structure::Block') ) {
+    if ( $block && $block->isa('PPI::Structure::Block') && !$block->parent->isa('PPI::Statement::Sub') ) {
         my $word = $block->sprevious_sibling;
         return 0 if $word && $word->isa('PPI::Token::Word') && $EXPR_BLOCK{ $word->content };
     }
