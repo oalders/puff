@@ -3,7 +3,7 @@ use warnings;
 
 sub foo { return @_ }
 sub _bar { return 1 }
-package Foo { sub bar { return 2 } }
+package Foo { sub bar { return 2 } sub any { return 3 } }
 package main;
 
 my $x = 1;
@@ -11,6 +11,7 @@ my $x = 1;
 my $y = &foo( $x, 2 ); # expect: Q004
 my @z = ( &foo(1), &_bar() ); # expect: Q004 Q004
 &Foo::bar(1); # expect: Q004
+&Foo::any(1); # expect: Q004
 &::foo(3); # expect: Q004
 &foo (4); # expect: Q004
 my $h = { a => &foo(5) }; # expect: Q004
