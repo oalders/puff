@@ -38,7 +38,11 @@ is(
                 . ' (request_timeout defaults to no limit); set one of at most 60s (CWE-400)',
             0
         ],
-        [ 3, 9, 'HTTP::Tiny timeout => 0 makes every read and write give up at once (CWE-400)', 0 ],
+        [
+            3, 9,
+            'HTTP::Tiny timeout => 0 polls instead of waiting, so a read or write fails unless the socket is already ready (CWE-400)',
+            0
+        ],
         [ 4, 9, 'Furl timeout => 61 is longer than max-timeout (60s) (CWE-400)', 0 ],
         [ 5, 9, 'LWP::UserAgent ->timeout(90) is longer than max-timeout (60s) (CWE-400)', 0 ],
     ],
@@ -125,6 +129,7 @@ is(
     };
     local $CountFetch::fetches = 0;
     is( violations($text), [], 'many clients reusing one name' );
+    cmp_ok( $CountFetch::fetches, '>', 0, 'the use lists were tied and read' );
     cmp_ok( $CountFetch::fetches, '<', 5 * $clients, 'the uses of a name are not rescanned per client' );
 }
 

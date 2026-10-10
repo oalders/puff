@@ -135,3 +135,37 @@ $alias->timeout(5);
 my $quoted = 'LWP::UserAgent'->new;    # expect: S020
 my $colons = LWP::UserAgent::->new( timeout => 0 );    # expect: S020
 my $q_tiny = q{HTTP::Tiny}->new;    # expect: S020
+my $q_paren = q(LWP::UserAgent)->new;    # expect: S020
+
+# A statement modifier after `, ...`, `&& ...` or `and ...` makes the
+# setter conditional.
+my $mod_comma = LWP::UserAgent->new;    # expect: S020
+$mod_comma->timeout(10), print "x" if $global;
+my $mod_and = LWP::UserAgent->new;    # expect: S020
+$mod_and->timeout(10) && print "x" unless $global;
+my $mod_for = HTTP::Tiny->new;    # expect: S020
+$mod_for->timeout(10), 1 for ();
+my $mod_while = HTTP::Tiny->new;    # expect: S020
+$mod_while->timeout(10) and print "x" while 0;
+
+# An assignment inside an argument list or a condition assigns the name
+# again.
+my $in_args = LWP::UserAgent->new;    # expect: S020
+say( $in_args = HTTP::Tiny->new( timeout => 5 ) );
+$in_args->timeout(5);
+my $in_cond = LWP::UserAgent->new;    # expect: S020
+if ( ( $in_cond = HTTP::Tiny->new( timeout => 5 ) ) ) { }
+$in_cond->timeout(5);
+my $in_list = LWP::UserAgent->new;    # expect: S020
+my @pair = ( 1, ( $in_list ) = HTTP::Tiny->new( timeout => 5 ) );
+$in_list->timeout(5);
+my $in_while = LWP::UserAgent->new;    # expect: S020
+while ( my $in_while = shift @pair ) { }
+$in_while->timeout(5);
+my $c_style = LWP::UserAgent->new;    # expect: S020
+for ( my $c_style = 0 ; $c_style < 1 ; $c_style++ ) { }
+$c_style->timeout(5);
+
+# A setter followed by `||` or `or` is not counted.
+my $or_die = LWP::UserAgent->new;    # expect: S020
+$or_die->timeout(10) || die 'no timeout';

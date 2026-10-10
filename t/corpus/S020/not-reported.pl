@@ -90,3 +90,14 @@ my $q_lwp   = 'LWP::UserAgent'->new( timeout => 10 );
 my $q_mojo  = Mojo::UserAgent::->new->request_timeout(10);
 my $q_later = 'HTTP::Tiny'->new;
 $q_later->timeout(10);
+
+# After local, a new client with its own setter.
+our $relocal = LWP::UserAgent->new( timeout => 5 );
+local $relocal;
+$relocal = LWP::UserAgent->new;
+$relocal->timeout(10);
+
+# An assignment in a nested block is not seen, so the setter still counts.
+my $nested_again = LWP::UserAgent->new;
+if ($arg) { $nested_again = LWP::UserAgent->new( timeout => 5 ) }
+$nested_again->timeout(10);
