@@ -16,6 +16,8 @@ sub fix_safety  {'none'}
 sub options     { {} }
 sub cwe         { () }
 
+sub explicit_select {0}
+
 sub check ( $self, $elem, $doc )      {return}
 sub fix   ( $self, $violation, $fix ) { return 0 }
 
@@ -91,7 +93,7 @@ per-file data in the object.
 
 =head1 METHODS TO OVERRIDE
 
-The first six are class-level declarations and take no arguments. Define
+The first seven are class-level declarations and take no arguments. Define
 them as constants (C<< sub code {'X001'} >>).
 
 =head2 code
@@ -131,6 +133,14 @@ change what the program does.
 The CWE (Common Weakness Enumeration, L<https://cwe.mitre.org/>) ids this
 rule detects, as a list of numbers: C<sub cwe { ( 78, 73 ) }>. C<puff rule>
 prints them. Default: an empty list.
+
+=head2 explicit_select
+
+True for a rule that a prefix does not select: it is enabled only when
+C<select> or C<extend-select> names its exact code, or C<ALL>. Use it for a
+rule in a default-on prefix (C<S> or C<B>) that should stay off by default,
+such as one that reports code which is often written that way on purpose.
+Default 0: any prefix of the code selects the rule.
 
 =head2 options
 
