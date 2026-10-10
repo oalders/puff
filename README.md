@@ -898,8 +898,8 @@ an enclosing block. A file with `no feature 'say'` (or a bundle, `:all`, or
 no arguments) is skipped. `print $x, "\n"`, single-quoted strings, heredocs
 and expressions such as `"a\n" x 3` are not reported. Because `say` sets
 `$\` to `"\n"`, no fix is offered when the file mentions `$\`, `$ORS`,
-`$OUTPUT_RECORD_SEPARATOR` or `output_record_separator`, or its `#!` line
-has `-l`.
+`$OUTPUT_RECORD_SEPARATOR` or `output_record_separator`, uses a symbolic
+`${...}` or `*{...}` that may name `$\`, or its `#!` line has `-l`.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
