@@ -1015,14 +1015,13 @@ enables the `X` rules, because only `S` and `B` are enabled by default:
 puff loads every `.pm` file under `rule-paths` and treats each package that
 inherits from `Puff::Rule` as a rule. A code must be letters followed by
 three digits and must be unique. `P001` is reserved, and so is any code
-starting with `ALL`, because `ALL` selects every rule.
+starting with `ALL`, because `ALL` selects every rule. A rule can also give
+a single violation its own `fix_safety` (`safe` or `unsafe`) when its fixes
+are not all equally safe. That `safe` is the rule author's claim, and
+`--fix` trusts it. Rules from `rule-paths` already run arbitrary Perl in
+puff's process, so this grants no new privilege.
 
-A rule can also give a single violation its own `fix_safety` (`safe` or
-`unsafe`) when its fixes are not all equally safe. That `safe` is the rule
-author's claim, and `--fix` trusts it. Rules from `rule-paths` already run
-arbitrary Perl in puff's process, so this grants no new privilege.
-
-Then:
+With that config, `puff rules` lists the new rule:
 
     $ puff rules
     S001   unsafe  rand/srand is not cryptographically secure

@@ -107,6 +107,9 @@ sub _collect_fixes ( $self, $src, $violations ) {
 
 sub _fixable_in_mode ( $self, $v ) {
     return 0 unless $v->fixable && $v->rule;
+
+    # A rule with no fix never gets one, whatever its violations claim.
+    return 0 if $v->rule->fix_safety eq 'none';
     my $safety = $v->fix_safety;
     my $mode   = $self->{fix_mode};
     return 1 if $safety eq 'safe'   && ( $mode eq 'safe' || $mode eq 'unsafe' );
@@ -175,6 +178,7 @@ __END__
 C<fix_mode> is C<none>, C<safe> (apply fixes of violations whose
 C<fix_safety> is C<safe>) or C<unsafe> (C<safe> and C<unsafe> fixes). A
 violation's C<fix_safety> is its rule's unless the rule set one for it.
+A violation of a rule whose C<fix_safety> is C<none> is never fixed.
 
 C<process_source> parses the text with PPI, runs each rule's C<check> on the
 elements matching its C<applies_to>, drops suppressed violations and adds a

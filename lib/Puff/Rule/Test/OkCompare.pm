@@ -61,9 +61,11 @@ sub explanation {
         assignment), when there is more than one comparison, when an operand
         has a bareword that could be a list operator (`ok(foo $x eq 'y')`),
         when the file defines its own `ok`, `is` or `isnt`, or for a method
-        call such as `$tb->ok(...)`. It is also not reported when the closing
-        parenthesis is followed by a comma, as in `ok($x eq $y), 'name'`: the
-        name never reaches `ok`, which is likely a bug in the test.
+        call such as `$tb->ok(...)`. It is also not reported for a statement
+        such as `ok($x eq $y), 'name';`, where a comma follows the closing
+        parenthesis: the name never reaches `ok`, which is likely a bug in
+        the test. Inside a list, as in `(ok($x eq $y), 'g')`, the comma just
+        separates items, so that call is reported.
 
         The fix rewrites `ok(A eq B, ...)` as `is(A, B, ...)` and
         `ok(A ne B, ...)` as `isnt(A, B, ...)`. Changing `eq` to Test::More's
@@ -91,13 +93,7 @@ sub check ( $self, $elem, $doc ) {
     my $facts = $self->_doc_facts($doc);
     return if $facts->{local}{ok};
 
-    # `ok($x eq $y), 'name'`: the name never reaches ok(), so the call is
-    # likely a bug in the test, not something to rewrite.
-    my $list = $elem->snext_sibling;
-    if ( $list && $list->isa('PPI::Structure::List') ) {
-        my $after = $list->snext_sibling;
-        return if $after && $after->isa('PPI::Token::Operator') && $after->content =~ /\A(?:,|=>)\z/;
-    }
+    return if _name_outside_call($elem);
 
     my $args  = call_args($elem);
     my $parts = _split_compare( $args->[0] // [] ) or return;
@@ -127,6 +123,27 @@ sub fix ( $self, $violation, $fix ) {
     $fix->replace( $elem, $FUNC{ $parts->{op}->content } );
     $fix->replace_range( $from, $to, ', ' );
     return 1;
+}
+
+my %EXPR_BLOCK = map { $_ => 1 } qw( map grep sort do );
+
+# True for a statement such as `ok($x eq $y), 'name';`: the name never
+# reaches ok(), so the call is likely a bug in the test, not something to
+# rewrite. Only a plain statement that starts with ok counts. Inside a list
+# (`(ok($x eq $y), 'g')`), after `return` or as the value of a map, grep,
+# sort or do block, the comma separates list items and the fix is fine.
+sub _name_outside_call ($elem) {
+    my $stmt = $elem->parent;
+    return 0 unless ref $stmt eq 'PPI::Statement' && $stmt->schild(0) == $elem;
+    my $block = $stmt->parent;
+    if ( $block && $block->isa('PPI::Structure::Block') ) {
+        my $word = $block->sprevious_sibling;
+        return 0 if $word && $word->isa('PPI::Token::Word') && $EXPR_BLOCK{ $word->content };
+    }
+    my $list = $elem->snext_sibling;
+    return 0 unless $list && $list->isa('PPI::Structure::List');
+    my $after = $list->snext_sibling;
+    return $after && $after->isa('PPI::Token::Operator') && $after->content =~ /\A(?:,|=>)\z/ ? 1 : 0;
 }
 
 # { lhs => [...], op => $token, rhs => [...] } when the elements are exactly
