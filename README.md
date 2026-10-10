@@ -75,7 +75,7 @@ To see which rules fire most and which of them can be fixed, use
 | `--diff` | Print the fixes as a unified diff and write nothing. Wins over `--fix`. |
 | `--output-format text\|json\|jsonl` | Output format; default `text`. `jsonl` streams JSON Lines (see below). |
 | `--show-files` | List the files that would be checked, one per line, and check nothing. Plain paths, and `--statistics` does not apply, whatever `--output-format` says. |
-| `--statistics` | Print one line per rule instead of one per violation: the count, the fix marker, the rule's summary, and `(N fixable)` when only some can be fixed. Most violations first. |
+| `--statistics` | Print one line per rule instead of one per violation: the count, the fix marker, the rule's summary, and `(N fixable)` when only some can be fixed. Most violations first. Only with `--output-format text` (the default); with `json` or `jsonl` it is a usage error. |
 | `--config PATH` | Read this config file instead of `./.puff.toml`. |
 | `--no-config` | Ignore config files. |
 

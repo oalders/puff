@@ -338,6 +338,44 @@ subtest 'check --output-format jsonl: a run that dies still ends with done' => s
     is( $events[-1], { type => 'done', exit_code => 2, error => 'runner exploded' }, 'done has exit code 2 and the error' );
 };
 
+subtest 'check --output-format jsonl: a run that dies before finding files is just done' => sub {
+    my $dir  = project( 'a.pl' => 'S001/basic.pl' );
+    my $code = <<~'END';
+        use Puff::Runner;
+        no warnings 'redefine';
+        *Puff::Runner::files = sub { die "cannot list files\n" };
+        do shift;
+        die $@;
+        END
+    my ( $out, $err, $exit ) = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl' );
+    is( $exit, 2, 'exit 2' );
+    like( $err, qr/^cannot list files$/m, 'error on STDERR' );
+    is( [ jsonl($out) ], [ { type => 'done', exit_code => 2, error => 'cannot list files' } ], 'no start: just done with the error' );
+};
+
+subtest 'output that cannot be written exits 2' => sub {
+    plan skip_all => '/dev/full is not available' unless -c '/dev/full' && -w _;
+    my $dir = project(%FILES);
+
+    # Over 64KB of output in every format, so a write fails before the final
+    # flush; the long name keeps the text output big without many violations.
+    $dir->child( ( q{x} x 150 ) . q{.pl} )->spew_raw( qq{rand;\n} x 300 );
+    for my $format (qw( text json jsonl )) {
+        my $err = path( $dir, '..', 'stderr.txt' );
+        my $pid = fork // die "fork: $!";
+        if ( !$pid ) {
+            chdir $dir                    or die "chdir $dir: $!";
+            open STDOUT, '>', '/dev/full' or die "/dev/full: $!";
+            open STDERR, '>', "$err"      or die "$err: $!";
+            exec @PERL, $PUFF, 'check', '--output-format', $format, q{--select}, q{S001};
+            die "exec: $!";
+        }
+        waitpid $pid, 0;
+        is( $? >> 8, 2, "$format: exit 2" );
+        like( $err->slurp_utf8, qr/^puff: cannot write output: /m, "$format: says why" );
+    }
+};
+
 subtest 'rules and rule' => sub {
     my $dir = project();
     my ( $out, $err, $exit ) = puff( $dir, 'rules' );
@@ -456,6 +494,17 @@ subtest 'check --statistics' => sub {
     like( $out, qr{^Found \d+ violations \(checked 4 files\)\.$}m, 'summary still printed' );
     my @counts = $out =~ /^\s*(\d+)  [A-Z]\d{3} /mg;
     is( \@counts, [ sort { $b <=> $a } @counts ], 'most violations first' );
+
+    for my $format (qw( json jsonl )) {
+        ( $out, $err, $exit ) = puff( $dir, q{check}, q{--statistics}, q{--output-format}, $format );
+        is( $exit, 2, "--statistics with $format: exit 2" );
+        like( $err, qr/--statistics only works with --output-format text/, q{... with a usage error} );
+        is( $out, q{}, q{... and nothing checked} );
+    }
+
+    ( $out, $err, $exit ) = puff( $dir, qw( check --show-files --statistics --output-format json ) );
+    is( $exit, 0, '--show-files ignores --statistics, whatever the format' );
+    like( $out, qr/\.pl$/m, '... and lists the files' );
 };
 
 subtest 'check --show-files lists files and checks nothing' => sub {

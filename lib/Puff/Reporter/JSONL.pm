@@ -2,9 +2,9 @@ package Puff::Reporter::JSONL;
 
 use v5.36;
 
-use IO::Handle           ();
 use JSON::PP             ();
 use Puff::Reporter::JSON ();
+use Puff::Reporter::Text ();
 
 sub new ( $class, %args ) {
     return bless {
@@ -47,7 +47,7 @@ sub abort ( $self, $exit_code, $error ) {
 
 sub _emit ( $self, $out, $event ) {
     print {$out} $self->{json}->encode($event), "\n";
-    $out->flush;
+    Puff::Reporter::Text->flush_or_die($out);
     return;
 }
 
@@ -127,6 +127,8 @@ C<file> and C<diff> contain text derived from the linted files (their
 names and contents): consumers should treat it as untrusted data.
 
 C<start>, C<file> and C<abort> print to the C<out> handle given to C<new>,
-as the run progresses; C<report> prints C<done> to the handle it is given.
+as the run progresses; C<report> prints C<done> to the C<$out> handle it is
+given. Its C<$err> handle is unused, since jsonl puts errors in C<file>
+events.
 
 =cut
