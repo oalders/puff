@@ -732,21 +732,27 @@ subtest 'non-ASCII rule-paths entries' => sub {
     like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
 };
 
-subtest 'unreadable non-ASCII --config' => sub {
-    my $dir  = project();
-    my $name = "caf\xc3\xa9.toml";                                   # UTF-8 bytes
-    my $file = spew_named( $dir, $name, "select = [\"S001\"]\n" );
-    chmod 0, "$file";
-SKIP: {
-        skip 'chmod 0 does not stop this user reading (root?)', 2 if -r $file;
-        my ( undef, $err, $exit ) = puff_raw( $dir, 'check', '--config', $name );
-        is( $exit, 2, 'exit 2' );
-        like(
-            $err, qr{^Invalid config file 'caf\xc3\xa9\.toml': .*caf\xc3\xa9\.toml.*Permission denied$}m,
-            'read error names the config in UTF-8'
-        ) or diag $err;
-    }
-    chmod 0644, "$file";
-};
+for my $case (@NAME_CASES) {
+    my ( $label, $base, $shown ) = @$case;
+    subtest "unreadable --config with a $label" => sub {
+        my $name = "$base.toml";
+        my $want = quotemeta "$shown.toml";
+        my $dir  = project();
+        my $file = spew_named( $dir, $name, "select = [\"S001\"]\n" );
+        skip_all("cannot chmod: $!") unless chmod 0, "$file";
+    SKIP: {
+            skip 'chmod 0 does not stop this user reading (root?)', 2 if -r $file;
+            my ( undef, $err, $exit ) = puff_raw( $dir, 'check', '--config', $name );
+            is( $exit, 2, 'exit 2' );
+
+            # Both the quoted name and the OS error text are shown
+            like(
+                $err, qr{^Invalid config file '$want': .*$want.*Permission denied$}m,
+                'read error shows the name as UTF-8, with \\xHH for invalid bytes'
+            ) or diag $err;
+        }
+        chmod 0644, "$file";
+    };
+}
 
 done_testing;
