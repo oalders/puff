@@ -27,6 +27,18 @@ use Moo; has size => ( is => 'ro' ); # expect: M005
 package My::Late;
 use namespace::autoclean;
 
+package My::Unmarked;
+use Moose; # expect: M005
+use MooseX::MarkAsMethods;
+
+package My::Off;
+use Moose; # expect: M005
+use MooseX::MarkAsMethods autoclean => 0;
+
+package My::Maybe;
+use Moose; # expect: M005
+use MooseX::MarkAsMethods autoclean => $ENV{CLEAN};
+
 package main;
 use Moose; # expect: M005
 

@@ -35,4 +35,23 @@ package My::Child {
     has weight => ( is => 'ro', lazy => 1 ); # expect: M003
 }
 
+package My::Mentions;
+
+use Moose;
+
+has commented => ( is => 'ro', lazy => 1, builder => '_build_commented' ); # expect: M003
+has quoted    => ( is => 'ro', lazy => 1, builder => '_build_quoted' ); # expect: M003
+has other     => ( is => 'ro', lazy => 1, builder => '_build_other' ); # expect: M003
+
+# _build_commented is still to do
+my $name = '_build_quoted';
+my $call = "sub _build_quoted";
+around _build_other => sub { 1 };
+
+=pod
+
+sub _build_other { 1 }
+
+=cut
+
 1;

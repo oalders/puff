@@ -13,8 +13,9 @@ sub explanation {
     return <<~'END';
         A lazy attribute builds its value the first time it is read, from
         its `default` or `builder`. Without either there is nothing to
-        build it from: Moose and Mouse die when the class is built, and in
-        Moo `lazy` does nothing useful.
+        build it from: Moose and Mouse die when the class is built. Moo
+        does not complain; the accessor returns undef unless a value was
+        passed to the constructor, so `lazy` does nothing.
 
             has config => ( is => 'ro', lazy => 1 );                     # reported
             has config => ( is => 'ro', lazy => 1, builder => '_load' ); # fine
@@ -30,13 +31,18 @@ sub explanation {
 
         A builder must be a method. When the builder has a known name
         (`builder => '_load'`, Moo's `builder => 1` or `is => 'lazy'`, which
-        mean `_build_NAME`) and the name appears nowhere else in the
-        package, not even as `sub _load`, that is reported too. The method
-        may come from somewhere else when the package `extends` a class,
-        consumes roles `with`, sets `@ISA`, uses `parent` or `base`, or is
-        a role itself (the consuming class may provide it), so a missing
-        builder is not reported in those packages. `lazy_build` builders
-        are not checked.
+        mean `_build_NAME`) and the package does not define it with
+        `sub _load`, `*_load = ...` or `->add_method( _load => ... )`, that
+        is reported too. A mention in a comment, POD or a string does not
+        count. The method may come from somewhere else when the package
+        `extends` a class or consumes roles `with` (also inside a `BEGIN`
+        block), sets `@ISA`, uses `parent` or `base`, or is a role itself
+        (the consuming class may provide it), so a missing builder is not
+        reported in those packages. Other ways of getting a method are not
+        seen and are reported: roles applied at run time
+        (`apply_all_roles`), `->meta->superclasses(...)`, `handles`
+        delegation, and in-house modules that set up inheritance.
+        `lazy_build` builders are not checked.
 
         Not reported: `has '+name'`, a lazy value that is not a literal,
         `builder => sub { ... }`, Moose's `builder => 1` (a method named
@@ -88,7 +94,7 @@ sub check ( $self, $elem, $doc ) {
         next if $may_inherit;
         my $package = package_name($region);
         for my $builder (@builders) {
-            next if _mentioned( $region, $attr->{word}->statement, $builder );
+            next if _defined( $region, $attr->{word}->statement, $builder );
             push @violations,
                 $self->violation(
                 $attr->{word},
@@ -119,8 +125,10 @@ sub _may_inherit ($region) {
             return 1 if ( $statement->module // q{} ) =~ /\A(?:parent|base)\z/;
             next;
         }
-        my $first = $statement->schild(0) or next;
-        return 1 if $first->isa('PPI::Token::Word') && $first->content =~ /\A(?:extends|with)\z/;
+        return 1 if _extends_or_with($statement);
+        if ( $statement->isa('PPI::Statement::Scheduled') && $statement->type eq 'BEGIN' ) {
+            return 1 if $statement->find_first( sub ( $top, $el ) { _extends_or_with($el) } );
+        }
         return 1
             if $statement->find_first(
             sub ( $top, $el ) { $el->isa('PPI::Token::Symbol') && $el->symbol =~ /::ISA\z|\A\@ISA\z/ } );
@@ -128,13 +136,30 @@ sub _may_inherit ($region) {
     return 0;
 }
 
-# Whether $name appears anywhere in the package outside $skip, as in
-# `sub NAME`, `*NAME = ...` or `add_method('NAME', ...)`.
-sub _mentioned ( $region, $skip, $name ) {
-    my $re = qr/(?<!\w)\Q$name\E(?!\w)/;
+# Whether $el is a statement that starts with `extends` or `with`.
+sub _extends_or_with ($el) {
+    return 0 unless $el->isa('PPI::Statement');
+    my $first = $el->schild(0) or return 0;
+    return $first->isa('PPI::Token::Word') && $first->content =~ /\A(?:extends|with)\z/;
+}
+
+# Whether the package defines method $name outside $skip: `sub NAME`,
+# `*NAME = ...` or `->add_method( NAME => ... )`. A mention in a comment,
+# POD or string does not count.
+sub _defined ( $region, $skip, $name ) {
+    my %names  = map { $_ => 1 } $name, package_name($region) . "::$name";
+    my $wanted = sub ( $top, $el ) {
+        return $names{ $el->name // q{} } ? 1 : 0 if $el->isa('PPI::Statement::Sub');
+        return $el->symbol =~ /\A\*(.+)\z/ && $names{$1} ? 1 : 0 if $el->isa('PPI::Token::Symbol');
+        return 0 unless $el->isa('PPI::Token::Word') && $el->content eq 'add_method';
+        my $list = $el->snext_sibling;
+        return 0 unless $list && $list->isa('PPI::Structure::List');
+        my $arg = $list->schild(0) && $list->schild(0)->schild(0) or return 0;
+        return ( _literal( [$arg] ) // ( $arg->isa('PPI::Token::Word') ? $arg->content : q{} ) ) eq $name;
+    };
     for my $statement ( package_statements($region) ) {
         next if $statement == $skip;
-        return 1 if $statement->content =~ $re;
+        return 1 if $wanted->( undef, $statement ) || $statement->find_first($wanted);
     }
     return 0;
 }
@@ -156,9 +181,11 @@ and Moose's C<< lazy_build => 1 >> imply the builder C<_build_NAME>.
 
 Also reports a lazy attribute whose named builder (C<< builder => 'NAME' >>,
 or C<_build_NAME> from Moo's C<< builder => 1 >> or C<< is => 'lazy' >>) is
-not mentioned anywhere else in the package. That check is skipped for roles
-and for packages that may inherit the method (C<extends>, C<with>,
-C<use parent>, C<use base> or C<@ISA>). There is no fix.
+not defined in the package by C<sub NAME>, C<*NAME = ...> or
+C<add_method>; comments, POD and strings do not count. That check is skipped
+for roles and for packages that may inherit the method (C<extends> or
+C<with>, also inside C<BEGIN>, C<use parent>, C<use base> or C<@ISA>). There
+is no fix.
 
 Not selected by default; select it with C<M> or C<M003>.
 

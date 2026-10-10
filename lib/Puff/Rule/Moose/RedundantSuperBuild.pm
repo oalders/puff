@@ -33,7 +33,8 @@ sub explanation {
 
         The unsafe fix removes the call when it is a statement of its own
         (`$obj->SUPER::BUILD(...);`), and the whole line when nothing else
-        but a comment is on it. When the call's value is used, as in
+        is on it. A trailing comment is kept, on its own line at the same
+        indentation. When the call's value is used, as in
         `return $self->SUPER::BUILD(@_)`, there is no fix. It is unsafe
         because a parent that is not a Moose, Mouse or Moo class may rely
         on the call, and because any arguments the call changed are no
@@ -81,7 +82,7 @@ sub fix ( $self, $violation, $fix ) {
     my $before = substr( $text, $line_start, $start - $line_start );
     my $after  = substr( $text, $end, $line_end - $end );
 
-    if ( $before =~ /\A[ \t]*\z/ && $after =~ /\A[ \t]*(?:#.*)?\z/ ) {
+    if ( $before =~ /\A[ \t]*\z/ && $after =~ /\A[ \t]*\z/ ) {
         $fix->replace_range( $line_start, $line_end < length $text ? $line_end + 1 : $line_end, q{} );
         return 1;
     }
@@ -138,7 +139,7 @@ every BUILD and DEMOLISH in the hierarchy already, so the parent's runs
 twice.
 
 The unsafe fix removes the call when it is a statement of its own, with its
-line when only a comment shares it. A call whose value is used is reported
+line when nothing else is on it. A trailing comment stays where it was. A call whose value is used is reported
 with no fix.
 
 Not selected by default; select it with C<M> or C<M004>.
