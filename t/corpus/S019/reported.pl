@@ -66,3 +66,7 @@ print "1\n" if $str =~ /a # a comment ending in a backslash \
 print "1\n" if $str =~ /\Qa\Ub\Lc\E\E$input/; # expect: S019
 print "1\n" if $str =~ /\Qa\Fb\Uc\E\E$input/; # expect: S019
 print "1\n" if $str =~ /\Ua\Qb\Lc\E$input/; # expect: S019
+print "1\n" if $str =~ /\Ua\Qb\Lc\Qd\Fe\E$input/; # expect: S019
+
+# A stray \E ends nothing.
+print "1\n" if $str =~ /\E$input/; # expect: S019

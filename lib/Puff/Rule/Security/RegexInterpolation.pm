@@ -4,7 +4,6 @@ use v5.36;
 use parent 'Puff::Rule';
 
 use Puff::Violation     ();
-use List::Util          qw( first );
 use Puff::LexicalScopes qw( declarations );
 use Scalar::Util        qw( refaddr weaken );
 
@@ -60,19 +59,25 @@ sub explanation {
           earlier statement of the same or an enclosing block (or the
           file) is needed instead. Either way the file must write the name
           nowhere else: any other assignment (`=`, `.=`, `||=`, `//=` and
-          the like, in any scope), `local $x`, a `foreach` loop over it, or
-          `$x =~ s///` or `tr///` means it is reported. A write to
-          `$Pkg::x` or `$::x` counts as a write to `$x`. An assignment
+          the like, in any scope), `local $x`, a `foreach` loop over it or
+          over a list holding it, a reference `\$x`, `chomp`, `chop`,
+          `open`, `opendir`, `read` or `sysread` changing it, or `$x =~
+          s///` or `tr///` means it is reported. A write to `$Pkg::x`,
+          `$::x`, `${Pkg::x}` or `$Pkg'x` counts as a write to `$x`, and a
+          write to `$x` counts for `$Pkg::x`. Writes through `@_`, the `$_`
+          of `map` or `grep`, a glob or a symbolic name (`${'main::x'}`,
+          `$::{x}`) are not seen. An assignment
           inside a condition (`if (my $x = qr/a/)`) is not seen, which errs
           towards reporting, and `$x = $opt{x} // qr/.../` is reported;
         - a plain scalar with an all-caps name (`$WS`, `$CRLF`,
           `$Foo::CRLF`), taken to be a constant. `$Input` is reported;
         - capture and punctuation variables (`$1`, `$&`, `$^N`,
-          `${^MATCH}`), as the issue that added the rule asked: a capture
+          `${^MATCH}`, `$+{name}`), as the issue that added the rule asked: a capture
           is usually a substring of the string being matched;
         - `$` used as an anchor (`/foo$/`, `/(a$)/`) and code blocks
-          (`(?{ ... })`);
-        - arrays (`@x`, `@{[ ... ]}`).
+          (`(?{ ... })`, `(??{ ... })`);
+        - arrays (`@x`, `@{ ... }`), and `@{[ ... ]}` whose code calls
+          `quotemeta` or uses `\Q`.
 
         A pattern held in a variable and matched directly (`$s =~ $x`) or
         a string passed to `split` is not reported.
@@ -86,7 +91,8 @@ sub explanation {
         - a quantifier follows it (`$x+`, `$x*`, `$x?`, `$x{2,3}`): after
           `\Q$x\E` it would apply to the last character only;
         - it is inside a character class (`[$x]`);
-        - it is inside a comment of a `/x` pattern.
+        - it is inside a comment of a `/x` pattern;
+        - it is inside the Perl code of `@{[ ... ]}`.
 
         There is also no fix when the extent of the variable is uncertain:
         `${ expr }`, a `[` right after the name (Perl guesses whether it
@@ -119,6 +125,7 @@ my %NO_FIX = (
     quantifier => 'a quantifier follows it, and after \Q...\E it would apply to the last character only',
     class      => 'it is inside a character class',
     comment    => 'it is inside a /x comment',
+    code       => 'it is inside @{[ ... ]}, which is Perl code',
 );
 
 sub check ( $self, $elem, $doc ) {
@@ -141,7 +148,9 @@ sub check ( $self, $elem, $doc ) {
 }
 
 # The findings of the last element fixed: fix is called once per violation,
-# and a regex can have many.
+# and a regex can have many. $fixing is weakened, so it goes undef when the
+# element is freed and a new element at the same address is not mistaken
+# for it.
 my ( $fixing, %fixing );
 
 sub fix ( $self, $violation, $fix ) {
@@ -211,6 +220,10 @@ sub _findings ( $elem, $doc ) {
 # no_fix }. $x is true under the /x modifier.
 sub _variables ( $pattern, $x ) {
     my ( @found, @case, $class, $comment );
+
+    # @case holds the escapes waiting for their \E. At most one of them is
+    # a \L, \U or \F (see below), at index $case; $quoted counts the \Q.
+    my ( $case, $quoted ) = ( undef, 0 );
     pos($pattern) = 0;
     while ( pos($pattern) < length $pattern ) {
 
@@ -218,14 +231,25 @@ sub _variables ( $pattern, $x ) {
         # escape started after it: in \Q\Ua\Lb\E\E only \Q\L remain to end.
         if ( $pattern =~ /\G\\([QLUF])/gc ) {
             my $esc = $1;
-            if ( $esc ne 'Q' ) {
-                my $active = first { $case[$_] ne 'Q' } 0 .. $#case;
-                splice @case, $active if defined $active;
+            if ( $esc eq 'Q' ) {
+                $quoted++;
+            }
+            else {
+                if ( defined $case ) {
+                    $quoted -= $#case - $case;
+                    splice @case, $case;
+                }
+                $case = @case;
             }
             push @case, $esc;
             next;
         }
-        if ( $pattern =~ /\G\\E/gc ) { pop @case; next }
+        if ( $pattern =~ /\G\\E/gc ) {
+            if    ( defined $case && $case == $#case ) { undef $case }
+            elsif (@case)                              { $quoted-- }
+            pop @case;
+            next;
+        }
 
         # A /x comment ends at a newline, even one after a backslash, which
         # the escape skip below would otherwise swallow.
@@ -246,7 +270,26 @@ sub _variables ( $pattern, $x ) {
         # Code blocks hold Perl code, not interpolation.
         if ( $pattern =~ /\G\((?:\?\??|\*)(?=\{)/gc ) { _skip_brackets( \$pattern ); next }
 
-        # Arrays and @{[ ... ]} are not reported, nor what is inside them.
+        # @{[ ... ]} interpolates the result of Perl code. Its scalars are
+        # reported, with no fix, unless the code calls quotemeta or uses \Q.
+        if ( $pattern =~ /\G\@(?=\{\[)/gc ) {
+            my $from = pos $pattern;
+            _skip_brackets( \$pattern );
+            my $end  = pos $pattern;
+            my $code = substr $pattern, $from, $end - $from;
+            next if $quoted || $code =~ /\bquotemeta\b|\\Q/;
+            while ( $code =~ /\G(?:\\.|[^\\\$])*+\$/gcs ) {
+                my $start = $from + pos($code) - 1;
+                pos($pattern) = $start + 1;
+                my $var = _variable( \$pattern, $start );
+                pos($code) = pos($pattern) - $from;
+                push @found, { %$var, no_fix => 'code' } if $var && pos($pattern) <= $end;
+            }
+            pos($pattern) = $end;
+            next;
+        }
+
+        # Arrays are not reported, nor what is inside @{ ... }.
         if ( $pattern =~ /\G\@(?=\{)/gc ) { _skip_brackets( \$pattern ); next }
         next if $pattern =~ /\G\@\$*(?:::)?\w+(?:::\w+)*/gc;
 
@@ -254,7 +297,7 @@ sub _variables ( $pattern, $x ) {
         if ( $pattern =~ /\G\$(?=[()| \r\n\t]|\z)/gc ) {next}    # an anchor
         if ( $pattern =~ /\G\$/gc ) {
             my $var = _variable( \$pattern, $start );
-            next unless $var && !grep { $_ eq 'Q' } @case;
+            next unless $var && !$quoted;
             my $space = $x ? '\s*' : q{};
             $var->{no_fix}
                 = $comment                                                         ? 'comment'
@@ -356,7 +399,7 @@ my ( $cached_doc, $cached );
 # document enclosing it.
 sub _holds_pattern ( $elem, $doc, $name ) {
     my $data = _analysis($doc);
-    return 0 if $data->{writes}{$name};
+    return 0 if $data->{writes}{$name} || ( $name =~ /::(\w+)\z/ && $data->{writes}{$1} );
     my $loc = $elem->location;
     my @parents;
     for ( my $p = $elem->parent ; $p ; $p = $p->parent ) { push @parents, $p }
@@ -378,8 +421,9 @@ sub _holds_pattern ( $elem, $doc, $name ) {
     }
 
     # A qualifying assignment in a scope enclosing $elem, before it. The
-    # earliest one in each scope is enough: if it holds $elem, the others
-    # come after $elem.
+    # earliest one in each scope is enough: the statements of one scope are
+    # siblings (they are keyed by their parent), so if the earliest holds
+    # $elem, the others come after $elem.
     my $assigned = $data->{assigned}{$name} or return 0;
     for my $p (@parents) {
         my $stmts = $assigned->{ refaddr $p } or next;
@@ -414,9 +458,9 @@ sub _before ( $at, $loc ) {
 #   document, the qualifying assignment statements in document order as
 #   { elem, at };
 # - qualifying: the refaddrs of the symbols those statements assign;
-# - writes: by name, the number of other writes. A write to a qualified name
-#   ($main::x, $::x) also counts for its last component, which may be an
-#   `our` variable.
+# - writes: by name, the number of other writes, through `$x`, `${x}` or
+#   `$main'x`. A write to a qualified name ($main::x, $::x) also counts for
+#   its last component, which may be an `our` variable.
 sub _analysis ($doc) {
     return $cached if $cached_doc && refaddr($cached_doc) == refaddr($doc);
     $cached_doc = $doc;
@@ -427,18 +471,35 @@ sub _analysis ($doc) {
             push @{ $data{declarations}{ $decl->{symbol} }{ refaddr $decl->{scope} } },
                 { elem => $decl->{elem}, statement => $decl->{statement}, at => $decl->{elem}->location };
         }
-        next unless $token->isa('PPI::Token::Symbol') && $token->content =~ /\A\$((?:::)?\w+(?:::\w+)*)\z/;
-        my $name = $1;
-        if ( my $stmt = _pattern_assignment($token) ) {
+        my ( $name, $last ) = _scalar($token) or next;
+        if ( $last == $token && ( my $stmt = _pattern_assignment($token) ) ) {
             push @{ $data{assigned}{$name}{ refaddr $stmt->parent } }, { elem => $stmt, at => $stmt->location };
             $data{qualifying}{ refaddr $token } = 1;
         }
-        elsif ( _is_write($token) ) {
+        elsif ( _is_write( $token, $last ) ) {
             $data{writes}{$name}++;
             $data{writes}{$1}++ if $name =~ /::(\w+)\z/;
         }
     }
     return $cached = \%data;
+}
+
+# The name of the plain scalar that starts at $token, with `'` package
+# separators made `::`, and its last element: $token itself for `$x`, the
+# block for `${x}`. Empty for anything else.
+sub _scalar ($token) {
+    my ( $name, $last ) = ( undef, $token );
+    if ( $token->isa('PPI::Token::Symbol') ) {
+        $name = substr $token->content, 1 if $token->content =~ /\A\$/;
+    }
+    elsif ( $token->isa('PPI::Token::Cast') && $token->content eq '$' ) {
+        $last = $token->snext_sibling;
+        my @stmt = $last && $last->isa('PPI::Structure::Block') ? $last->schildren    : ();
+        my @word = @stmt == 1                                   ? $stmt[0]->schildren : ();
+        $name = $word[0]->content if @word == 1 && $word[0]->isa('PPI::Token::Word');
+    }
+    $name =~ s/'/::/g if defined $name;
+    return defined $name && $name =~ /\A(?:::)?\w+(?:::\w+)*\z/ ? ( $name, $last ) : ();
 }
 
 # The statement, if $symbol is a plain scalar assigned a pattern by a whole
@@ -467,36 +528,70 @@ sub _is_scope_body ($elem) {
 # An assignment operator: =, .=, ||=, //=, x= and the like.
 my $ASSIGN = qr{\A(?:\*\*|\|\||//|&&|<<|>>|[-+*/.x%&|^])?=\z};
 
-# Whether $symbol is written: assigned with any assignment operator (alone
-# or as an element of a list on the left), localized, a foreach loop
-# variable, or changed by s/// or tr/// (without /r).
-sub _is_write ($symbol) {
-    my $target = $symbol;
-    my $expr   = $symbol->parent;
-    my $prev   = $symbol->sprevious_sibling;
-    if (   $expr->isa('PPI::Statement::Expression')
-        && $expr->parent
-        && $expr->parent->isa('PPI::Structure::List')
-        && ( !$prev || ( $prev->isa('PPI::Token::Operator') && $prev->content eq ',' ) ) ) {
-        $target = $expr->parent;                # ($x, $y) = ..., local ($x)
-        $prev   = $target->sprevious_sibling;
-    }
-    return 1 if $prev && $prev->isa('PPI::Token::Word') && $prev->content eq 'local';
-    $prev = $prev->sprevious_sibling
-        if $prev && $prev->isa('PPI::Token::Word') && $prev->content =~ /\A(?:my|our|state)\z/;
-    return 1 if $prev && $prev->isa('PPI::Token::Word') && $prev->content =~ /\Afor(?:each)?\z/;
+# Builtins that change their arguments, with how many leading arguments
+# they change: chomp and chop all, read the buffer after the handle.
+my %CHANGES_ARGS = ( chomp => ~0, chop => ~0, open => 1, opendir => 1, read => 2, sysread => 2 );
 
-    for my $el ( $symbol, $target ) {
-        my $op = $el->snext_sibling;
-        return 1 if $op && $op->isa('PPI::Token::Operator') && $op->content =~ $ASSIGN;
+# Whether the scalar from $first to $last (`$x`, or `${x}`) is written:
+# assigned with any assignment operator (alone or as an element of a list
+# on the left), localized, aliased by foreach, referenced with `\`, changed
+# by a builtin in %CHANGES_ARGS, or changed by s/// or tr/// (without /r).
+sub _is_write ( $first, $last ) {
+    my $target = $first;
+    my $prev   = $first->sprevious_sibling;
+    my $list   = $first->parent->parent;
+    if ( $list && $list->isa('PPI::Structure::List') && ( !$prev || _is_token( $prev, 'Operator', ',' ) ) ) {
+        $target = $list;                        # ($x, $y) = ..., local ($x), for ($x), \($x)
+        $prev   = $target->sprevious_sibling;
+
+        # for my $v ($x)
+        $prev = $prev->sprevious_sibling if $prev && $prev->isa('PPI::Token::Symbol');
     }
-    my $op = $symbol->snext_sibling;
+    return 1 if _is_token( $prev, 'Word', 'local' ) || _is_token( $prev, 'Cast', '\\' );
+    $prev = $prev->sprevious_sibling if _is_token( $prev, 'Word', qr/\A(?:my|our|state)\z/ );
+    return 1 if _is_token( $prev, 'Word', qr/\Afor(?:each)?\z/ ) || _changed_by_builtin($first);
+
+    for my $el ( $last, $target ) {
+        my $op = $el->snext_sibling;
+        return 1 if _is_token( $op, 'Operator', $ASSIGN );
+    }
+    my $op = $last->snext_sibling;
     return 0 unless $op && $op->isa('PPI::Token::Operator') && $op->content =~ /\A[=!]~\z/;
     my $re = $op->snext_sibling;
     return 0
         unless $re && ( $re->isa('PPI::Token::Regexp::Substitute') || $re->isa('PPI::Token::Regexp::Transliterate') );
     my %mod = $re->get_modifiers;
     return $mod{r} ? 0 : 1;
+}
+
+# Whether $elem is an argument that a builtin in %CHANGES_ARGS changes, as
+# in `chomp $x`, `chomp($x)` or `read $fh, $x, 10`.
+sub _changed_by_builtin ($elem) {
+    my $args = 0;
+    while (1) {
+        my $prev = $elem->sprevious_sibling;
+        unless ($prev) {    # the first argument in parentheses
+            my $list = $elem->parent->parent;
+            return 0 unless $list && $list->isa('PPI::Structure::List');
+            $prev = $list->sprevious_sibling;
+            return $prev && $prev->isa('PPI::Token::Word') && $args < ( $CHANGES_ARGS{ $prev->content } // 0 ) ? 1 : 0;
+        }
+        if ( $prev->isa('PPI::Token::Operator') ) {
+            return 0 unless $prev->content eq ',' || $prev->content eq '->';
+            $args++ if $prev->content eq ',';
+        }
+        elsif ( $prev->isa('PPI::Token::Word') && $CHANGES_ARGS{ $prev->content } ) {
+            return $args < $CHANGES_ARGS{ $prev->content } ? 1 : 0;
+        }
+        $elem = $prev;
+    }
+}
+
+# Whether $elem is a PPI::Token::$type whose content is $content, or matches
+# it when it is a regex.
+sub _is_token ( $elem, $type, $content ) {
+    return 0 unless $elem && $elem->isa("PPI::Token::$type");
+    return ref $content ? $elem->content =~ $content : $elem->content eq $content;
 }
 
 # Whether the elements of a right-hand side are one qr// or one quotemeta call.
@@ -537,7 +632,7 @@ C<\Q>, C<\L>, C<\U> and C<\F> (each ended by its own C<\E>, except that a
 C<\L>, C<\U> or C<\F> ends an active one and any C<\Q> after it, as in
 Perl), C<$> as an
 anchor before C<)>, C<|>, whitespace or the end, code blocks such as
-C<(?{ ... })>, character classes, C<#> comments under C</x>, and a C<{...}>
+C<(?{ ... })> and C<(??{ ... })>, character classes, C<#> comments under C</x>, and a C<{...}>
 after a variable that is a quantifier rather than a subscript. C<${x}> ends
 at its closing brace, so in C<${x}{k}> only C<${x}> is the variable. The
 replacement of C<s///> and patterns with C<'> delimiters are not looked at.
@@ -578,21 +673,28 @@ regex in the same or an enclosing block (or the file).
 In both cases the name must have no other write anywhere in the file: any
 assignment operator after it (C<=>, C<.=>, C<||=>, C<//=> and so on, alone
 or in a list on the left), C<local $x>, a C<foreach> loop variable of that
-name, or C<$x =~ s///> or C<tr///> (without C</r>). This is by name, not by
-scope, so a same-named variable written in another sub also counts, and a
-write to a package-qualified name (C<$main::x>, C<$::x>) counts for the
-last component of the name. Writes
-the rule does not recognise (C<chomp $x>, an alias through C<@_> or a
-reference) are missed. An assignment inside a condition
+name or a C<foreach> list holding it, a reference C<\$x>, C<chomp> or
+C<chop> of it, C<$x> as the handle of C<open> or C<opendir> or the buffer
+of C<read> or C<sysread>, or C<$x =~ s///> or C<tr///> (without C</r>).
+This is by name, not by scope, so a same-named variable written in another
+sub (or package) also counts. A write to a package-qualified name
+(C<$main::x>, C<$::x>, C<${main::x}>, C<$main'x>) counts for the last
+component of the name, and a write to C<$x> counts for a qualified
+C<$main::x>. Writes the rule does not recognise are missed: an alias
+through C<@_> in a sub call, the C<$_> of C<map> or C<grep>, a glob
+assignment, or a symbolic name (C<${'main::x'}>, C<$::{x}>). An assignment inside a condition
 (C<if (my $x = qr/a/)>) is not seen as qualifying, which errs towards
 reporting. C<$x = $opt{x} // qr/,/>, C<$x ||= qr/,/> and
 C<join '|', map {quotemeta} @w> are reported;
 
 =item *
 
-capture and punctuation variables (C<$1>, C<$&>, C<$^N>, C<${^MATCH}>), as
-the issue that added the rule asked, since a capture is usually a substring
-of the string being matched; C<$#x>; and arrays, including C<@{[ ... ]}>.
+capture and punctuation variables (C<$1>, C<$&>, C<$^N>, C<${^MATCH}>,
+C<$+{name}>), as the issue that added the rule asked, since a capture is
+usually a substring of the string being matched; C<$#x>; arrays; and
+C<@{[ ... ]}> whose code calls C<quotemeta> or uses C<\Q>. The scalars in
+any other C<@{[ ... ]}> are reported, with no fix, as the code is Perl
+rather than pattern text.
 
 =back
 

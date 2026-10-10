@@ -4,8 +4,9 @@ use Test2::V0;
 use lib 't/lib';
 use TestCommand qw( run_capture );
 
-use Cwd        qw( getcwd );
-use Path::Tiny qw( path tempdir );
+use Cwd         qw( getcwd );
+use Path::Tiny  qw( path tempdir );
+use Time::HiRes qw( time );
 
 use Puff::Engine ();
 use Puff::Rules  ();
@@ -26,12 +27,13 @@ sub violations ($text) {
 is(
     [
         map { [ $_->line, $_->column, $_->message, $_->fixable ] }
-            @{ violations("/\$x|\$y->{k}/;\nqr{\n  a \$z[0]\n}x;\n") }
+            @{ violations("/\$x|\$y->{k}/;\nqr{\n  a \$z[0] \$w\n}x;\n") }
     ],
     [
         [ 1, 2, '$x interpolated into a regex without \Q...\E; metacharacters in it change the match', 1 ],
         [ 1, 5, '$y->{k} interpolated into a regex without \Q...\E; metacharacters in it change the match', 1 ],
         [ 3, 5, '$z[0] interpolated into a regex without \Q...\E; metacharacters in it change the match', 0 ],
+        [ 3, 11, '$w interpolated into a regex without \Q...\E; metacharacters in it change the match', 1 ],
     ],
     'each variable is reported at its own line and column'
 );
@@ -73,16 +75,27 @@ is(
     'a package-qualified write counts'
 );
 
+sub fixed ($text) {
+    return Puff::Engine->new( rules => [ $class->new ], fix_mode => q{unsafe} )
+        ->process_source( Puff::Source->from_string($text), file => 'x.pl' );
+}
+
+# A package-qualified name as the pattern variable.
+is(
+    [ map { [ $_->line, $_->column, $_->fixable ] } @{ violations("/\$::x\$main::y/;\n") } ],
+    [ [ 1, 2, 1 ], [ 1, 6, 1 ] ],
+    '$::x and $main::y are reported'
+);
+is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n", 'and fixed' );
+
 # The cost is linear in the number of declarations, variables and fixes.
 # Element locations and parents are counted, as timings would be flaky.
 {
     no warnings 'redefine';
     my %calls;
-    for my $method (qw( location parent )) {
-        my $orig = PPI::Element->can($method);
-        no strict 'refs';
-        *{"PPI::Element::$method"} = sub { $calls{$method}++; goto &$orig };
-    }
+    my %orig = map { $_ => PPI::Element->can($_) } qw( location parent );
+    local *PPI::Element::location = sub { $calls{location}++; goto &{ $orig{location} } };
+    local *PPI::Element::parent   = sub { $calls{parent}++;   goto &{ $orig{parent} } };
     my $count = sub ($text) {
         my $doc = PPI::Document->new( \$text );
         $doc->index_locations;
@@ -95,28 +108,36 @@ is(
     my $decls = $count->( join q{}, map {"my \$x = qr/a/;\n/\$x/;\n"} 1 .. 400 );
     cmp_ok( $decls->{location}, '<', 10 * $decls->{regexes}, 'locations: linear in the declarations' );
 
+    # Each regex is inside the statements of all the declarations before
+    # it, which are skipped on the way to the outer scopes.
     my $nested = $count->( ( "my \$x if do { /\$x/;\n" x 100 ) . ( "1 };\n" x 100 ) );
-    cmp_ok( $nested->{parent}, '<', 2 * 100**2, 'parents: quadratic, not cubic, in the nesting depth' );
+    cmp_ok(
+        $nested->{parent}, '<', 2 * 100**2,
+        'parents: declarations whose statement holds the regex are skipped in time quadratic, not cubic, in the depth'
+    );
 
-    # Before the fix, _findings ran once per violation.
-    my $findings = 0;
-    my $orig     = \&Puff::Rule::Security::RegexInterpolation::_findings;
-    *Puff::Rule::Security::RegexInterpolation::_findings = sub { $findings++; goto &$orig };
-    my $result = Puff::Engine->new( rules => [ $class->new ], fix_mode => q{unsafe} )
-        ->process_source( Puff::Source->from_string( '/' . ( '$x' x 50 ) . "/;\n" ), file => 'x.pl' );
-    is( $result->{fixed_count}, 50, q{every variable is fixed} );
-    ok( $findings < 10, "the findings of a regex are computed once per pass ($findings)" );
-    *Puff::Rule::Security::RegexInterpolation::_findings = $orig;
+    # Before, fix found every variable of the regex again for each one.
+    %calls = ();
+    my $result = fixed( '/' . ( '$x' x 50 ) . "/;\n" );
+    is( $result->{new_text}, '/' . ( '\Q$x\E' x 50 ) . "/;\n", 'every variable is fixed' );
+    is( $result->{fixed_count}, 50, 'and counted' );
+    cmp_ok( $calls{location}, '<', 10 * 50, 'locations: linear in the fixes' );
 }
 
-# A regex over many lines with many variables is scanned once, not once per
-# variable. It took over 15 seconds before; the bound is loose for slow hosts.
+# Long or hostile regexes are scanned in linear time. Each took over 8
+# seconds before; the bounds are over 10 times the time taken now.
 {
     my $start = time;
     my $found = violations( "/\n" . ( "\$x\n" x 20_000 ) . "/x;\n" );
     is( scalar @$found, 20_000, 'every variable in a long regex is reported' );
     is( [ $found->[-1]->line, $found->[-1]->column ], [ 20_001, 1 ], 'at its line and column' );
-    cmp_ok( time - $start, '<', 6, 'in linear time' );
+    cmp_ok( time - $start, '<', 3, 'in linear time' );
+
+    for my $pattern ( '\Q' x 20_000 . '\L\E' x 20_000, '\Q' x 20_000 . '$x' x 20_000 ) {
+        $start = time;
+        is( violations("/$pattern/;\n"), [], 'no variable outside \Q' );
+        cmp_ok( time - $start, '<', 1, 'many \Q are handled in linear time' );
+    }
 }
 
 is( $class->fix_safety, 'unsafe', 'fix safety is unsafe' );

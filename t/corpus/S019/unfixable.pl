@@ -23,3 +23,7 @@ print "1\n" if $str =~ /[[:alpha:]$input]/; # expect: S019
 print "1\n" if $str =~ /
     a # $input # expect: S019
 /x;
+
+# @{[ ... ]} holds Perl code, where \Q...\E would not quote.
+print "1\n" if $str =~ /@{[ $input ]}/; # expect: S019
+print "1\n" if $str =~ /a@{[ $input . $ref->{k} ]}b/; # expect: S019 S019
