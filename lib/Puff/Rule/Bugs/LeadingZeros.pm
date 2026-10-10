@@ -3,8 +3,7 @@ package Puff::Rule::Bugs::LeadingZeros;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( call_args is_builtin_call );
-use Scalar::Util  qw( refaddr );
+use Puff::PPIUtil qw( mode_call );
 
 sub code       {'B003'}
 sub summary    {'Number with a leading zero is octal'}
@@ -26,8 +25,12 @@ sub explanation {
         are not reported. Permission modes are octal by convention, so the
         rule does not report the mode argument of `chmod`, `umask`,
         `mkdir`, `mkfifo`, `POSIX::mkfifo`, `dbmopen`, `sysopen` and
-        `mkpath`, or a number after a fat comma whose key mentions `mode` or
-        `perm` or is `chmod` (`mode => 0755`, as `make_path` takes). Nor does
+        `mkpath`, the argument of a `->chmod(0755)` method call (Path::Tiny),
+        the `mask` value in an options hash passed to `make_path`, `mkpath`
+        or a `->mkdir`/`->mkpath` method, or a number after a fat comma whose
+        key mentions `mode` or `perm` or is `chmod` (`mode => 0755`, as
+        `make_path` takes). These are the positions where B010 adds the
+        leading zero to a decimal mode, so its fix is not reported. Nor does
         it report an operand of a bitwise operator, as in `$mode & 07777`
         or `0666 & ~$umask`, where octal is the norm.
 
@@ -41,23 +44,10 @@ sub explanation {
         END
 }
 
-# Builtin => index of the argument that is a permission mode.
-my %MODE_ARG = (
-    chmod                => 0,
-    umask                => 0,
-    mkdir                => 1,
-    mkfifo               => 1,
-    'POSIX::mkfifo'      => 1,
-    dbmopen              => 2,
-    sysopen              => 3,
-    mkpath               => 2,
-    'File::Path::mkpath' => 2,
-);
-
 sub check ( $self, $elem, $doc ) {
     return unless $elem->content =~ /\A[+-]?(?:0+_*)+[1-9]/;
     return
-        if !$self->option('strict') && ( _is_mode_argument($elem) || _is_mode_value($elem) || _is_bit_operand($elem) );
+        if !$self->option('strict') && ( defined mode_call($elem) || _is_mode_value($elem) || _is_bit_operand($elem) );
     return $self->violation(
         $elem,
         message => 'Number '
@@ -80,38 +70,6 @@ sub _oct_call ($elem) {
     return if $digits =~ /[89]/;
     $sign = q{} if $sign eq q{+};
     return "${sign}oct('$digits')";
-}
-
-# chmod 0755, ...; mkdir $dir, 0755; sysopen my $fh, $file, O_CREAT, 0600;
-sub _is_mode_argument ($elem) {
-    my $word = _call_word($elem) // return 0;
-    my $args = call_args($word);
-    my $at   = $MODE_ARG{ $word->content };
-    return 0 unless $args->[$at] && @{ $args->[$at] } == 1;
-    return refaddr( $args->[$at][0] ) == refaddr($elem);
-}
-
-# The mode builtin whose arguments include $elem: f( ..., $elem ) or
-# f ..., $elem.
-sub _call_word ($elem) {
-    my $parent = $elem->parent or return;
-    if ( $parent->isa('PPI::Statement::Expression') && $parent->parent && $parent->parent->isa('PPI::Structure::List') )
-    {
-        my $word = $parent->parent->sprevious_sibling;
-        return _is_mode_builtin($word) ? $word : undef;
-    }
-    my $prev = $elem->sprevious_sibling;
-    while ($prev) {
-        return $prev if _is_mode_builtin($prev);
-        return if $prev->isa('PPI::Token::Operator') && $prev->content =~ /\A[^=!<>]*=\z/;
-        $prev = $prev->sprevious_sibling;
-    }
-    return;
-}
-
-sub _is_mode_builtin ($word) {
-    return 0 unless $word && $word->isa('PPI::Token::Word') && exists $MODE_ARG{ $word->content };
-    return is_builtin_call($word);
 }
 
 # mode => 0755, perms => 0600

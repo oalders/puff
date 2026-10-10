@@ -13,7 +13,8 @@ my $x = foo(0600); # expect: B003
 $h{0644} = 1; # expect: B003
 sprintf '%04o', 0755 if 0; # expect: B003
 my $obj = bless {}, 'X';
-$obj->chmod(0755) if 0; # expect: B003
+$obj->chmod( 0755, 1 ) if 0; # expect: B003
+$obj->mkdir( { size => 0755 } ) if 0; # expect: B003
 mkdir 0755 if 0; # expect: B003
 chmod $count, 0755 if 0; # expect: B003
 
