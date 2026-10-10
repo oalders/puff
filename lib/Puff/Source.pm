@@ -7,6 +7,8 @@ use Path::Tiny qw( path );
 
 my $BOM = "\xEF\xBB\xBF";
 
+# from_file and write_file die with messages that hold the raw $path bytes:
+# pass them through Puff::Path::display_name before showing them.
 sub from_file ( $class, $path ) {
     my $bytes = eval { path($path)->slurp_raw };
     die "Cannot read $path: " . ( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n" unless defined $bytes;
@@ -75,7 +77,11 @@ sub write_file ( $self, $path, $text ) {
     my $file  = path($path)->realpath;                                  # replace a symlink's target, not the link
     my $mode  = ( stat "$file" )[2];
     my $tmp   = $file->sibling( '.' . $file->basename . ".puff-$$" );
-    $tmp->spew_raw($bytes);
+    eval { $tmp->spew_raw($bytes); 1 } or do {
+        my $err = "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r;
+        $tmp->remove;
+        die "Cannot write $path: $err\n";
+    };
     chmod( $mode & 07777, "$tmp" ) if defined $mode;
     rename( "$tmp", "$file" ) or do {
         my $err = $!;

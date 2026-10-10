@@ -128,6 +128,9 @@ remaining violation, sorted by file, line and column:
 
     lib/Foo.pm:12:5: S002 Use three-argument open [*]
 
+A file name that is not valid UTF-8 is shown with C<\xHH> escapes for its
+invalid bytes (see L<Puff::Path>).
+
 C<[*]> marks a violation that C<--fix> would fix with the current settings
 (C<fix_mode> is C<safe> or C<unsafe>: the fixes C<--fix> applies); C<[**]>
 marks one with an unsafe fix that is not enabled. Then C<Found N

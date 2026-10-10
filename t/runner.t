@@ -142,6 +142,7 @@ subtest 'extensionless files with a perl shebang are found' => sub {
     $tree->child( 'bin', $_ )->spew_raw( $files{$_} ) for keys %files;
     $tree->child( 'bin', 'unreadable' )->spew_raw("#!/usr/bin/perl\nfoo;\n");
     chmod 0000, $tree->child( 'bin', 'unreadable' );
+
     # root (as in CI containers) reads mode 0000 files, so the file would be
     # linted; there the unreadable case cannot be tested and is dropped
     $tree->child( 'bin', 'unreadable' )->remove if -r $tree->child( 'bin', 'unreadable' );

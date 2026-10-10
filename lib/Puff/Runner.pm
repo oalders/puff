@@ -3,6 +3,7 @@ package Puff::Runner;
 use v5.36;
 
 use Path::Tiny   qw( path );
+use Puff::Path   qw( display_name );
 use Puff::Source ();
 use Text::Diff   qw( diff );
 
@@ -47,7 +48,7 @@ sub run ( $self, @paths ) {
     my @results;
     $progress->( 0, scalar @files ) if $progress;
     for my $file (@files) {
-        push @results, ref $file ? $file : $self->_process($file);
+        push @results, ref $file ? { %$file, file => display_name( $file->{file} ) } : $self->_process($file);
         $on_file->( $results[-1] ) if $on_file;
         $progress->( scalar @results, scalar @files ) if $progress;
     }
@@ -108,16 +109,20 @@ sub _has_perl_shebang ($file) {
     return $name =~ /\Aperl/ ? 1 : 0;
 }
 
+# $file is the raw path, used for reading and writing; results carry its
+# display_name. Read and write errors are built from the raw path and $!, so
+# they are decoded the same way.
 sub _process ( $self, $file ) {
-    my %out = ( file => $file, violations => [], fixed_count => 0 );
+    my $name = display_name($file);
+    my %out  = ( file => $name, violations => [], fixed_count => 0 );
 
     my $src = eval { Puff::Source->from_file($file) };
     if ( !$src ) {
-        $out{error} = ( $@ || 'cannot read file' ) =~ s/\s+\z//r;
+        $out{error} = display_name( ( $@ || 'cannot read file' ) =~ s/\s+\z//r );
         return \%out;
     }
 
-    my $result = eval { $self->{engine}->process_source( $src, file => $file ) };
+    my $result = eval { $self->{engine}->process_source( $src, file => $name ) };
     if ( !$result ) {
         $out{error} = ( $@ || 'engine failed' ) =~ s/\s+\z//r;
         return \%out;
@@ -131,7 +136,7 @@ sub _process ( $self, $file ) {
     $out{fixed_count} = $result->{fixed_count};
 
     if ( $self->{mode} eq 'diff' ) {
-        my $relative = $file =~ s{\A/+}{}r;
+        my $relative = $name =~ s{\A/+}{}r;
         $out{diff} = diff(
             \$src->text, \$new,
             { STYLE => 'Unified', FILENAME_A => "a/$relative", FILENAME_B => "b/$relative" }
@@ -142,7 +147,7 @@ sub _process ( $self, $file ) {
             $out{written} = 1;
         }
         else {
-            $out{error}       = ( $@ || 'cannot write file' ) =~ s/\s+\z//r;
+            $out{error}       = display_name( ( $@ || 'cannot write file' ) =~ s/\s+\z//r );
             $out{fixed_count} = 0;
         }
     }
@@ -202,6 +207,13 @@ C<run> returns C<< { files => [...], exit_code => N } >>. Each file entry
 has C<file>, C<violations> (remaining), C<fixed_count>, and when relevant
 C<error> (read, parse, rule, engine, fix or write failure; the file is
 left unchanged, and other files are still processed), C<fixes_skipped>, C<diff> (diff mode) and C<written> (fix mode).
+
+File names in the results (each entry's C<file>, each violation's
+C<file>, the diff headers and paths inside error messages) are display
+names from L<Puff::Path/display_name>: character strings for output, with
+C<\xHH> escapes for bytes that are not valid UTF-8 and for control
+characters. They are not paths to open. The files themselves are read and
+written by their original byte paths, and C<files> returns those raw paths.
 
 The exit code is 2 if any file has an error, else 1 if violations remain or
 diff mode would change something, else 0.

@@ -5,6 +5,7 @@ use v5.36;
 use Puff::CLI -command;
 
 use Puff::Engine          ();
+use Puff::Path            qw( display_name );
 use Puff::Reporter::JSON  ();
 use Puff::Reporter::JSONL ();
 use Puff::Reporter::Text  ();
@@ -97,11 +98,11 @@ sub _show_files ( $runner, $args ) {
     my @files = $runner->files(@$args);
     for my $file (@files) {
         if ( ref $file ) {
-            print STDERR "$file->{file}: error: $file->{error}\n";
+            print STDERR display_name( $file->{file} ), ": error: $file->{error}\n";
             $Puff::CLI::EXIT_CODE = 2;
         }
         else {
-            print "$file\n";
+            print display_name($file), "\n";
         }
     }
     return;
@@ -159,7 +160,8 @@ with C<json> or C<jsonl> it is a usage error, except with C<--show-files>,
 which ignores it. C<--show-files> prints the
 files that would be checked, one per line, and checks nothing: they are
 plain paths and C<--statistics> does not apply, whatever C<--output-format>
-says. While checking, a spinner and a C<Checking N/M files> counter are
+says. File names that are not valid UTF-8 are shown with C<\xHH>
+escapes for the invalid bytes (see L<Puff::Path>). While checking, a spinner and a C<Checking N/M files> counter are
 shown on STDERR when it is a terminal and the run takes more than half a
 second (never with C<--output-format jsonl>, which streams one JSON object
 per line as each file is checked). See L<Puff::Runner> for exit codes.

@@ -5,27 +5,37 @@ use lib 't/lib';
 use TestCommand qw( run_capture );
 
 use Cwd        qw( getcwd );
+use Encode     ();
 use JSON::PP   ();
 use Path::Tiny qw( path tempdir );
+use Puff::Path qw( display_name );
 
 my $root = path(getcwd)->absolute;
 my @PERL = ( $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib', 'perl5' ) );
 my $PUFF = $root->child( 'bin', 'puff' )->stringify;
 
-# Runs bin/puff in $dir. Returns (stdout, stderr, exit code).
-sub puff ( $dir, @args ) { puff_with( $dir, [], @args ) }
-
-# Like puff, with @$perl_args (such as -e code that loads bin/puff) passed
-# to perl in place of bin/puff.
-sub puff_with ( $dir, $perl_args, @args ) {
+# Runs bin/puff in $dir. Returns (stdout, stderr, exit code), all as bytes.
+# @$perl_args (such as -e code that loads bin/puff) are passed to perl in
+# place of bin/puff.
+sub puff_raw_with ( $dir, $perl_args, @args ) {
     my $err  = path( $dir, '..', 'stderr.txt' );
     my $orig = getcwd;
     chdir $dir or die "chdir $dir: $!";
     my $out  = run_capture( $err, @PERL, ( @$perl_args ? @$perl_args : $PUFF ), @args );
     my $exit = $? >> 8;
     chdir $orig or die "chdir $orig: $!";
-    return ( $out, $err->slurp_utf8, $exit );
+    return ( $out, $err->slurp_raw, $exit );
 }
+
+sub puff_raw ( $dir, @args ) { puff_raw_with( $dir, [], @args ) }
+
+# Like puff_raw_with, but STDERR is decoded.
+sub puff_with ( $dir, $perl_args, @args ) {
+    my ( $out, $err, $exit ) = puff_raw_with( $dir, $perl_args, @args );
+    return ( $out, Encode::decode( 'UTF-8', $err ), $exit );
+}
+
+sub puff ( $dir, @args ) { puff_with( $dir, [], @args ) }
 
 sub corpus ($name) { $root->child( 't', 'corpus', $name ) }
 
@@ -303,7 +313,10 @@ subtest 'check --output-format jsonl: one line per event' => sub {
     my @events = jsonl($out);
     is( scalar @lines, scalar @events, 'every line is one event' );
     is( scalar @events, @made + 2, 'start, a file event per file, done' );
-    is( [ sort map { $_->{file} } grep { $_->{type} eq 'file' } @events ], [ sort @made ], 'names round-trip' );
+    is(
+        [ sort map { $_->{file} } grep { $_->{type} eq 'file' } @events ], [ sort map { display_name($_) } @made ],
+        q{names come back as shown: control characters escaped}
+    );
     is( $events[-1], { type => 'done', exit_code => 1 }, 'the real done is last' );
 };
 
@@ -617,6 +630,106 @@ subtest 'CRLF files are linted but not fixed' => sub {
     is( $file->slurp_raw, $before, 'file unchanged' );
     like( $err, qr/^crlf\.pl: CR or CRLF line endings: fixes not applied$/m, 'reported' );
     unlike( $out, qr/\[\*\*?\]|fixable/, 'no fix offered' );
+};
+
+my @NAME_CASES = (    # [ label, name on disk (bytes), name shown (bytes) ]
+    [ 'UTF-8 name', "caf\xc3\xa9", "caf\xc3\xa9" ],    # as is, not double-encoded
+    [ 'Latin-1 name', "caf\xe9", 'caf\xE9' ],          # invalid byte escaped
+);
+
+# Creates $dir/$name holding $bytes, or skips the current subtest when the
+# filesystem refuses the name or stores it differently (macOS normalises
+# names to NFD).
+sub spew_named ( $dir, $name, $bytes ) {
+    my $file = $dir->child($name);
+    skip_all("the filesystem refuses the name: $@") unless eval { $file->spew_raw($bytes); 1 };
+    my @names = map { $_->basename } grep { $_->basename eq $name } $dir->children;
+    skip_all('the filesystem changed the name') unless @names;
+    return $file;
+}
+
+for my $case (@NAME_CASES) {
+    my ( $label, $base, $shown ) = @$case;
+    subtest "$label is shown as UTF-8, with \\xHH for invalid bytes" => sub {
+        my $name = "$base.pl";
+        my $want = "$shown.pl";
+        my $dir  = project();
+        my $file = spew_named( $dir, $name, corpus('S001/basic.pl')->slurp_raw );
+        my $re   = quotemeta $want;
+
+        my ( $out, $err, $exit ) = puff_raw( $dir, 'check' );
+        is( $exit, 1, 'exit 1' );
+        like( $out, qr{^${re}:4:7: S001 }m, 'text' );
+
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', '--output-format', 'json' );
+        is( JSON::PP->new->utf8->decode($out)->[0]{file}, Encode::decode( 'UTF-8', $want ), 'json' );
+
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', '--output-format', 'jsonl' );
+        my ($event) = grep { $_->{type} eq 'file' } map { JSON::PP->new->utf8->decode($_) } split /\n/, $out;
+        is( $event->{file}, Encode::decode( 'UTF-8', $want ), 'jsonl file' );
+        is( $event->{violations}[0]{file}, Encode::decode( 'UTF-8', $want ), 'jsonl violation file' );
+
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', '--show-files' );
+        is( $out, "$want\n", '--show-files' );
+
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', '--diff', '--unsafe-fixes' );
+        like( $out, qr{^--- a/${re}\b.*\n\+\+\+ b/${re}\b}m, '--diff headers' );
+
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', "missing-$name" );
+        like( $err, qr{^missing-${re}: error: No such file or directory$}m, 'missing path' );
+
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', '--config', "$base.toml" );
+        is( $exit, 2, 'missing --config exits 2' );
+        like( $err, qr{^Config file '\Q$shown\E\.toml' not found$}m, 'missing --config' );
+
+        chmod 0, "$file";
+    SKIP: {
+            skip 'chmod 0 does not stop this user reading (root?)', 1 if -r $file;
+            ( $out, $err, $exit ) = puff_raw( $dir, 'check', $name );
+            like( $err, qr{^${re}: error: Cannot read ${re}: }m, 'read error' );
+        }
+        chmod 0644, "$file";
+
+        chmod 0555, "$dir";
+    SKIP: {
+            skip 'chmod 0555 does not stop this user writing (root?)', 3 if -w $dir;
+            ( $out, $err, $exit ) = puff_raw( $dir, 'check', '--fix', '--unsafe-fixes', $name );
+            is( $exit, 2, 'write error exits 2' );
+            like( $err, qr{^${re}: error: Cannot write ${re}: .*Permission denied$}m, 'write error' );
+            is( $file->slurp_raw, corpus('S001/basic.pl')->slurp_raw, 'file unchanged' );
+        }
+        chmod 0755, "$dir";
+    };
+}
+
+subtest 'non-ASCII exclude entries' => sub {
+    my $dir  = project();
+    my $cafe = "caf\xc3\xa9";    # UTF-8 bytes
+    skip_all("the filesystem refuses the name: $@")
+        unless eval { $dir->child($cafe)->mkpath; 1 } && grep { $_->basename eq $cafe } $dir->children;
+    corpus('S001/basic.pl')->copy( $dir->child( $cafe, 'a.pl' ) );
+    $dir->child('.puff.toml')->spew_utf8(qq{exclude = ["caf\x{e9}"]\n});
+    my ( $out, undef, $exit ) = puff_raw( $dir, 'check' );
+    is( $exit, 0, 'exit 0' ) or diag $out;
+    like( $out, qr{^Found 0 violations \(checked 0 files\)\.$}m, 'the excluded dir is not checked' );
+};
+
+subtest 'non-ASCII rule-paths entries' => sub {
+    my $dir = project( 'a.pl' => 'S001/basic.pl' );
+    $dir->child('a.pl')->append_utf8("# FIXME: tidy\n");
+    my $rules = "r\xc3\xa8gles";    # UTF-8 bytes
+    skip_all("the filesystem refuses the name: $@")
+        unless eval { $dir->child($rules)->mkpath; 1 } && grep { $_->basename eq $rules } $dir->children;
+    $root->child( 't', 'lib-rules', 'NoFixme.pm' )->copy( $dir->child($rules) );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["r\x{e8}gles-missing"]\n});
+    my ( $out, $err, $exit ) = puff_raw( $dir, 'check' );
+    is( $exit, 2, 'a missing rule-paths dir exits 2' );
+    like( $err, qr{^rule-paths: '.*/\Q$rules\E-missing' is not a directory$}m, 'named in UTF-8' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["r\x{e8}gles"]\nextend-select = ["X"]\n});
+    ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
 };
 
 done_testing;
