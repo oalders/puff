@@ -38,6 +38,11 @@ is(
     ['->mkdir mode 711 is decimal (octal 01307); write 0711'],
     'method option message'
 );
+is(
+    [ map { $_->message } @{ violations( "\$p->chmod(644);\n", 'B010' ) } ],
+    ['->chmod mode 644 is decimal (octal 01204); write 0644'],
+    'method chmod message says mode, not mask'
+);
 is( $class{B010}->fix_safety, 'unsafe', 'fix is unsafe' );
 
 is(

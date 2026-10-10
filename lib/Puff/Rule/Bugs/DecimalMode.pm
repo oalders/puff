@@ -32,7 +32,8 @@ sub explanation {
           Strings such as `'0755'` and `'u+x'` are not reported.
 
         `umask` with two digits (`umask 22`, `umask 77`) is reported too,
-        since `022`, `027` and `077` are its usual values. One digit is the
+        since `022`, `027` and `077` are its usual values; the message calls
+        its argument a mask rather than a mode. One digit is the
         same in decimal and octal, and other two-digit modes are rare, so
         neither is reported. Neither are literals with an 8 or 9, octal
         (`0755`, `0o755`), hex or binary literals, `oct('755')`, variables
@@ -56,9 +57,9 @@ sub explanation {
         01230, and the fix makes it 0664, which is world-readable. Review
         each fixed mode. B003 skips the same mode positions, so it does not
         report the fixed literal unless its `strict` option is on, which
-        reports a leading zero in every mode. S009 checks
-        a decimal mode both as its real value and as the octal one it was
-        meant to be, so `chmod 777, $dir` is reported by both rules: here
+        reports a leading zero in every mode. S009 checks a decimal mode or
+        mask both as its real value and as the octal one it was meant to be,
+        so `chmod 777, $dir` is reported by both rules: here
         for the missing zero, there for the world-writable mode it would be.
 
         This rule is not selected by `B`; select it by code or with `ALL`.
