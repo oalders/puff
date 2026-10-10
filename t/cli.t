@@ -731,12 +731,26 @@ subtest 'non-ASCII rule-paths entries' => sub {
     ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
     like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
 
-    $dir->child( $rules, 'Broken.pm' )->spew_utf8("package Broken;\nuse strict;\n1 +;\n\$undeclared = 1;\n1;\n");
+    $dir->child( $rules, 'Broken.pm' )
+        ->spew_utf8("package Broken;\nuse strict;\n\$one = 1;\n\$two = 2;\n\$three = 3;\n1;\n");
     ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
-    isnt( $exit, 0, 'a rule file that does not compile fails' );
-    like( $err, qr{Cannot load rule file .*/\Q$rules\E/Broken\.pm}, 'load error names the file in UTF-8' );
-    like( $err, qr{ at .*/\Q$rules\E/Broken\.pm line \d+}, 'the message from perl names it in UTF-8' );
+    is( $exit, 2, 'a rule file that does not compile is a fatal error' );
+    like( $err, qr{^rule-paths: cannot load '.*/\Q$rules\E/Broken\.pm': }m, 'load error names the file in UTF-8' );
+    my @named = $err =~ /^.* at .*\/\Q$rules\E\/Broken\.pm line \d+\.$/mg;
+    cmp_ok( scalar @named, '>', 1, 'every line of the message from perl names the path in UTF-8' );
+    unlike( $err, qr{\.\s+at \S*Rules\.pm line \d+}, 'no second "at ... line" added to the message' );
     unlike( $err, qr{\xc3\x83}, 'not double-encoded' );
+
+    my $warned = "w\xc3\xa4rn";    # UTF-8 bytes
+    $dir->child($warned)->mkpath;
+    $dir->child( $warned, 'Warns.pm' )->spew_utf8("package Warns;\nuse warnings;\nmy \$x = 1;\nmy \$x = 2;\n1;\n");
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["w\x{e4}rn"]\n});
+    ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    like(
+        $err, qr{masks earlier declaration .* at .*/\Q$warned\E/Warns\.pm line 4},
+        'a warning names the path in UTF-8'
+    );
+    unlike( $err, qr{\xc3\x83}, 'the warning is not double-encoded' );
 };
 
 done_testing;

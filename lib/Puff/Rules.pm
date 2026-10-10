@@ -4,7 +4,7 @@ use v5.36;
 
 use Module::Pluggable::Object ();
 use Path::Tiny                qw( path );
-use Puff::Path                qw( display_name );
+use Puff::Path                qw( display_lines display_name );
 
 my $CODE_RE  = qr/\A[A-Z]+[0-9]{3}\z/;
 my $RESERVED = 'P001';
@@ -14,7 +14,7 @@ sub load ( $class, %args ) {
         search_path      => ['Puff::Rule'],
         require          => 1,
         on_require_error => sub ( $module, $error ) {
-            die "Cannot load rule $module: $error";
+            die "Cannot load rule $module: " . display_lines("$error");
         },
     )->plugins;
 
@@ -23,15 +23,24 @@ sub load ( $class, %args ) {
         die "rule-paths: '" . display_name($dir) . "' is not a directory\n" unless $root->is_dir;
         my @files = sort grep {/\.pm\z/} map { $_->stringify } _all_files($root);
         for my $file (@files) {
-            my $text     = path($file)->slurp_utf8;
-            my @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
-            my $abs      = path($file)->absolute->stringify;
+            my $abs = path($file)->absolute->stringify;
+            my @packages;
 
-            # The error is a byte string with the path inside it, so show it line by line
-            # (display_name would escape the newlines) in the same form as other path errors.
-            unless ( eval { require $abs; 1 } ) {    # puff: ignore S016 - rule-paths come from the user's own config
-                my $error = join "\n", map { display_name($_) } split /\n/, "$@", -1;
-                die 'Cannot load rule file ' . display_name($abs) . ": $error";
+            # Perl's errors and warnings are byte strings with the path inside, so show them
+            # line by line (display_name would escape the newlines) like other path errors.
+            my $loaded = do {
+                local $SIG{__WARN__} = sub ($warning) { warn display_lines("$warning") };
+                eval {
+                    my $text = path($file)->slurp_utf8;
+                    @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
+                    require $abs;    # puff: ignore S016 - rule-paths come from the user's own config
+                    1;
+                };
+            };
+            unless ($loaded) {
+                my $error = display_lines("$@");
+                $error .= "\n" unless $error =~ /\n\z/;
+                die "rule-paths: cannot load '" . display_name($abs) . "': $error";
             }
             push @candidates, @packages;
         }
