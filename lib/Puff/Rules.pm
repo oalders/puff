@@ -26,7 +26,13 @@ sub load ( $class, %args ) {
             my $text     = path($file)->slurp_utf8;
             my @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
             my $abs      = path($file)->absolute->stringify;
-            require $abs;    # puff: ignore S016 - rule-paths come from the user's own config
+
+            # The error is a byte string with the path inside it, so show it line by line
+            # (display_name would escape the newlines) in the same form as other path errors.
+            unless ( eval { require $abs; 1 } ) {    # puff: ignore S016 - rule-paths come from the user's own config
+                my $error = join "\n", map { display_name($_) } split /\n/, "$@", -1;
+                die 'Cannot load rule file ' . display_name($abs) . ": $error";
+            }
             push @candidates, @packages;
         }
     }

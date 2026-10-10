@@ -730,6 +730,13 @@ subtest 'non-ASCII rule-paths entries' => sub {
     $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["r\x{e8}gles"]\nextend-select = ["X"]\n});
     ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
     like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
+
+    $dir->child( $rules, 'Broken.pm' )->spew_utf8("package Broken;\nuse strict;\n1 +;\n\$undeclared = 1;\n1;\n");
+    ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    isnt( $exit, 0, 'a rule file that does not compile fails' );
+    like( $err, qr{Cannot load rule file .*/\Q$rules\E/Broken\.pm}, 'load error names the file in UTF-8' );
+    like( $err, qr{ at .*/\Q$rules\E/Broken\.pm line \d+}, 'the message from perl names it in UTF-8' );
+    unlike( $err, qr{\xc3\x83}, 'not double-encoded' );
 };
 
 done_testing;
