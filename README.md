@@ -7,7 +7,7 @@ files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
 By default puff runs the security (`S`) and likely-bug (`B`) rules (except
-S018, S019, B007, B008, B009 and B010, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
+S018, S019, S020, B007, B008, B009 and B010, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -82,7 +82,7 @@ To see which rules fire most and which of them can be fixed, use
 `CODES` is a comma-separated list, and the option can be repeated. A code can
 be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
-rule and applies every fix. A few rules (S018, S019, B007, B008, B009 and B010) are selected only by
+rule and applies every fix. A few rules (S018, S019, S020, B007, B008, B009 and B010) are selected only by
 their exact code or `ALL`, never by a prefix, so `--select S` or `--select B`
 leaves them off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
@@ -241,7 +241,7 @@ does not silently do nothing.
 | `rule-paths` | `[]` | Directories of extra rule modules. A relative path is relative to the config file's directory; an absolute path is used as it is. See below. |
 | `exclude` | `["/local", "/blib", "/.build", "/.git"]` | Paths to skip when searching directories. Entries you list are added to the defaults. |
 | `unsafe-fixes` | `false` | Apply unsafe fixes as well as safe ones. Must be `true` or `false` (not a string or number). |
-| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, B005, B006, M001, S007 and S013 have options; `puff rule CODE` describes them. |
+| `[rules.CODE]` | none | Options for one rule. Unknown option names are an error. A001, B003, B005, B006, M001, S007, S013 and S020 have options; `puff rule CODE` describes them. |
 
 The project root is the directory holding the config file, or the current
 directory when there is none. `exclude` entries match whole path segments:
@@ -320,6 +320,7 @@ reported as `P001`:
 | S017 | HTMLEscapeQuote | Escape ' in a hand-written HTML escaper | unsafe | [79](https://cwe.mitre.org/data/definitions/79.html) |
 | S018 | ShellString | Constant command string runs /bin/sh | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | S019 | RegexInterpolation | Variable interpolated into a regex without `\Q` | unsafe | [625](https://cwe.mitre.org/data/definitions/625.html), [1333](https://cwe.mitre.org/data/definitions/1333.html) |
+| S020 | HTTPTimeout | HTTP client created without a timeout | none | [400](https://cwe.mitre.org/data/definitions/400.html) |
 | Q001 | SimpleStringQuotes | Use single quotes for a string with nothing to interpolate | safe |  |
 | Q002 | HashKeyQuotes | Hash key does not need quotes | safe |  |
 | Q003 | EmptyQuotes | Use q{} for an empty string | safe |  |
@@ -616,6 +617,57 @@ variable is uncertain: `${ expr }`, a `[` right after the name (Perl guesses
 between a subscript and a character class), postfix dereference, or an
 unusual delimiter. Matching against a variable directly (`$s =~ $x`) is not
 reported.
+
+**S020** is not selected by default, and selecting `S` does not turn it on:
+name it (`--extend-select S020`) or use `ALL`. It reports an HTTP client
+built without a timeout, so a slow or stalled server can hold a worker
+indefinitely (CWE-400): a `new` call (`Class->new(...)`,
+`Class->new({ ... })` or `new Class(...)`) on LWP::UserAgent,
+WWW::Mechanize, HTTP::Tiny, Furl, Furl::HTTP or Mojo::UserAgent with no
+`timeout` key, or for Mojo::UserAgent neither `request_timeout` (which
+defaults to no limit) nor `inactivity_timeout` (either one is enough);
+`connect_timeout` alone does not count. A missing timeout is reported even
+when the client's default is short, so the limit is written where the client
+is made. These literal values are reported too:
+
+- 0, which turns the timeout off, and negative numbers;
+- anything longer than `max-timeout` seconds (default 60; it must be a
+  positive, finite number). For Mojo::UserAgent all three keys are checked;
+- `timeout => undef` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny,
+  which leaves the default (180s or 60s), and `->timeout(undef)` for the
+  same clients, which turns the timeout off. For Furl and Mojo::UserAgent
+  `undef` is not checked;
+- a quoted string that is wholly a number (`'300'`, `'1e9'`, `'-5'`).
+  Other strings, such as `'10 s'`, are not checked.
+
+A value in a variable or expression, and arguments that are not all
+`key => value` pairs with constant keys (`->new(%opts)`, `->new($args)`),
+are not reported.
+
+A missing timeout is not reported when a timeout setter is chained onto the
+constructor (`Mojo::UserAgent->new->request_timeout(10)`) or is called by a
+later statement in the same block that is nothing but a setter call on the
+variable (`my $ua = LWP::UserAgent->new; $ua->timeout(10);`). The setters
+are `timeout` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and
+`request_timeout` or `inactivity_timeout` for Mojo::UserAgent
+(`connect_timeout` is checked but not enough); Furl and Furl::HTTP have
+none. The client must be assigned to a plain scalar by the whole statement:
+`my $ua = Class->new(...);` (or `our`, `state`, or no declarator),
+optionally followed by `or die ...` or `|| die ...`, or
+`my $ua = $arg // Class->new;` (or `||`). A setter in a nested block, sub,
+loop or condition, one with a statement modifier (`$ua->timeout(10) if $x;`),
+one before the constructor, and one after the name is declared or assigned
+again do not count. Every setter value is checked like a constructor value,
+even when the constructor already has a good timeout
+(`->new(timeout => 5); $ua->timeout(0);` is reported), and the violation is
+reported at the constructor. A client stored elsewhere (`$self->{ua} = ...`)
+or used straight away (`LWP::UserAgent->new->get($url)`) needs the timeout
+in the constructor. Subclasses, wrapper functions, class names in a variable
+and quoted class names (`'LWP::UserAgent'->new`, `LWP::UserAgent::->new`)
+are not checked. There is no fix.
+
+    [rules.S020]
+    max-timeout = 30
 
 **Q001** is not selected by default; turn it on with `--select Q` or
 `extend-select = ["Q"]`. It reports a `"..."` string whose text has no
