@@ -87,8 +87,10 @@ their exact code or `ALL`, never by a prefix, so `--select S` or `--select B`
 leaves them off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
 rules off. An `ignore` entry that matches nothing is allowed. An empty
-entry in any of the three lists (`select = [""]` or `--select ''`) is an
-error too, rather than quietly matching every rule.
+entry in any of the three lists (`select = [""]`, `--select ''` or
+`--select 'B001,,'`) is an error too (exit `2`), rather than quietly matching
+every rule. `--select ''` used to select nothing; to select no rules, put
+`select = []` in the config file.
 
 ### Exit codes
 

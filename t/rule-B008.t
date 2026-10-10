@@ -35,6 +35,17 @@ is(
     'C-style for loop variable'
 );
 is( violations("package A;\nour \$x;\npackage B;\n{ our \$x }\n"), [], 'inner our of an outer our' );
+is(
+    [ map { $_->message } @{ violations("my \$x = 1;\nmy \$x = 2;\n{ my \$x }\n") } ],
+    ['$x shadows the declaration on line 2'],
+    'the latest outer declaration is named'
+);
+
+# Nested do blocks reusing one name: no outer $x is visible yet. Checking
+# that for every outer $x was cubic in the depth (500 levels took 11s).
+my $do = 'my $x = 1';
+$do = "my \$x = do { $do; \$x }" for 1 .. 500;
+is( violations("$do;\n"), [], 'deeply nested do blocks' );
 
 # Deep nesting: each block's $y shadows the one around it, the innermost
 # $x shadows the file's, and once the blocks close only the file's $x is

@@ -24,15 +24,15 @@ sub explanation {
 
         The rule reports a `my`, `our` or `state` variable, a sub signature
         parameter, or a `catch ($e)` variable, whose name is already
-        declared in an enclosing scope: an outer block, the file, a `for my $x` loop variable or a
-        variable declared in an `if` or `while` condition. Sub bodies count,
-        so a sub that declares `my $x` shadows a file-level `my $x` declared
-        before the sub; so do anonymous subs. `my $x = $x + 1` inside a
-        block reports the new `$x`, which is a classic bug when the outer
-        `$x` was meant. Blocks side by side, such as two subs or two loops,
-        can reuse a name. `$x`, `@x` and `%x` are different variables, and
-        an inner `our` of a name an outer scope declared with `our` is not
-        reported. There is no fix.
+        declared in an enclosing scope: an outer block, the file, a
+        `for my $x` loop variable or a variable declared in an `if` or
+        `while` condition. Sub bodies count, so a sub that declares `my $x`
+        shadows a file-level `my $x` declared before the sub; so do
+        anonymous subs. `my $x = $x + 1` inside a block reports the new
+        `$x`, which is a classic bug when the outer `$x` was meant. Blocks
+        side by side, such as two subs or two loops, can reuse a name. `$x`,
+        `@x` and `%x` are different variables, and an inner `our` of a name
+        an outer scope declared with `our` is not reported. There is no fix.
 
         Not selected by default, not even by `--select B`: enable it by its
         exact code (`--extend-select B008`) or with `ALL`.
@@ -55,11 +55,11 @@ __END__
 =head1 DESCRIPTION
 
 Reports a C<my>, C<our> or C<state> variable, a sub signature parameter, or
-the variable of C<try { } catch ($e) { }>, that hides a variable of the same name declared earlier in an enclosing
-scope: a C<for my $x> loop variable redeclared in the loop body, a variable
-from an C<if> or C<while> condition redeclared in one of its blocks, or a
-sub (named or anonymous) declaring a name the file already declared. There
-is no fix.
+the variable of C<try { } catch ($e) { }>, that hides a variable of the same
+name declared earlier in an enclosing scope: a C<for my $x> loop variable
+redeclared in the loop body, a variable from an C<if> or C<while> condition
+redeclared in one of its blocks, or a sub (named or anonymous) declaring a
+name the file already declared. There is no fix.
 
 A variable is visible only after its declaration's statement, so
 C<my $x = do { my $x = 1 }> is not reported, while C<my $x = $x + 1> in an

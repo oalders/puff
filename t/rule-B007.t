@@ -33,6 +33,11 @@ is(
 is( violations("sub f (\$\$) {\n    my \$x;\n}\n"), [], 'a real prototype declares nothing' );
 is( violations("package A;\nour \$x;\npackage B;\nour \$x;\n"), [], 'our in different packages' );
 is( scalar @{ violations("package A;\nour \$x;\nour \$x;\n") }, 1, 'our twice in one package' );
+is(
+    [ map { $_->message } @{ violations("my \$x;\nmy \$x;\nmy \$x;\n") } ],
+    [ map {"\$x is redeclared in the same scope (first declared on line $_)"} 1, 2 ],
+    'each redeclaration names the one before it'
+);
 
 # The analysis is linear: thousands of file-level declarations finish well
 # inside prove's timeout (it was quadratic in the number of `our`s).

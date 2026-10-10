@@ -45,7 +45,8 @@ eval 'my $twice = 3';
 our $_;
 {
     no feature 'signatures';
-    sub topic ($_) { return $_[0] }
+    sub topic ($_) { return $_[0] }    # read as declaring $_, it would shadow `our $_`
+    sub pair  ($$) { my ( $l, $r ) = @_; return $l + $r }
 }
 
 # A catch variable is not visible after its catch block.

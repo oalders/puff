@@ -620,9 +620,11 @@ subtest 'errors exit 2' => sub {
     like( $err, qr/^Unknown rule selector: S999$/m, 'and says so' );
 
     for my $option (qw( --select --extend-select --ignore )) {
-        ( $out, $err, $exit ) = puff( $dir, 'check', $option, ' , ' );
-        is( $exit, 2, "an empty $option exits 2" );
-        like( $err, qr/^Error: $option needs a rule code or prefix$/m, 'and says so' );
+        for my $value ( ' , ', q{}, ' ', 'B001,,', ',B001' ) {
+            ( $out, $err, $exit ) = puff( $dir, 'check', $option, $value );
+            is( $exit, 2, "$option '$value' exits 2" );
+            like( $err, qr/^Error: $option has an empty rule selector$/m, 'and says so' );
+        }
     }
 };
 

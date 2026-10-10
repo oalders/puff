@@ -71,6 +71,10 @@ for my $key (qw( select extend-select ignore )) {
     );
 }
 
+# An empty list is not an empty entry: it is how to select no rules.
+$tmp->child('none.toml')->spew_utf8(qq{select = []\n});
+is( Puff::Config->load( path => 'none.toml', cli => {} )->select, [], 'select = [] selects nothing' );
+
 $tmp->child('strbool.toml')->spew_utf8(qq{unsafe-fixes = "false"\n});
 like(
     dies { Puff::Config->load( path => 'strbool.toml', cli => {} ) },

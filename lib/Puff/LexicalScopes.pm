@@ -103,6 +103,10 @@ sub _check ( $state, $decl ) {
     my $visible  = $state->{visible}{$symbol} //= [];
     my $conflict = _conflict( $state->{declared}, $visible, $decl );
     my $scope    = refaddr $decl->{scope};
+
+    # A scope with no last token (only in broken code) is never closed: its
+    # declarations stay in view to the end of the document, so later ones
+    # may be reported as shadowing them.
     if ( !$state->{names}{$scope} && !$decl->{scope}->isa('PPI::Document') ) {
         my $last = $decl->{scope}->last_token;
         push @{ $state->{closing}{ refaddr $last } }, $scope if $last;
@@ -129,14 +133,20 @@ sub _conflict ( $declared, $visible, $decl ) {
     # The latest declaration of the name in each enclosing scope, innermost
     # first. The others in view are in the declaration's own scope.
     my $skip = refaddr $decl->{scope};
+    my $ancestors;
     for ( my $i = $#$visible ; $i >= 0 ; $i-- ) {
         my $outer = $visible->[$i];
         my $scope = refaddr $outer->{scope};
         next if $scope == $skip;
         $skip = $scope;
 
-        # `my $x = do { my $x ... }`: the outer $x is not visible yet.
-        next if $outer->{statement} && _contains( $outer->{statement}, $decl->{elem} );
+        # `my $x = do { my $x ... }`: the outer $x is not visible yet. The
+        # declaration's ancestors are found once, not once per outer $x, so
+        # deeply nested `do` blocks that reuse a name stay quadratic.
+        if ( $outer->{statement} ) {
+            $ancestors //= _ancestors( $decl->{elem} );
+            next if $ancestors->{ refaddr $outer->{statement} };
+        }
 
         # An inner `our` of a name already declared with `our` is the same
         # global or, in another package, a different one on purpose.
@@ -162,11 +172,13 @@ sub _is ( $elem, $other ) {
     return $elem && refaddr($elem) == refaddr($other);
 }
 
-sub _contains ( $outer, $elem ) {
+# The refaddrs of $elem and everything around it.
+sub _ancestors ($elem) {
+    my %ancestors;
     for ( my $el = $elem ; $el ; $el = $el->parent ) {
-        return 1 if refaddr($el) == refaddr($outer);
+        $ancestors{ refaddr $el } = 1;
     }
-    return 0;
+    return \%ancestors;
 }
 
 # The declarations a token starts: the variables after my/our/state, or the
@@ -318,18 +330,20 @@ The analysis behind B007 (a lexical redeclared in the same scope) and B008
 C<declarations($token)> returns the declarations that C<$token> starts: the
 variables after C<my>, C<our> or C<state> (including list forms and C<for my
 $v>), the parameters of a sub signature, or the variable of C<try { }
-catch ($e) { }>. Each is a hash reference with
-C<elem> (the declaring symbol, or the signature token), C<symbol> (such as
-C<$x>), C<kind> (C<my> or C<our>), C<scope> (the block, document or compound
-statement the name belongs to; a signature's parameters belong to the sub's
-body block) and C<statement> (the statement holding the declaration, or
-undef for a loop variable or a signature parameter).
+catch ($e) { }>. Each is a hash reference with C<elem> (the declaring
+symbol, or the signature token), C<symbol> (such as C<$x>), C<kind> (C<my>
+or C<our>), C<scope> (the block, document or compound statement the name
+belongs to; a signature's parameters belong to the sub's body block) and
+C<statement> (the statement holding the declaration, or undef for a loop
+variable or a signature parameter).
 
 C<conflicts_at($elem, $doc)> returns the conflicts reported at C<$elem>, a
 L<PPI::Token::Symbol> in a C<my>, C<our> or C<state> declaration or a
-L<PPI::Token::Prototype> holding a sub signature, or a signature parameter. Each is a hash reference
-with C<kind> (C<redeclared> or C<shadowed>), C<symbol> (such as C<$x>) and
-C<line>, the line of the earlier declaration. The whole document is
+L<PPI::Token::Prototype> holding a sub signature, or a signature
+parameter. Each is a hash reference with C<kind> (C<redeclared> or
+C<shadowed>), C<symbol> (such as C<$x>) and C<line>, the line of the
+earlier declaration; when a scope declares the name more than once, the
+latest one before C<$elem> is normally reported. The whole document is
 analysed on the first call and the answer is kept until a different
 document is passed.
 
@@ -342,9 +356,9 @@ Scopes are the document, every block, and each compound statement, which
 holds the variables declared in its condition or loop header so that they
 are visible in all of its blocks. Signature parameters belong to the sub's
 body block, and a catch variable to its catch block. A prototype such as
-C<($$)> or C<($_)> declares nothing. C<local> declares nothing. Two C<our> declarations of the same
-name are reported only when they are in the same scope and package; in
-nested scopes they name the same global, and in different packages
-different ones.
+C<($$)> or C<($_)> declares nothing, and neither does C<local>. Two C<our>
+declarations of the same name are reported only when they are in the same
+scope and package; in nested scopes they name the same global, and in
+different packages different ones.
 
 =cut
