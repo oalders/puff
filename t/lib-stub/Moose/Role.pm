@@ -1,4 +1,4 @@
-package Mouse;
+package Moose::Role;
 
 # Stand-in for t/fixed-compiles.t, so the M fixtures compile without the
 # real (optional) module installed.
@@ -9,7 +9,7 @@ sub import {
     my $caller = caller;
     no strict 'refs';
     *{"${caller}::$_"} = sub { }
-        for qw( has extends with );
+        for qw( has with requires );
     return;
 }
 

@@ -336,6 +336,10 @@ reported as `P001`:
 | B009 | FormatArgCount | sprintf/printf argument count does not match the format | none |  |
 | B010 | DecimalMode | File mode given as a decimal literal | unsafe |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
+| M002 | HasWithoutIs | Attribute declared with has but no is | none |  |
+| M003 | LazyWithoutBuilder | Lazy attribute has no default or builder | none |  |
+| M004 | RedundantSuperBuild | BUILD or DEMOLISH calls the parent one, which already runs | unsafe |  |
+| M005 | NamespaceAutoclean | Moose sugar left in the namespace | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | U002 | PrintToSay | print with a trailing newline can be say | safe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -352,7 +356,7 @@ user can guess where a rule lives:
 | `S` | Security; selected by default | `S` (flake8-bandit) |
 | `Q` | Quotes | `Q` (flake8-quotes) |
 | `B` | Likely bugs; selected by default | `B` (flake8-bugbear) |
-| `M` | Moose and Mouse classes | none |
+| `M` | Moose, Mouse and Moo classes | none |
 | `U` | Upgrades to newer idioms | `UP` (pyupgrade) |
 | `A` | Misused builtin variables | `A` (flake8-builtins) |
 | `T` | Test style | `PT` (flake8-pytest-style) |
@@ -825,6 +829,55 @@ adds your own Moose::Exporter modules. The unsafe fix inserts
 it is unsafe because code that changes the class at runtime dies once the
 class is immutable. Based on Perl::Critic::Policy::Moose::RequireMakeImmutable,
 which checks the whole file at once.
+
+**M002** is not selected by default; turn it on with `--select M`. It reports
+`has` without `is` in a package that uses Moose, Moose::Role, Mouse,
+Mouse::Role, Moo or Moo::Role. Moose and Mouse then make no accessor (Moose
+only warns), and Moo dies, since `is` is required there. In a Moose or Mouse
+package an attribute with `reader`, `writer`, `accessor`, `predicate`,
+`clearer` or `handles` has a method and is not reported; use
+`is => 'bare'` to say it needs no accessor. A Moo package needs `is`
+whatever else is given. `has '+name'` (changing an inherited attribute) and
+a `has` whose name or options are not literal (`%opts`, `@args`, a variable)
+are not reported. There is no fix.
+
+**M003** is not selected by default; turn it on with `--select M`. In the
+same packages as M002 it reports a lazy attribute (`lazy => 1`, or Moo's
+`is => 'lazy'`) with no `default` and no `builder`: Moose and Mouse die when
+the class is built, and Moo has nothing to build the value from. Moo's
+`is => 'lazy'` and Moose's `lazy_build => 1` imply the builder
+`_build_NAME`. It also reports a lazy attribute whose builder has a known
+name (`builder => '_load'`, or `_build_NAME` from Moo's `builder => 1` or
+`is => 'lazy'`) that appears nowhere else in the package, not even as
+`sub _load`. That check is skipped for roles and for packages that may
+inherit the method (`extends`, `with`, `use parent`, `use base`, `@ISA`).
+`has '+name'`, a lazy flag that is not a literal, `builder => sub {...}`
+and a `has` whose name or options are not literal are not reported. There
+is no fix.
+
+**M004** is not selected by default; turn it on with `--select M`. Moose,
+Mouse and Moo call every BUILD and DEMOLISH in the hierarchy themselves, so
+it reports `->SUPER::BUILD`, `->next::method` and `->maybe::next::method`
+inside `sub BUILD` (and the same inside `sub DEMOLISH`) in a package that
+uses one of them or their `::Role` modules: the parent's method runs twice.
+Calls inside an anonymous sub in the method are not reported. The unsafe fix
+removes the call when it is a statement of its own, with its line when only
+a comment shares it; a call whose value is used (`return
+$self->SUPER::BUILD(@_)`) has no fix. It is unsafe because a parent outside
+the framework may rely on the call.
+
+**M005** is not selected by default; turn it on with `--select M`. It
+reports `use Moose`, `use Mouse`, `use Moo` or one of their `::Role`
+modules in a package with no `use namespace::autoclean`,
+`use namespace::clean` or `use namespace::sweep` and no `no Moose` (or the
+matching `no`). Otherwise `has`, `extends`, `with` and the rest stay
+callable as methods of the class. Each package is checked on its own, and
+`use Moose ()` is not reported. The unsafe fix adds
+`use namespace::autoclean;` on its own line after the `use`, with the same
+indentation; it is not offered when other code shares that line. It is
+unsafe because namespace::autoclean removes every imported function, not
+only the sugar, so code that calls an import such as `blessed` as a method
+breaks.
 
 **U001** is not selected by default; turn it on with `--select U`. It reports
 `use base`, which carries on when a parent class fails to load. The unsafe fix
