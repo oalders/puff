@@ -1,0 +1,36 @@
+---
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Perl ${{ matrix.perl }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: perldocker/perl-tester:${{ matrix.perl }}
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ['5.36', '5.38', '5.40', '5.42']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        run: >
+          cpm install -g --show-build-log-on-failure
+          --cpanfile cpanfile --with-test --with-recommends
+      - name: Run tests
+        run: prove -lr t
