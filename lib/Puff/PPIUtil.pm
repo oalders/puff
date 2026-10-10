@@ -4,7 +4,7 @@ use v5.36;
 
 use Exporter qw( import );
 
-our @EXPORT_OK = qw( is_builtin_call call_args is_constant_string is_sole_subscript_key );
+our @EXPORT_OK = qw( is_builtin_call call_args is_constant_string is_sole_subscript_key command_body );
 
 my $INTERPOLATES = qr/(?<!\\)(?:\\\\)*[\$\@]/;
 
@@ -74,6 +74,14 @@ sub is_constant_string ($elem) {
     return 0;
 }
 
+sub command_body ($elem) {
+    my ( $delim, $body ) = $elem->content =~ /\A(?:qx\s*(.)|`)(.*)\z/s;
+    return unless defined $body;
+    $body =~ s/.\z//s;    # closing delimiter
+    my $interpolates = !( defined $delim && $delim eq q{'} ) && $body =~ $INTERPOLATES;
+    return ( $body, $interpolates ? 1 : 0 );
+}
+
 sub is_sole_subscript_key ($elem) {
     my $stmt = $elem->parent or return 0;
     return 0 unless $stmt->isa('PPI::Statement::Expression') || ref $stmt eq 'PPI::Statement';
@@ -101,5 +109,9 @@ arguments as an arrayref of arrayrefs of significant PPI elements, split on
 top-level commas. C<is_constant_string($elem)> is true for a quote or heredoc
 with nothing interpolated. C<is_sole_subscript_key($elem)> is true when
 C<$elem> is the only thing inside a C<{...}> subscript, as in C<$h{'key'}>.
+C<command_body($elem)> returns the command text of a backtick or C<qx>
+token without its delimiters and whether it interpolates (C<qx'...'> never
+does), or an empty list for any other token. S008 and S018 both use it, so
+they agree on which commands interpolate.
 
 =cut
