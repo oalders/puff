@@ -22,9 +22,9 @@ sub explanation {
                 my $found = $item if $item->ok;    # the outer $found stays undef
             }
 
-        The rule reports a `my`, `our` or `state` variable, or a sub
-        signature parameter, whose name is already declared in an enclosing
-        scope: an outer block, the file, a `for my $x` loop variable or a
+        The rule reports a `my`, `our` or `state` variable, a sub signature
+        parameter, or a `catch ($e)` variable, whose name is already
+        declared in an enclosing scope: an outer block, the file, a `for my $x` loop variable or a
         variable declared in an `if` or `while` condition. Sub bodies count,
         so a sub that declares `my $x` shadows a file-level `my $x` declared
         before the sub; so do anonymous subs. `my $x = $x + 1` inside a
@@ -54,8 +54,8 @@ __END__
 
 =head1 DESCRIPTION
 
-Reports a C<my>, C<our> or C<state> variable, or a sub signature parameter,
-that hides a variable of the same name declared earlier in an enclosing
+Reports a C<my>, C<our> or C<state> variable, a sub signature parameter, or
+the variable of C<try { } catch ($e) { }>, that hides a variable of the same name declared earlier in an enclosing
 scope: a C<for my $x> loop variable redeclared in the loop body, a variable
 from an C<if> or C<while> condition redeclared in one of its blocks, or a
 sub (named or anonymous) declaring a name the file already declared. There

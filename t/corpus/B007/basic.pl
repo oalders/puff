@@ -45,3 +45,12 @@ our $shared = 2;
 
 package Alternate::A;
 our $shared = 3; # expect: B007
+
+{
+    use feature 'try';
+    no warnings 'experimental::try';
+    try { die }
+    catch ($error) {
+        my $error = 1; # expect: B007
+    }
+}

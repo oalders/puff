@@ -44,7 +44,11 @@ sub execute ( $self, $opt, $args ) {
     my %cli;
     for my $key (qw( select extend_select ignore )) {
         my $given = $opt->$key // next;
-        $cli{$key} = [ grep {length} map { split /\s*,\s*/ } @$given ];
+        my @lists = map {
+            [ grep {length} split /\s*,\s*/ ]
+        } @$given;
+        $self->usage_error( '--' . ( $key =~ tr/_/-/r ) . ' needs a rule code or prefix' ) if grep { !@$_ } @lists;
+        $cli{$key} = [ map {@$_} @lists ];
     }
     $cli{unsafe_fixes} = $opt->unsafe_fixes if defined $opt->unsafe_fixes;
 

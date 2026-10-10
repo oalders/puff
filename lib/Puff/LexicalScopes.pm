@@ -43,10 +43,17 @@ sub _conflicts ($doc) {
 # scope is shadowed. The package in effect is tracked on the way: `package
 # NAME;` lasts to the end of the enclosing block, and `package NAME { }`
 # sets it only inside its own block.
+#
+# The enclosing scopes are not searched one by one, which would cost the
+# nesting depth for every declaration. Instead each name has a stack of
+# the declarations in view, innermost last: a declaration is pushed when
+# it is seen and popped at the last token of its scope.
 sub _analyse ($doc) {
-    my ( %declared, %found, %block_package, @outer );
+    my %state = ( declared => {}, visible => {}, names => {}, closing => {} );
+    my ( %found, %block_package, @outer );
     my $package = 'main';
     for my $token ( $doc->tokens ) {
+        _close( \%state, $token ) if $state{closing}{ refaddr $token };
         if ( $token->isa('PPI::Token::Structure') ) {
             my $block = $token->parent;
             next unless $block && $block->isa('PPI::Structure::Block');
@@ -71,14 +78,41 @@ sub _analyse ($doc) {
             next;
         }
         for my $decl ( _declarations( $token, $package ) ) {
-            my $conflict = _check( \%declared, $decl ) or next;
+            my $conflict = _check( \%state, $decl ) or next;
             push @{ $found{ refaddr $decl->{elem} } }, $conflict;
         }
     }
     return \%found;
 }
 
-sub _check ( $declared, $decl ) {
+# At the last token of one or more scopes, takes their declarations out of
+# view. Scopes nest, so those are on top of each name's stack.
+sub _close ( $state, $token ) {
+    my %ending = map { $_ => 1 } @{ delete $state->{closing}{ refaddr $token } };
+    for my $scope ( keys %ending ) {
+        for my $symbol ( keys %{ delete $state->{names}{$scope} } ) {
+            my $stack = $state->{visible}{$symbol};
+            pop @$stack while @$stack && $ending{ refaddr $stack->[-1]{scope} };
+        }
+    }
+    return;
+}
+
+sub _check ( $state, $decl ) {
+    my $symbol   = $decl->{symbol};
+    my $visible  = $state->{visible}{$symbol} //= [];
+    my $conflict = _conflict( $state->{declared}, $visible, $decl );
+    my $scope    = refaddr $decl->{scope};
+    if ( !$state->{names}{$scope} && !$decl->{scope}->isa('PPI::Document') ) {
+        my $last = $decl->{scope}->last_token;
+        push @{ $state->{closing}{ refaddr $last } }, $scope if $last;
+    }
+    $state->{names}{$scope}{$symbol} = 1;
+    push @$visible, $decl;
+    return $conflict;
+}
+
+sub _conflict ( $declared, $visible, $decl ) {
     my $symbol = $decl->{symbol};
     my $own    = $declared->{ refaddr $decl->{scope} } //= {};
 
@@ -92,9 +126,14 @@ sub _check ( $declared, $decl ) {
     $own->{$global} //= $decl if defined $global;
     return { kind => 'redeclared', symbol => $symbol, line => $earlier->{line} } if $earlier;
 
-    for ( my $scope = $decl->{scope}->parent ; $scope ; $scope = $scope->parent ) {
-        next unless _is_scope($scope);
-        my $outer = ( $declared->{ refaddr $scope } // {} )->{$symbol} or next;
+    # The latest declaration of the name in each enclosing scope, innermost
+    # first. The others in view are in the declaration's own scope.
+    my $skip = refaddr $decl->{scope};
+    for ( my $i = $#$visible ; $i >= 0 ; $i-- ) {
+        my $outer = $visible->[$i];
+        my $scope = refaddr $outer->{scope};
+        next if $scope == $skip;
+        $skip = $scope;
 
         # `my $x = do { my $x ... }`: the outer $x is not visible yet.
         next if $outer->{statement} && _contains( $outer->{statement}, $decl->{elem} );
@@ -174,8 +213,10 @@ sub _scope_of ($token) {
 }
 
 # The parameters of `sub f ($x, $y = 1) { ... }`, which belong to the body.
-# A prototype such as `($$;@)` has no names and declares nothing.
+# A prototype such as `($$;@)` or `($_)` declares nothing: it holds only
+# prototype characters, while a signature parameter has a name.
 sub _signature ($token) {
+    return if $token->content =~ m{\A\([\s\$\@%&*;\\\[\]_+]*\)\z};
     my $body = $token->snext_sibling;
     $body = $body->snext_sibling while $body && !$body->isa('PPI::Structure::Block') && !_ends_sub($body);
     return unless $body && $body->isa('PPI::Structure::Block');
@@ -195,7 +236,8 @@ sub _signature ($token) {
 
 # A parameter in a signature that PPI parsed as a structure: a
 # PPI::Structure::Signature after a named sub, or a list after `sub` in an
-# anonymous sub. Symbols in default values are not parameters.
+# anonymous sub. Symbols in default values are not parameters. The variable
+# of `try { } catch ($e) { }` is declared the same way, in the catch block.
 sub _signature_param ($token) {
     my $expr   = $token->parent or return;
     my $struct = $expr->isa('PPI::Statement') ? $expr->parent : $expr;
@@ -205,7 +247,7 @@ sub _signature_param ($token) {
     my $is_signature = $struct->isa('PPI::Structure::Signature');
     if ( !$is_signature && $struct->isa('PPI::Structure::List') ) {
         my $word = $struct->sprevious_sibling;
-        $is_signature = $word && $word->isa('PPI::Token::Word') && $word->content eq 'sub';
+        $is_signature = $word && $word->isa('PPI::Token::Word') && ( $word->content eq 'sub' || _is_catch($word) );
     }
     return unless $is_signature;
     my $body = $struct->snext_sibling;
@@ -220,6 +262,13 @@ sub _signature_param ($token) {
         scope     => $body,
         statement => undef,
     };
+}
+
+# The `catch` of a statement that starts with `try`.
+sub _is_catch ($word) {
+    return 0 unless $word->content eq 'catch';
+    my $first = $word->parent->schild(0);
+    return $first->isa('PPI::Token::Word') && $first->content eq 'try';
 }
 
 sub _ends_sub ($elem) {
@@ -268,7 +317,8 @@ The analysis behind B007 (a lexical redeclared in the same scope) and B008
 
 C<declarations($token)> returns the declarations that C<$token> starts: the
 variables after C<my>, C<our> or C<state> (including list forms and C<for my
-$v>), or the parameters of a sub signature. Each is a hash reference with
+$v>), the parameters of a sub signature, or the variable of C<try { }
+catch ($e) { }>. Each is a hash reference with
 C<elem> (the declaring symbol, or the signature token), C<symbol> (such as
 C<$x>), C<kind> (C<my> or C<our>), C<scope> (the block, document or compound
 statement the name belongs to; a signature's parameters belong to the sub's
@@ -283,10 +333,16 @@ C<line>, the line of the earlier declaration. The whole document is
 analysed on the first call and the answer is kept until a different
 document is passed.
 
+That answer is kept in a single slot per process, which assumes documents
+are processed one at a time: all the calls for one document come before
+any call for the next. Interleaving calls for two documents still gives
+correct answers, but each switch analyses the document again.
+
 Scopes are the document, every block, and each compound statement, which
 holds the variables declared in its condition or loop header so that they
 are visible in all of its blocks. Signature parameters belong to the sub's
-body block. C<local> declares nothing. Two C<our> declarations of the same
+body block, and a catch variable to its catch block. A prototype such as
+C<($$)> or C<($_)> declares nothing. C<local> declares nothing. Two C<our> declarations of the same
 name are reported only when they are in the same scope and package; in
 nested scopes they name the same global, and in different packages
 different ones.

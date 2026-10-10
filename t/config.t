@@ -62,6 +62,15 @@ like( dies { Puff::Config->load( path => 'missing.toml', cli => {} ) }, qr/not f
 $tmp->child('broken.toml')->spew_utf8("select = [\n");
 like( dies { Puff::Config->load( path => 'broken.toml', cli => {} ) }, qr/Invalid config file/, 'invalid toml dies' );
 
+# An empty selector would be a prefix of every code, meaning ALL.
+for my $key (qw( select extend-select ignore )) {
+    $tmp->child('empty.toml')->spew_utf8(qq{$key = ["S", " "]\n});
+    like(
+        dies { Puff::Config->load( path => 'empty.toml', cli => {} ) },
+        qr/\AKey '$key' in config file '.*empty\.toml' has an empty rule selector\n/, "empty $key entry dies"
+    );
+}
+
 $tmp->child('strbool.toml')->spew_utf8(qq{unsafe-fixes = "false"\n});
 like(
     dies { Puff::Config->load( path => 'strbool.toml', cli => {} ) },

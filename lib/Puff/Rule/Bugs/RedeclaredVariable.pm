@@ -64,7 +64,7 @@ Scopes are blocks, the file, and each compound statement for the variables
 declared in its condition or loop header, so C<if ( my $x = ... ) { }
 elsif ( my $x = ... ) { }> is reported. A sub's signature parameters belong
 to its body, so C<sub f ($x) { my $x }> is reported here rather than by
-B008. Sigils matter: C<$x>, C<@x> and C<%x> are different. C<local> is
+B008; likewise a C<catch ($e)> variable belongs to its catch block. Sigils matter: C<$x>, C<@x> and C<%x> are different. C<local> is
 ignored. Two C<our> declarations of one name are reported only in the same
 package, so C<our $VERSION> in each of two packages in one file is fine.
 Code in string C<eval>s is not seen.

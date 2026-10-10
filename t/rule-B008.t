@@ -36,6 +36,15 @@ is(
 );
 is( violations("package A;\nour \$x;\npackage B;\n{ our \$x }\n"), [], 'inner our of an outer our' );
 
+# Deep nesting: each block's $y shadows the one around it, the innermost
+# $x shadows the file's, and once the blocks close only the file's $x is
+# in view.
+my $deep = "my \$x;\n" . ( "{ my \$y;\n" x 500 ) . "my \$x;\n" . ( "}\n" x 500 ) . "{ my \$y; my \$x }\n";
+is(
+    [ map { $_->line } @{ violations($deep) } ],
+    [ 3 .. 502, 1003 ], 'nested blocks open and close in order'
+);
+
 sub selected (@select) {
     return [ grep { $_ eq 'B008' } map { $_->code } Puff::Rules->instantiate( \@classes, select => [@select] ) ];
 }

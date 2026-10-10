@@ -618,6 +618,12 @@ subtest 'errors exit 2' => sub {
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S999' );
     is( $exit, 2, 'selecting an unknown rule exits 2' );
     like( $err, qr/^Unknown rule selector: S999$/m, 'and says so' );
+
+    for my $option (qw( --select --extend-select --ignore )) {
+        ( $out, $err, $exit ) = puff( $dir, 'check', $option, ' , ' );
+        is( $exit, 2, "an empty $option exits 2" );
+        like( $err, qr/^Error: $option needs a rule code or prefix$/m, 'and says so' );
+    }
 };
 
 subtest 'CRLF files are linted but not fixed' => sub {
