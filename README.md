@@ -7,7 +7,7 @@ files. It parses files with [PPI](https://metacpan.org/pod/PPI) and never
 runs the code it checks.
 
 By default puff runs the security (`S`) and likely-bug (`B`) rules (except
-B007 and B008, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
+B007, B008 and B009, which you select by code); the style rules are opt-in. puff does not format code; use perltidy for that.
 
 ## Install
 
@@ -82,7 +82,7 @@ To see which rules fire most and which of them can be fixed, use
 `CODES` is a comma-separated list, and the option can be repeated. A code can
 be a prefix: `S` means every `S` rule, `S00` means `S001` to `S009`. `ALL`
 means every rule, so `puff check --select ALL --fix --unsafe-fixes` runs every
-rule and applies every fix. A few rules (B007 and B008) are selected only by
+rule and applies every fix. A few rules (B007, B008 and B009) are selected only by
 their exact code or `ALL`, never by a prefix, so `--select B` leaves them
 off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
@@ -329,6 +329,7 @@ reported as `P001`:
 | B006 | UnusedVariable | Lexical variable is declared but never used | unsafe |  |
 | B007 | RedeclaredVariable | Lexical variable is redeclared in the same scope | none |  |
 | B008 | ShadowedVariable | Lexical variable shadows one from an enclosing scope | none |  |
+| B009 | FormatArgCount | sprintf/printf argument count does not match the format | none |  |
 | M001 | RequireMakeImmutable | Moose class never calls make_immutable | unsafe |  |
 | U001 | UseParent | use base instead of use parent | unsafe |  |
 | A001 | DollarAB | Do not use `$a` or `$b` outside sort and pair functions | none |  |
@@ -622,6 +623,20 @@ anonymous) declaring a name the file declared before it, or `my $x = $x + 1`
 in an inner block. Blocks side by side may reuse a name, a variable is not
 visible inside its own declaration (`my $x = do { my $x }` is fine), and an
 inner `our` of a name an outer scope declared with `our` is not reported.
+
+**B009** is not selected by default either, and selecting `B` does not turn
+it on: name it (`--extend-select B009`) or use `ALL`. It reports a `sprintf`
+or `printf` whose literal format takes a different number of arguments than
+the call passes (`sprintf '%s: %d', $name`), which Perl only warns about at
+runtime. It checks a call only when the format is one string with nothing
+interpolated and every other argument is plainly one value: a scalar, an
+element, a number, a string or `scalar(...)`, alone or joined by scalar
+operators. An array, hash, function call or anything else that can expand
+to a list skips the call, as do formats built at runtime, heredocs, explicit
+indexes (`%1$s`) and invalid conversions. `%%` takes no argument and each
+`*` width, precision or vector join string takes one. The filehandle in
+`printf STDERR ...`, `printf {$fh} ...` and `printf $fh ...` is not counted.
+There is no fix.
 
 **M001** is not selected by default; turn it on with `--select M`. It reports
 `use Moose` or `use Mouse` in a package that never calls `->make_immutable`,
