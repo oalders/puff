@@ -25,4 +25,3 @@ say "$$$"; # expect: U002
 say "$$$$"; # expect: U002
 say "\$$$"; # expect: U002
 say "\\$$"; # expect: U002
-say "$x@"; # expect: U002

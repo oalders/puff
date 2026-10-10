@@ -1,5 +1,4 @@
 use v5.36;
 no strict q{refs};
-my $name = q{\\};
-${ "main::" . $name } = "x";
+${ (qw/\\/)[0] } = "!";
 print "hello\n"; # expect: U002

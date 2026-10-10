@@ -50,10 +50,11 @@ sub explanation {
         `$ok ? "y\n" : "n\n"`), `CORE::print`, method calls such as
         `$fh->print(...)` and `print =>`. Nor is a string whose `\n`
         follows a single unescaped `$`: in `"a$\n"` the `$\` is the
-        variable, so the string does not end in a newline. `"a\$\n"`,
-        `"a@\n"`, `"$$\n"` and `"$$$\n"` do end in one, and are reported:
-        perl reads two or more `$` as `$$`, the process ID, dereferenced by
-        the rest. A `qq` whose delimiter is a letter, digit or `_`
+        variable, so the string does not end in a newline. The same goes
+        for `"$\$\n"`, which is two `$\` and an `n`. `"a\$\n"`, `"a@\n"`,
+        `"$$\n"` and `"$$$\n"` do end in one, and are reported: perl reads
+        two or more `$` as `$$`, the process ID, dereferenced by the rest.
+        A `qq` whose delimiter is a letter, digit or `_`
         (`qq n a\nn`) is skipped. `use if ..., feature => 'say'` is not
         recognised, so code that enables `say` that way is not checked.
 
@@ -62,18 +63,19 @@ sub explanation {
         always ends the output with "\n" where `print` adds `$\`. So the
         violation has no fix when the file mentions `$\`,
         `$OUTPUT_RECORD_SEPARATOR` or `$ORS` (or the globs `*\`, `*ORS` and
-        `*OUTPUT_RECORD_SEPARATOR`), has a symbolic `${...}` or `*{...}`
-        holding a string that has a backslash or names ORS (`${"\\"}`,
-        `${ lc "\\" }`, `*{'main::ORS'}`) or an interpolating string with
-        a variable in it (`${"main::$name"}`), calls
-        `output_record_separator`, or has a `#!` line with an `-l` switch.
-        An interpolating string does not count when it is a subscript
-        (`${ $h{"k$n"} }`), or when the block is only strings joined with
-        `.` and ends in a literal `}::name` (`*{"${class}::foo"}`). Not
-        seen: a `$\` set in another file or module, a name built at run
-        time from variables or calls (`${ chr(92) }`,
-        `${ "main::" . $name }`), stash access (`$::{"\\"}`), and a `$\`
-        set in a string `eval`.
+        `*OUTPUT_RECORD_SEPARATOR`, and `$ \` with a space), calls
+        `output_record_separator`, has a `#!` line with an `-l` switch, or
+        has a symbolic `${...}` or `*{...}` that is not one of two shapes
+        known to be safe. One is a scalar variable, with optional
+        subscripts that have no backslash or ORS name in them (`${$ref}`,
+        `${ $self->{x} }`, `${ $h{"k$n"} }`). The other is strings and
+        scalar variables joined with `.`, with no backslash, whose text ends
+        in a literal `::name` other than `ORS` or `OUTPUT_RECORD_SEPARATOR`
+        (`*{"${class}::foo"}`). Anything else, such as `${"\\"}`,
+        `${ chr(92) }` or `${ "main::" . $name }`, has no fix. Not seen: a
+        `$\` set in another file or module, a variable holding the name
+        (`${$name}`, `$$name`), stash access (`$::{"\\"}`), and a `$\` set
+        in a string `eval`.
 
         Also, `say` passes its newline through `$\`, so a tied handle whose
         `PRINT` ignores `$\` loses the newline. This is a known caveat of
@@ -117,24 +119,23 @@ sub _last_string ($word) {
     return unless $quote->isa('PPI::Token::Quote::Double') || $quote->isa('PPI::Token::Quote::Interpolate');
     return if $quote->isa('PPI::Token::Quote::Interpolate') && $quote->content =~ /\Aqq\s*\w/;
     my $string = $quote->string;
-    return if $string     =~ /\\[Qc]/;
-    return unless $string =~ /(?:\A|[^\\])(?:\\\\)*\\n\z/;
-
-    # In `"a$\n"` the `$\` is a variable, not a `$` and a newline.
-    return if _ors_before_newline($string);
+    return if $string =~ /\\[Qc]/;
+    return unless _ends_in_newline($string);
     return if $string eq q{\n} && @$args > 1;    # `print $x, "\n"`
     return unless $quote->content =~ /\\n.\z/s;
     return $quote;
 }
 
-# Whether the `\n` that ends a string is really `$\` followed by `n`: it
-# follows exactly one unescaped `$`. Perl reads two or more as `$$` (the
-# process ID) dereferenced by the rest, so `"$$\n"` and `"$$$$\n"` end in
-# a newline. The string is reversed so that the match is anchored and
-# stays linear on long runs of `$`.
-sub _ors_before_newline ($string) {
-    my ( $dollars, $backslashes ) = reverse($string) =~ /\An\\(\$+)(\\*)/ or return 0;
-    return length($dollars) - length($backslashes) % 2 == 1;
+# Whether a string's source ends in the escape `\n`. It is read from the
+# left as perl does: a backslash escapes the next character, except that a
+# single `$` takes the backslash after it as the variable `$\`, so in
+# `"a$\n"` and `"$\$\n"` the last `\` belongs to `$\`. Two or more `$` are
+# `$$`, the process ID, dereferenced by the rest, so `"$$\n"` ends in a
+# newline. The scan is linear, however long the runs of `$` and `\`.
+sub _ends_in_newline ($string) {
+    my $last = q{};
+    $last = $1 while $string =~ /\G(\\.|\$\\|\$+|[^\\\$]+)/gcs;
+    return $last eq '\\n' && ( pos($string) // 0 ) == length $string;
 }
 
 sub _is_filehandle ($elem) {
@@ -242,11 +243,12 @@ sub _sets_ors ($doc) {
                     || ( $prev->isa('PPI::Token::Symbol') && $prev->content =~ /\A\*(?:\w+::)+\z/ ) );
             }
 
-            # A symbolic `${"\\"}` or `*{"main::ORS"}`, or one whose name is
-            # not a literal.
+            # `$ \` with a space parses as two casts. A symbolic `${"\\"}` or
+            # `*{"main::ORS"}` counts, as does any name not known to be safe.
             if ( $elem->isa('PPI::Token::Cast') && $elem->content =~ /\A[\$*]\z/ ) {
-                my $block = $elem->snext_sibling;
-                return 1 if $block && $block->isa('PPI::Structure::Block') && _names_ors($block);
+                my $next = $elem->snext_sibling or return 0;
+                return 1 if $elem->content eq '$' && $next->isa('PPI::Token::Cast') && $next->content eq '\\';
+                return 1 if $next->isa('PPI::Structure::Block') && _names_ors($next);
             }
             return 1 if $elem->isa('PPI::Token::Word') && $elem->content =~ /(?:\A|::|->)output_record_separator\z/;
             return 0;
@@ -255,48 +257,65 @@ sub _sets_ors ($doc) {
     return 0;
 }
 
-# Whether a deref block's name may be the output record separator. Any
-# string in the block that has a backslash or names ORS counts, as does an
-# interpolating string with a variable in it, unless that string is a
-# hash or array subscript (`${ $h{"k$n"} }`). A block that is just
-# strings joined with `.` and ends in a literal `}::name`, as in
-# `*{"${class}::foo"}`, can only name `name`, so its variables don't
-# count.
+# Whether a deref block's name may be the output record separator. Only
+# two shapes are known not to be: a scalar variable with optional
+# subscripts (`${$ref}`, `${ $self->{x} }`, `${ $h{"k$n"} }`), and strings
+# and scalar variables joined with `.` whose text ends in a literal
+# `::name` other than ORS (`*{"${class}::foo"}`). Anything else counts.
 sub _names_ors ($block) {
-    my @quotes = @{ $block->find('PPI::Token::Quote') || [] };
-    return 1 if grep { $_->string =~ /\\|ORS|OUTPUT_RECORD_SEPARATOR/ } @quotes;
-    my @interpolating = grep {
-               !$_->isa('PPI::Token::Quote::Single')
-            && !$_->isa('PPI::Token::Quote::Literal')
-            && $_->string =~ /[\$\@]/
-            && !_in_subscript( $_, $block )
-    } @quotes;
-    return 0 unless @interpolating;
-    return !( _joined_strings($block) && $quotes[-1]->string =~ /\}::\w+\z/ );
+    my @parts = _block_parts($block) or return 1;
+    return 0 if _is_variable(@parts);
+    return 0 if _is_named(@parts);
+    return 1;
 }
 
-sub _in_subscript ( $elem, $block ) {
-    for ( my $p = $elem->parent ; $p && refaddr($p) != refaddr($block) ; $p = $p->parent ) {
-        return 1 if $p->isa('PPI::Structure::Subscript');
-    }
-    return 0;
-}
-
-# Whether a block holds only strings joined with `.`.
-sub _joined_strings ($block) {
+# The significant parts of a block holding a single statement.
+sub _block_parts ($block) {
     my @statements = $block->schildren;
-    return 0 unless @statements == 1;
+    return unless @statements == 1;
     my @parts = $statements[0]->schildren;
     pop @parts if @parts && $parts[-1]->isa('PPI::Token::Structure') && $parts[-1]->content eq ';';
-    return 0 unless @parts % 2;
-    for my $i ( 0 .. $#parts ) {
-        my $part = $parts[$i];
-        return 0
-            unless $i % 2
-            ? $part->isa('PPI::Token::Operator') && $part->content eq '.'
-            : $part->isa('PPI::Token::Quote');
+    return @parts;
+}
+
+# A scalar variable, then subscripts with no backslash or ORS name in them.
+sub _is_variable ( $first, @rest ) {
+    return 0 unless $first->isa('PPI::Token::Symbol') && $first->raw_type eq '$';
+    for my $part (@rest) {
+        next if $part->isa('PPI::Token::Operator') && $part->content eq '->';
+        return 0 unless $part->isa('PPI::Structure::Subscript');
+        return 0 if $part->content =~ /\\|ORS|OUTPUT_RECORD_SEPARATOR/;
+        return 0 if $part->find_first('PPI::Token::HereDoc');
     }
     return 1;
+}
+
+# Strings and scalar variables joined with `.`, whose text ends in a
+# literal `::name`. The literal parts are joined first, so that
+# `"main::O" . "RS"` is seen as naming ORS.
+sub _is_named (@parts) {
+    return 0 unless @parts % 2;
+    my $text = q{};
+    for my $i ( 0 .. $#parts ) {
+        my $part = $parts[$i];
+        if ( $i % 2 ) {
+            return 0 unless $part->isa('PPI::Token::Operator') && $part->content eq '.';
+        }
+        elsif ( $part->isa('PPI::Token::Quote') ) {
+            $text .= $part->string;
+        }
+        elsif ( $part->isa('PPI::Token::Symbol') && $part->raw_type eq '$' ) {
+            $text .= "\0";
+        }
+        else {
+            return 0;
+        }
+    }
+    return 0 if $text =~ /\\/;
+
+    # In `"$x::foo"` the `::foo` is part of the variable's name.
+    my ( $before, $name ) = $text =~ /([\$\@]?)[\w:']*::(\w+)\z/ or return 0;
+    return !$before && $name ne 'ORS' && $name ne 'OUTPUT_RECORD_SEPARATOR';
 }
 
 1;
@@ -366,7 +385,8 @@ C<CORE::print>, method calls such as C<< $fh->print >>, and C<< print => >>.
 
 A string whose final C<\n> follows a single unescaped C<$> is not
 reported. In C<"a$\n"> the C<$\> is a variable followed by an C<n>, not a
-C<$> and a newline, and dropping the C<\n> would not compile. C<"a\$\n">
+C<$> and a newline, and dropping the C<\n> would not compile. C<"$\$\n">
+is two C<$\> and an C<n>, and is not reported either. C<"a\$\n">
 has an escaped dollar and is reported, as is C<"a@\n">. So are C<"$$\n">
 and C<"$$$$\n">: perl reads two or more C<$> as C<$$>, the process ID,
 dereferenced by the rest, and the C<\n> is a newline.
@@ -387,19 +407,33 @@ C<say> sets C<local $\ = "\n">, so if the program sets C<$\> the output
 changes: C<print "x\n"> prints C<"x\n"> followed by C<$\>, while C<say "x">
 prints C<"x\n">. The violation is still reported, but with no fix, when the
 file mentions C<$\>, C<$OUTPUT_RECORD_SEPARATOR> or C<$ORS> (or the globs
-C<*\>, C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>), has a symbolic
-C<${...}> or C<*{...}> holding a string that has a backslash or names ORS
-(C<${"\\"}>, C<${ lc "\\" }>, C<*{'main::ORS'}>) or an interpolating
-string with a variable in it (C<${"main::$name"}>), calls
-C<output_record_separator>, or has a C<#!> line with an C<-l> switch. An
-interpolating string does not count when it is a subscript
-(C<${ $h{"k$n"} }>), or when the block is only strings joined with C<.>
-and ends in a literal C<}::name>, as in C<*{"${class}::foo"}>.
+C<*\>, C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>, and C<$ \> with a
+space), calls C<output_record_separator>, has a C<#!> line with an C<-l>
+switch, or has a symbolic C<${...}> or C<*{...}> that is not one of two
+shapes known to be safe:
 
-Not seen: a C<$\> set in another file or module, a name built at run time
-from variables or calls (C<${ chr(92) }>, C<${ "main::" . $name }>), stash
-access (C<$main::{ORS}>, C<$::{"\\"}>), and a C<$\> set in a string
-C<eval>.
+=over 4
+
+=item *
+
+a scalar variable, with optional subscripts that have no backslash or ORS
+name in them: C<${$ref}>, C<${ $self-E<gt>{x} }>, C<${ $h{"k$n"} }>;
+
+=item *
+
+strings and scalar variables joined with C<.>, with no backslash, whose
+text ends in a literal C<::name> other than C<ORS> or
+C<OUTPUT_RECORD_SEPARATOR>: C<*{"${class}::foo"}>. Literal parts are
+joined first, so C<"main::O" . "RS"> names C<ORS>.
+
+=back
+
+Anything else, such as C<${"\\"}>, C<${ chr(92) }>, a C<qw> or heredoc,
+or C<${ "main::" . $name }>, has no fix.
+
+Not seen: a C<$\> set in another file or module, a variable holding the
+name (C<${$name}>, C<$$name>), stash access (C<$main::{ORS}>,
+C<$::{"\\"}>), and a C<$\> set in a string C<eval>.
 
 =item *
 

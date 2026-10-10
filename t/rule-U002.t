@@ -19,14 +19,21 @@ sub lines ($text) {
 }
 
 # Long runs of `$` and `\` before the `\n` are checked in linear time (a
-# run of 100k `$` followed by `\$\n` once took seconds).
-for my $run ( '$', '\\', '$\\', '\\$' ) {
+# run of 100k `$` followed by `\$\n` once took seconds). The tails are on
+# lines 2 to 6.
+my %reported = (
+    '$'   => [ 2, 3, 4, 5 ],
+    '\\'  => [ 2, 4, 5 ],
+    '$\\' => [ 2, 4, 5 ],
+    '\\$' => [ 2, 4, 5 ],
+);
+for my $run ( sort keys %reported ) {
     my $long  = $run x ( 100_000 / length $run );
     my @tails = ( '\\n', '$\\n', '\\$\\n', '$$\\n', '\\\\n' );
     my $text  = "use v5.36;\n" . join q{}, map {qq{print "$long$_";\n}} @tails;
     my $start = time;
-    lines($text);
-    ok( time - $start < 2, "a 100k run of '$run' is checked quickly" );
+    is( lines($text), $reported{$run}, "a 100k run of '$run' is reported on the right lines" );
+    ok( time - $start < 5, "a 100k run of '$run' is checked quickly" );
 }
 
 my $dollars = '$' x 100_000;

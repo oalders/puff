@@ -1,5 +1,5 @@
 use v5.36;
+use English;
 no strict q{refs};
-my $name = q{\\};
-${ "main::" . $name } = "x";
+${"main::" . "O" . "RS"} = "!";
 print "hello\n"; # expect: U002

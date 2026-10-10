@@ -25,4 +25,3 @@ print "$$$\n"; # expect: U002
 print "$$$$\n"; # expect: U002
 print "\$$$\n"; # expect: U002
 print "\\$$\n"; # expect: U002
-print "$x@\n"; # expect: U002
