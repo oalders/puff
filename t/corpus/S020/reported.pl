@@ -99,3 +99,39 @@ my $fc = Furl::HTTP->new->timeout(5);    # expect: S020
 my $replaced = LWP::UserAgent->new;    # expect: S020
 $replaced = LWP::UserAgent->new( timeout => 5 );
 $replaced->timeout(5);
+
+# Any assignment operator assigns the name again, and the setters after it
+# belong to whatever it holds.
+my $or_assigned = LWP::UserAgent->new;    # expect: S020
+$or_assigned ||= HTTP::Tiny->new( timeout => 5 );
+$or_assigned->timeout(5);
+my $dor_assigned = LWP::UserAgent->new;    # expect: S020
+$dor_assigned //= HTTP::Tiny->new( timeout => 5 );
+$dor_assigned->timeout(5);
+my $list_assigned = LWP::UserAgent->new;    # expect: S020
+($list_assigned) = HTTP::Tiny->new( timeout => 5 );
+$list_assigned->timeout(5);
+my $same_statement = LWP::UserAgent->new;    # expect: S020
+$same_statement->agent('x'), $same_statement = HTTP::Tiny->new( timeout => 5 );
+$same_statement->timeout(5);
+
+# local and a for loop variable declare the name again.
+our $localized = LWP::UserAgent->new;    # expect: S020
+local $localized;
+$localized->timeout(5);
+my $looped = LWP::UserAgent->new;    # expect: S020
+for my $looped ( 1 .. 2 ) { }
+$looped->timeout(5);
+my $looped_bare = LWP::UserAgent->new;    # expect: S020
+foreach $looped_bare ( 1 .. 2 ) { }
+$looped_bare->timeout(5);
+
+# A setter on an alias is not followed.
+my $aliased = LWP::UserAgent->new;    # expect: S020
+my $alias   = $aliased;
+$alias->timeout(5);
+
+# Quoted class names.
+my $quoted = 'LWP::UserAgent'->new;    # expect: S020
+my $colons = LWP::UserAgent::->new( timeout => 0 );    # expect: S020
+my $q_tiny = q{HTTP::Tiny}->new;    # expect: S020

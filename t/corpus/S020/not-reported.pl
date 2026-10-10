@@ -69,3 +69,24 @@ my $class = 'LWP::UserAgent';
 my $dyn   = $class->new;
 LWP::UserAgent->can('new');
 my $name = LWP::UserAgent::;
+my $quoted = 'LWP::Simple'->new;
+my $interp = "LWP::UserAgent"->new( timeout => 5 );
+new 'LWP::UserAgent';
+
+# A setter followed by more of the statement.
+my $comma = LWP::UserAgent->new;
+$comma->timeout(10), $comma->get('https://example.com/');
+my $and = LWP::UserAgent->new;
+$and->timeout(10) && 1;
+my $word_and = HTTP::Tiny->new;
+$word_and->timeout(10) and 1;
+
+# A single-element list assignment.
+my ($listed) = LWP::UserAgent->new;
+$listed->timeout(10);
+
+# Quoted class names with a timeout.
+my $q_lwp   = 'LWP::UserAgent'->new( timeout => 10 );
+my $q_mojo  = Mojo::UserAgent::->new->request_timeout(10);
+my $q_later = 'HTTP::Tiny'->new;
+$q_later->timeout(10);
