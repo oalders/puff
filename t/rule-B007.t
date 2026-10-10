@@ -5,6 +5,7 @@ use Puff::Engine ();
 use Puff::Rules  ();
 use Puff::Source ();
 use Puff::Test   qw( run_corpus );
+use Test2::Mock  ();
 
 run_corpus('B007');
 
@@ -39,13 +40,26 @@ is(
     'each redeclaration names the one before it'
 );
 
-# The analysis is linear: thousands of file-level declarations finish well
-# inside prove's timeout (it was quadratic in the number of `our`s).
+# The work done, counted as the calls Puff::LexicalScopes makes to
+# refaddr: it compares a scope or element in each step of every walk, so
+# the count grows with the time taken but not with the machine's speed.
+sub work ($code) {
+    my $calls = 0;
+    my $mock  = Test2::Mock->new(
+        class    => 'Puff::LexicalScopes',
+        override => [ refaddr => sub : prototype($) ($ref) { $calls++; Scalar::Util::refaddr($ref) } ],
+    );
+    my $result = $code->();
+    $mock->reset_all;
+    return ( $result, $calls );
+}
+
+# The analysis is linear in the number of declarations (it was quadratic
+# in the number of `our`s): about 20 calls each here.
 my $many = join q{}, map {"our \$o$_ = 1;\nprint 1;\nmy \$m$_ = 1;\n"} 1 .. 3000;
-is(
-    [ map { $_->line } @{ violations("${many}our \$o1;\nmy \$m1;\n") } ],
-    [ 9001, 9002 ], 'many declarations, two redeclared'
-);
+my ( $redeclared, $calls ) = work( sub { violations("${many}our \$o1;\nmy \$m1;\n") } );
+is( [ map { $_->line } @$redeclared ], [ 9001, 9002 ], 'many declarations, two redeclared' );
+cmp_ok( $calls, '<=', 50 * 6000, 'many declarations are linear' );
 
 sub selected (@select) {
     return [ grep { $_ eq 'B007' } map { $_->code } Puff::Rules->instantiate( \@classes, select => [@select] ) ];

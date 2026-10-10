@@ -46,8 +46,9 @@ sub _conflicts ($doc) {
 #
 # The enclosing scopes are not searched one by one, which would cost the
 # nesting depth for every declaration. Instead each name has a stack of
-# the declarations in view, innermost last: a declaration is pushed when
-# it is seen and popped at the last token of its scope.
+# the declarations in view, innermost last and at most one per scope: a
+# declaration is pushed when it is seen, or replaces the entry for its own
+# scope, and is popped at the last token of its scope.
 sub _analyse ($doc) {
     my %state = ( declared => {}, visible => {}, names => {}, closing => {} );
     my ( %found, %block_package, @outer );
@@ -112,7 +113,16 @@ sub _check ( $state, $decl ) {
         push @{ $state->{closing}{ refaddr $last } }, $scope if $last;
     }
     $state->{names}{$scope}{$symbol} = 1;
-    push @$visible, $decl;
+
+    # Only the latest declaration of a name in a scope can be found by a
+    # later one, so each scope keeps one entry per name. Its declarations
+    # are on top of the stack while it is open.
+    if ( @$visible && refaddr $visible->[-1]{scope} == $scope ) {
+        $visible->[-1] = $decl;
+    }
+    else {
+        push @$visible, $decl;
+    }
     return $conflict;
 }
 
@@ -131,7 +141,8 @@ sub _conflict ( $declared, $visible, $decl ) {
     return { kind => 'redeclared', symbol => $symbol, line => $earlier->{line} } if $earlier;
 
     # The latest declaration of the name in each enclosing scope, innermost
-    # first. The others in view are in the declaration's own scope.
+    # first: the stack holds one entry per scope, and an entry for the
+    # declaration's own scope is skipped.
     my $skip = refaddr $decl->{scope};
     my $ancestors;
     for ( my $i = $#$visible ; $i >= 0 ; $i-- ) {
@@ -142,7 +153,8 @@ sub _conflict ( $declared, $visible, $decl ) {
 
         # `my $x = do { my $x ... }`: the outer $x is not visible yet. The
         # declaration's ancestors are found once, not once per outer $x, so
-        # deeply nested `do` blocks that reuse a name stay quadratic.
+        # a declaration costs its depth plus the scopes in view that declare
+        # the name, and N nested `do` blocks cost N^2 in all, not N^3.
         if ( $outer->{statement} ) {
             $ancestors //= _ancestors( $decl->{elem} );
             next if $ancestors->{ refaddr $outer->{statement} };

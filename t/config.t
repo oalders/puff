@@ -71,6 +71,30 @@ for my $key (qw( select extend-select ignore )) {
     );
 }
 
+# Whitespace around a selector is dropped, as on the command line.
+for my $key (qw( select extend-select ignore )) {
+    $tmp->child('spaced.toml')->spew_utf8(qq{$key = [" B006 ", "\\tS001\\n"]\n});
+    my $method = $key =~ tr/-/_/r;
+    is(
+        Puff::Config->load( path => 'spaced.toml', cli => {} )->$method, [ 'B006', 'S001' ],
+        "$key entries are trimmed"
+    );
+}
+
+# An entry that is not a string is an error, not a warning.
+for my $entry ( 'true', '["B006"]', '{ code = "B006" }' ) {
+    $tmp->child('typed.toml')->spew_utf8(qq{select = [$entry]\n});
+    my $error;
+    is(
+        warnings {
+            $error = dies { Puff::Config->load( path => 'typed.toml', cli => {} ) }
+        },
+        [],
+        "[$entry]: no warning"
+    );
+    like( $error, qr/\AKey 'select' in config file '.*typed\.toml' must be an array of strings\n/, "[$entry] dies" );
+}
+
 # An empty list is not an empty entry: it is how to select no rules.
 $tmp->child('none.toml')->spew_utf8(qq{select = []\n});
 is( Puff::Config->load( path => 'none.toml', cli => {} )->select, [], 'select = [] selects nothing' );
