@@ -89,21 +89,27 @@ sub _cleaned ($region) {
 }
 
 # Whether `use MooseX::MarkAsMethods` passes a literal true `autoclean`.
-# Only keys count: the elements at even positions of the argument list.
+# Only keys count: the elements at even positions of the argument list. The
+# value must end the list or be followed by a comma, not by `=>`.
 sub _autoclean_option ($include) {
     my @args = $include->arguments;
     @args = map { $_->schildren } map { $_->schildren } @args
         if @args == 1 && $args[0]->isa('PPI::Structure::List');
     my @items = ( [] );
+    my @ends;    # the separator after each item
     for my $arg (@args) {
-        if   ( $arg->isa('PPI::Token::Operator') && $arg->content =~ /\A(?:,|=>)\z/ ) { push @items, [] }
-        else                                                                          { push @{ $items[-1] }, $arg }
+        if ( $arg->isa('PPI::Token::Operator') && $arg->content =~ /\A(?:,|=>)\z/ ) {
+            push @ends, $arg->content;
+            push @items, [];
+        }
+        else { push @{ $items[-1] }, $arg }
     }
     pop @items unless @{ $items[-1] };
     for ( my $i = 0 ; $i < @items ; $i += 2 ) {
         my ( $key, $value ) = @items[ $i, $i + 1 ];
         next unless @$key == 1 && ( _literal( $key->[0] ) // q{} ) eq 'autoclean';
         return 0 unless $value && @$value == 1 && !$value->[0]->isa('PPI::Token::Word');
+        return 0 if ( $ends[ $i + 1 ] // q{,} ) ne q{,};
         return _literal( $value->[0] ) ? 1 : 0;
     }
     return 0;

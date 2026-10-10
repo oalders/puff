@@ -70,4 +70,23 @@ has run_time_role => ( is => 'ro', lazy => 1, builder => '_from_run_time_role' )
 
 Moose::Util::apply_all_roles( __PACKAGE__, 'My::Builds' );
 
+package My::BeginOther;
+
+use Moose;
+BEGIN { warn 'with' }
+
+has begin_other => ( is => 'ro', lazy => 1, builder => '_begin_other' ); # expect: M003
+
+package My::Outer {
+    use Moose;
+    has outer => ( is => 'ro', lazy => 1, builder => '_build_outer' ); # expect: M003
+
+    package My::Inner {
+        use Moose;
+        has inner => ( is => 'ro', lazy => 1, builder => '_build_inner' );
+        sub _build_inner { 1 }
+        sub _build_outer { 1 }
+    }
+}
+
 1;

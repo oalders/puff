@@ -148,4 +148,21 @@ has added_var => ( is => 'ro', lazy => 1, builder => '_added_var' );
 my $method = '_added_var';
 __PACKAGE__->meta->add_method( $method => sub { 1 } );
 
+package My::GlobScalar;
+
+use Moo;
+
+has glob_scalar => ( is => 'lazy' );
+
+my $glob_name = '_build_glob_scalar';
+*$glob_name = sub { 1 };
+
+package My::GlobSlot;
+
+use Moo;
+
+has glob_slot => ( is => 'lazy' );
+
+*{"_build_glob_slot"}{CODE} = 1;
+
 1;

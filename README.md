@@ -853,10 +853,12 @@ name (`builder => '_load'`, or `_build_NAME` from Moo's `builder => 1` or
 not count. That check is skipped for roles and for packages that may inherit
 the method (`extends` or `with`, also inside `BEGIN`, `use parent`,
 `use base`, `@ISA`), and for packages that may define methods under names
-that are not literal (`*{ EXPR } = ...` or `add_method( $name => ... )`).
-Roles applied at run time (`apply_all_roles`, `with_roles`, `use roles`),
-`->meta->superclasses`, `handles` and in-house modules that set up
-inheritance are not seen.
+that are not literal (`*{ EXPR } = ...`, `*$name = ...` or
+`add_method( $name => ... )`). A `package NAME { }` block inside the package
+is a package of its own, so its subs do not count. Roles applied at run time
+(`apply_all_roles`, `with_roles`, `use roles`), `->meta->superclasses`,
+`handles`, methods installed with Sub::Install or `install_modifier`, and
+in-house modules that set up inheritance are not seen.
 `has '+name'`, a lazy flag that is not a literal, `builder => sub {...}`
 and a `has` whose name or options are not literal are not reported. There
 is no fix.
@@ -869,8 +871,10 @@ uses one of them or their `::Role` modules: the parent's method runs twice.
 Calls inside an anonymous sub in the method are not reported. The unsafe fix
 removes the call when it is a statement of its own, with its line when
 nothing else is on it; a trailing comment stays where it was. A call whose
-value is used (`return $self->SUPER::BUILD(@_)`) has no fix. It is unsafe
-because a parent outside the framework may rely on the call.
+value is used (`return $self->SUPER::BUILD(@_)`) or that is inside a `map`,
+`grep`, `sort`, `do` or `eval` block has no fix. It is unsafe because a
+parent outside the framework may rely on the call, and because removing the
+last statement of a method changes what it returns.
 
 **M005** is not selected by default; turn it on with `--select M`. It
 reports `use Moose`, `use Mouse`, `use Moo` or one of their `::Role`

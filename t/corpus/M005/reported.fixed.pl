@@ -51,6 +51,11 @@ use Moose; # expect: M005
 use namespace::autoclean;
 use MooseX::MarkAsMethods other => 'autoclean', 1 => 1;
 
+package My::Chained;
+use Moose; # expect: M005
+use namespace::autoclean;
+use MooseX::MarkAsMethods autoclean => 1 => 2;
+
 package main;
 use Moose; # expect: M005
 use namespace::autoclean;

@@ -34,10 +34,12 @@ sub explanation {
         The unsafe fix removes the call when it is a statement of its own
         (`$obj->SUPER::BUILD(...);`), and the whole line when nothing else
         is on it. A trailing comment stays where it was. When the call's value is used, as in
-        `return $self->SUPER::BUILD(@_)`, there is no fix. It is unsafe
+        `return $self->SUPER::BUILD(@_)`, or the call is inside a `map`,
+        `grep`, `sort`, `do` or `eval` block, there is no fix. It is unsafe
         because a parent that is not a Moose, Mouse or Moo class may rely
-        on the call, and because any arguments the call changed are no
-        longer passed.
+        on the call, because any arguments the call changed are no longer
+        passed, and because when the call is the last statement of the
+        method, the method returns something else.
         END
 }
 
@@ -115,10 +117,18 @@ sub _owner_block ($el) {
     return 0;
 }
 
-# The statement when the call is all of it (`$self->SUPER::BUILD(@_);`).
+# The statement when the call is all of it (`$self->SUPER::BUILD(@_);`) and
+# it sits in the sub's body or in the block of `if`, `for`, `while` or a bare
+# block. In a `map`, `grep`, `sort`, `do` or `eval` block the statement may be
+# the block's value, and removing it may leave an empty `map { }` that does
+# not compile.
 sub _standalone ($word) {
     my $statement = $word->parent;
     return unless ref $statement eq 'PPI::Statement';
+    my $block = $statement->parent;
+    return unless $block && $block->isa('PPI::Structure::Block');
+    my $owner = $block->parent;
+    return unless $owner && ( $owner->isa('PPI::Statement::Sub') || $owner->isa('PPI::Statement::Compound') );
     my @children = $statement->schildren;
     pop @children if $children[-1]->isa('PPI::Token::Structure') && $children[-1]->content eq ';';
     pop @children if @children == 4                              && $children[-1]->isa('PPI::Structure::List');
@@ -147,7 +157,9 @@ twice.
 
 The unsafe fix removes the call when it is a statement of its own, with its
 line when nothing else is on it. A trailing comment stays where it was. A
-call whose value is used is reported with no fix.
+call whose value is used, or that is inside a C<map>, C<grep>, C<sort>,
+C<do> or C<eval> block, is reported with no fix. When the call is the last
+statement of the method, the fix changes what the method returns.
 
 Not selected by default; select it with C<M> or C<M004>.
 

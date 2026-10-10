@@ -4,7 +4,9 @@ use v5.36;
 use parent 'Puff::Rule';
 
 use Scalar::Util qw( refaddr );
-use Puff::Moose  qw( attributes class_include framework package_name package_region package_statements same_package );
+use Puff::Moose  qw(
+    attributes class_include framework package_block package_name package_region package_statements same_package
+);
 
 sub code       {'M003'}
 sub summary    {'Lazy attribute has no default or builder'}
@@ -35,17 +37,18 @@ sub explanation {
         mean `_build_NAME`) and the package does not define it with
         `sub _load`, `*_load = ...` or `->add_method( _load => ... )`, that
         is reported too. A mention in a comment, POD or a string does not
-        count. The method may come from somewhere else when the package
+        count, nor does a sub in a `package NAME { }` block inside the
+        package. The method may come from somewhere else when the package
         `extends` a class or consumes roles `with` (also inside a `BEGIN`
         block), sets `@ISA`, uses `parent` or `base`, or is a role itself
         (the consuming class may provide it), so a missing builder is not
         reported in those packages. Nor is it reported when the package may
         define methods under names that are not literal, with
-        `*{ EXPR } = ...` or `add_method( $name => ... )`. Other ways of
-        getting a method are not seen and are reported: roles applied at
-        run time (`apply_all_roles`, `with_roles`, `use roles`),
-        `->meta->superclasses(...)`, `handles` delegation, and in-house
-        modules that set up inheritance. `lazy_build` builders are not
+        `*{ EXPR } = ...`, `*$name = ...` or `add_method( $name => ... )`.
+        Other ways of getting a method are not seen and are reported: roles
+        applied at run time (`apply_all_roles`, `with_roles`, `use roles`),
+        `->meta->superclasses(...)`, `handles` delegation, Sub::Install,
+        `install_modifier`, and in-house modules that set up inheritance. `lazy_build` builders are not
         checked.
 
         Not reported: `has '+name'`, a lazy value that is not a literal,
@@ -131,7 +134,9 @@ sub _literal ($tokens) {
 #   may_inherit - true when it extends a class or consumes roles (`extends` or
 #                 `with`, also inside BEGIN), uses parent or base, or sets @ISA
 #   dynamic     - true when it may define methods whose names are not literal:
-#                 `*{ EXPR } = ...` or `add_method` with a non-literal name
+#                 `*{ EXPR } = ...`, `*$name = ...` or `add_method` with a
+#                 non-literal name
+# Nested `package NAME { }` blocks are other packages and are not walked.
 sub _definitions ($region) {
     my $package = package_name($region);
     my %defs    = ( names => {}, may_inherit => 0, dynamic => 0 );
@@ -144,9 +149,13 @@ sub _definitions ($region) {
             $defs{may_inherit} = 1 if ( $statement->module // q{} ) =~ /\A(?:parent|base)\z/;
             next;
         }
+
+        # A nested `package NAME { }` is another package, checked on its own.
+        next if _package_block($statement);
         my $begin = $statement->isa('PPI::Statement::Scheduled') && $statement->type eq 'BEGIN';
         $defs{may_inherit} = 1 if _extends_or_with($statement);
         my $visit = sub ( $top, $el ) {
+            return if _package_block($el);    # undef: do not look inside
             if ( $el->isa('PPI::Statement::Sub') ) {
                 $add->( $el->name, $statement ) if defined $el->name;
             }
@@ -155,14 +164,7 @@ sub _definitions ($region) {
                 $add->( $1, $statement ) if $el->symbol =~ /\A\*(.+)\z/;
             }
             elsif ( $el->isa('PPI::Token::Cast') && $el->content eq '*' ) {
-                my $block = $el->snext_sibling;
-                my $op    = $block && $block->snext_sibling;
-                $defs{dynamic} = 1
-                    if $block
-                    && $block->isa('PPI::Structure::Block')
-                    && $op
-                    && $op->isa('PPI::Token::Operator')
-                    && $op->content eq '=';
+                $defs{dynamic} = 1 if _glob_assign($el);
             }
             elsif ( $el->isa('PPI::Token::Word') && $el->content eq 'add_method' ) {
                 my $list = $el->snext_sibling;
@@ -181,6 +183,21 @@ sub _definitions ($region) {
         $statement->find($visit);
     }
     return \%defs;
+}
+
+# Whether the `*` cast $el starts an assignment to a glob whose name is not
+# literal: `*{ EXPR } = ...` or `*$name = ...`, with any `{CODE}` after it.
+sub _glob_assign ($cast) {
+    my $target = $cast->snext_sibling or return 0;
+    return 0 unless $target->isa('PPI::Structure::Block') || $target->isa('PPI::Token::Symbol');
+    my $op = $target->snext_sibling;
+    $op = $op->snext_sibling
+        while $op && ( $op->isa('PPI::Structure::Block') || $op->isa('PPI::Structure::Subscript') );
+    return $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
+}
+
+sub _package_block ($el) {
+    return $el->isa('PPI::Statement::Package') && package_block($el);
 }
 
 # Whether $el is a statement that starts with `extends` or `with`.
@@ -212,8 +229,10 @@ C<add_method>; comments, POD and strings do not count. That check is skipped
 for roles, for packages that may inherit the method (C<extends> or
 C<with>, also inside C<BEGIN>, C<use parent>, C<use base> or C<@ISA>) and
 for packages that may define methods under names that are not literal
-(C<*{ EXPR } = ...> or C<add_method> with a non-literal name). Roles applied
-at run time are not seen. There is no fix.
+(C<*{ EXPR } = ...>, C<*$name = ...> or C<add_method> with a non-literal
+name). Subs in a nested C<package NAME { }> block belong to that package.
+Roles applied at run time, Sub::Install and C<install_modifier> are not
+seen. There is no fix.
 
 Not selected by default; select it with C<M> or C<M003>.
 
