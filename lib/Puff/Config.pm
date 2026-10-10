@@ -2,7 +2,9 @@ package Puff::Config;
 
 use v5.36;
 
+use Encode     ();
 use Path::Tiny qw( path );
+use Puff::Path qw( display_name );
 use TOML::Tiny qw( from_toml );
 
 my @DEFAULT_EXCLUDE = qw( /local /blib /.build /.git );
@@ -24,7 +26,7 @@ sub load ( $class, %args ) {
     if ( !$args{no_config} ) {
         if ( defined $args{path} ) {
             $file = path( $args{path} );
-            die "Config file '$file' not found\n" unless $file->is_file;
+            die "Config file '" . display_name("$file") . "' not found\n" unless $file->is_file;
         }
         else {
             my $default = path('.puff.toml');
@@ -43,17 +45,23 @@ sub load ( $class, %args ) {
 }
 
 sub _read_file ( $class, $self, $file ) {
-    my $data = eval { from_toml( $file->slurp_utf8 ) };
-    die "Invalid config file '$file': $@\n" if !$data || $@;
-    ref $data eq 'HASH' or die "Invalid config file '$file'\n";
+    my $name = display_name("$file");
+    my $text = eval { $file->slurp_utf8 };
+
+    # A read error holds the raw path bytes; a TOML error is about the text.
+    die "Invalid config file '$name': " . display_name( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n"
+        unless defined $text;
+    my $data = eval { from_toml($text) };
+    die "Invalid config file '$name': $@\n" if !$data || $@;
+    ref $data eq 'HASH' or die "Invalid config file '$name'\n";
 
     for my $key ( sort keys %$data ) {
-        die "Unknown key '$key' in config file '$file'\n" unless $KNOWN_KEY{$key};
+        die "Unknown key '$key' in config file '$name'\n" unless $KNOWN_KEY{$key};
     }
 
     my $list = sub ($key) {
         my $value = $data->{$key};
-        die "Key '$key' in config file '$file' must be an array of strings\n"
+        die "Key '$key' in config file '$name' must be an array of strings\n"
             if ref $value ne 'ARRAY' || grep { ref $_ || !defined } @$value;
         return [@$value];
     };
@@ -61,26 +69,30 @@ sub _read_file ( $class, $self, $file ) {
     $self->{select}        = $list->('select') if exists $data->{select};
     $self->{extend_select} = $list->('extend-select') if exists $data->{'extend-select'};
     $self->{ignore}        = $list->('ignore') if exists $data->{ignore};
-    push @{ $self->{exclude} }, @{ $list->('exclude') } if exists $data->{exclude};
 
+    # TOML gives characters; paths are bytes, like the config file's own
+    # path and the paths is_excluded is given.
+    push @{ $self->{exclude} }, map { Encode::encode_utf8($_) } @{ $list->('exclude') } if exists $data->{exclude};
     if ( exists $data->{'rule-paths'} ) {
         my $base = $file->absolute->parent;
-        $self->{rule_paths}
-            = [ map { path($_)->is_absolute ? $_ : $base->child($_)->stringify } @{ $list->('rule-paths') } ];
+        $self->{rule_paths} = [
+            map { path($_)->is_absolute ? $_ : $base->child($_)->stringify }
+            map { Encode::encode_utf8($_) } @{ $list->('rule-paths') }
+        ];
     }
 
     if ( exists $data->{'unsafe-fixes'} ) {
         my $value = $data->{'unsafe-fixes'};
-        die "unsafe-fixes must be true or false in config file '$file'\n"
+        die "unsafe-fixes must be true or false in config file '$name'\n"
             unless ref $value && ref $value eq 'JSON::PP::Boolean';
         $self->{unsafe_fixes} = $value ? 1 : 0;
     }
 
     if ( exists $data->{rules} ) {
         my $rules = $data->{rules};
-        die "Key 'rules' in config file '$file' must be a table\n" if ref $rules ne 'HASH';
+        die "Key 'rules' in config file '$name' must be a table\n" if ref $rules ne 'HASH';
         for my $code ( keys %$rules ) {
-            die "Key 'rules.$code' in config file '$file' must be a table\n" if ref $rules->{$code} ne 'HASH';
+            die "Key 'rules.$code' in config file '$name' must be a table\n" if ref $rules->{$code} ne 'HASH';
             $self->{rule_options}{$code} = { %{ $rules->{$code} } };
         }
     }

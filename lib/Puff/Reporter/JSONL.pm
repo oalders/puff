@@ -124,7 +124,10 @@ killed or aborted before it could print one: treat it as a failure.
 More event types, and more keys in any event, may be added later: ignore
 any C<type> or key you do not know. C<message>, C<error>, C<fixes_skipped>,
 C<file> and C<diff> contain text derived from the linted files (their
-names and contents): consumers should treat it as untrusted data.
+names and contents): consumers should treat it as untrusted data. A C<file>
+that is not valid UTF-8 has C<\xHH> escapes for its invalid bytes (see
+L<Puff::Path>), so C<file> is a name to show, not always a path that can be
+opened.
 
 C<start>, C<file> and C<abort> print to the C<out> handle given to C<new>,
 as the run progresses; C<report> prints C<done> to the C<$out> handle it is

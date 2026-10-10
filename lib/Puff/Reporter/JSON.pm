@@ -62,9 +62,11 @@ file, line and column:
 C<safety> is the violation's fix safety (C<safe>, C<unsafe> or C<none>;
 see L<Puff::Violation>);
 C<available> says whether a fix is offered for this violation; C<applied>
-is always false, because only violations that remain are listed. The
-output is character data: give it a handle with an encoding layer. File
-errors go to the error handle.
+is always false, because only violations that remain are listed. A
+C<file> that is not valid UTF-8 has C<\xHH> escapes for its invalid bytes
+(see L<Puff::Path>), so C<file> is a name to show, not always a path that
+can be opened. The output is character data: give it a handle with
+an encoding layer. File errors go to the error handle.
 
 C<< Puff::Reporter::JSON->violation_data($violation) >> returns the hash
 above for one violation.

@@ -4,6 +4,7 @@ use v5.36;
 
 use Module::Pluggable::Object ();
 use Path::Tiny                qw( path );
+use Puff::Path                qw( display_name );
 
 my $CODE_RE  = qr/\A[A-Z]+[0-9]{3}\z/;
 my $RESERVED = 'P001';
@@ -19,7 +20,7 @@ sub load ( $class, %args ) {
 
     for my $dir ( @{ $args{rule_paths} // [] } ) {
         my $root = path($dir);
-        die "rule-paths: '$dir' is not a directory\n" unless $root->is_dir;
+        die "rule-paths: '" . display_name($dir) . "' is not a directory\n" unless $root->is_dir;
         my @files = sort grep {/\.pm\z/} map { $_->stringify } _all_files($root);
         for my $file (@files) {
             my $text     = path($file)->slurp_utf8;
