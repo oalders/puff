@@ -732,4 +732,21 @@ subtest 'non-ASCII rule-paths entries' => sub {
     like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
 };
 
+subtest 'unreadable non-ASCII --config' => sub {
+    my $dir  = project();
+    my $name = "caf\xc3\xa9.toml";                                   # UTF-8 bytes
+    my $file = spew_named( $dir, $name, "select = [\"S001\"]\n" );
+    chmod 0, "$file";
+SKIP: {
+        skip 'chmod 0 does not stop this user reading (root?)', 2 if -r $file;
+        my ( undef, $err, $exit ) = puff_raw( $dir, 'check', '--config', $name );
+        is( $exit, 2, 'exit 2' );
+        like(
+            $err, qr{^Invalid config file 'caf\xc3\xa9\.toml': .*caf\xc3\xa9\.toml.*Permission denied$}m,
+            'read error names the config in UTF-8'
+        ) or diag $err;
+    }
+    chmod 0644, "$file";
+};
+
 done_testing;
