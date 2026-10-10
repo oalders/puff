@@ -58,6 +58,7 @@ information: open files by the original path.
 C<display_lines($text)> does the same for text of several lines, such as
 an error message from perl that contains a path. Each line is treated as
 C<display_name> treats a path, and the newlines between lines are kept, so
-a trailing newline stays.
+a trailing newline stays. Like C<display_name> it takes bytes; callers must
+stringify an object, such as an exception, before passing it in.
 
 =cut

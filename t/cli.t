@@ -751,6 +751,35 @@ subtest 'non-ASCII rule-paths entries' => sub {
         'a warning names the path in UTF-8'
     );
     unlike( $err, qr{\xc3\x83}, 'the warning is not double-encoded' );
+    is( $exit, 1, 'a warning is not fatal' );
+    my @warnings = $err =~ /masks earlier declaration/g;
+    is( scalar @warnings, 1, 'the warning is shown once' );
+
+    my $locked = "l\xc3\xa5s";    # UTF-8 bytes
+    $dir->child($locked)->mkpath;
+    my $file = $dir->child( $locked, 'Locked.pm' );
+    $file->spew_utf8("package Locked;\n1;\n");
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["l\x{e5}s"]\n});
+SKIP: {
+        skip 'chmod 0 does not stop this user reading (root?)', 3 unless chmod( 0, "$file" ) && !-r $file;
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+        is( $exit, 2, 'an unreadable rule file is a fatal error' );
+        like( $err, qr{^rule-paths: cannot load '.*/\Q$locked\E/Locked\.pm': }m, 'named in UTF-8' );
+        unlike( $err, qr{\xc3\x83}, 'not double-encoded' );
+    }
+    chmod 0644, "$file";
+};
+
+subtest 'a rule-paths rule with a bad code' => sub {
+    my $dir = project( 'a.pl' => 'S001/basic.pl' );
+    $dir->child('rules')->mkpath;
+    $dir->child( 'rules', 'BadCode.pm' )
+        ->spew_utf8("package BadCode;\nuse parent 'Puff::Rule';\nsub code { \"X\\e[31m\\n001\" }\n1;\n");
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["rules"]\n});
+    my ( undef, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    is( $exit, 2, 'exits 2' );
+    like( $err, qr{^Rule BadCode has invalid code 'X\\x1B\[31m\\x0A001'}m, 'the code is escaped' );
+    unlike( $err, qr{\e}, 'no raw ESC' );
 };
 
 done_testing;
