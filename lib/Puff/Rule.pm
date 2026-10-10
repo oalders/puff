@@ -224,6 +224,10 @@ the rule's own C<fix_safety> as the least safe of its fixes, since that is
 what C<puff rules> shows. Ignored when the rule's C<fix_safety> is C<none>.
 Any other value dies.
 
+A C<safe> here is the rule author's claim, and C<--fix> trusts it. Rules
+from C<rule-paths> already run arbitrary Perl, so this grants no new
+privilege.
+
 =back
 
 It dies if the element has no location.

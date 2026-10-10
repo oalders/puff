@@ -61,7 +61,9 @@ sub explanation {
         assignment), when there is more than one comparison, when an operand
         has a bareword that could be a list operator (`ok(foo $x eq 'y')`),
         when the file defines its own `ok`, `is` or `isnt`, or for a method
-        call such as `$tb->ok(...)`.
+        call such as `$tb->ok(...)`. It is also not reported when the closing
+        parenthesis is followed by a comma, as in `ok($x eq $y), 'name'`: the
+        name never reaches `ok`, which is likely a bug in the test.
 
         The fix rewrites `ok(A eq B, ...)` as `is(A, B, ...)` and
         `ok(A ne B, ...)` as `isnt(A, B, ...)`. Changing `eq` to Test::More's
@@ -88,6 +90,14 @@ sub check ( $self, $elem, $doc ) {
     return unless $elem->content eq 'ok' && is_builtin_call($elem);
     my $facts = $self->_doc_facts($doc);
     return if $facts->{local}{ok};
+
+    # `ok($x eq $y), 'name'`: the name never reaches ok(), so the call is
+    # likely a bug in the test, not something to rewrite.
+    my $list = $elem->snext_sibling;
+    if ( $list && $list->isa('PPI::Structure::List') ) {
+        my $after = $list->snext_sibling;
+        return if $after && $after->isa('PPI::Token::Operator') && $after->content =~ /\A(?:,|=>)\z/;
+    }
 
     my $args  = call_args($elem);
     my $parts = _split_compare( $args->[0] // [] ) or return;
