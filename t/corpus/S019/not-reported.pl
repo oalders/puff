@@ -56,6 +56,8 @@ sub uses_outer { return $_[0] =~ /$word/ }
 # Arrays, code blocks, and @{[ ... ]} that quotes or is quoted.
 print "1\n" if $str =~ /@words/;
 print "1\n" if $str =~ /@{[ quotemeta $input ]}/;
+print "1\n" if $str =~ /@{[ quotemeta($input) ]}/;
+print "1\n" if $str =~ /@{[ "\Q$input\E" ]}/;
 print "1\n" if $str =~ /\Q@{[ $input ]}/;
 print "1\n" if $str =~ /(?{ $input })/;
 

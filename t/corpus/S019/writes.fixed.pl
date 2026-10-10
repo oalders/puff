@@ -61,3 +61,37 @@ print "1\n" if $str =~ /\Q$c1\E\Q$c2\E\Q$c3\E\Q$c4\E\Q$c5\E\Q$c6\E/; # expect: S
 # Arguments that are not changed.
 read $fh, $str, 10, $c7;
 print "1\n" if $str =~ /$c7/;
+
+# More writes: recv's buffer, increments and decrements, and s/// or tr///
+# on the variable alone or in parentheses.
+our $w1 = qr/a/;
+our $w2 = qr/a/;
+our $w3 = qr/a/;
+our $w4 = qr/a/;
+our $w5 = qr/a/;
+our $w6 = qr/a/;
+our $w7 = qr/a/;
+our $w8 = qr/a/;
+recv( $fh, $w1, 10, 0 );
+$w2++;
+$w3--;
+++$w4;
+--$w5;
+( $w6 ) =~ s/a/b/;
+$w7 =~ s/a/b/;
+$w8 =~ tr/a/b/;
+print "1\n" if $str =~ /\Q$w1\E\Q$w2\E\Q$w3\E\Q$w4\E\Q$w5\E\Q$w6\E\Q$w7\E\Q$w8\E/; # expect: S019 S019 S019 S019 S019 S019 S019 S019
+
+# A write to another package's variable of the same name counts, as writes
+# are matched by name.
+our $other = qr/a/;
+$Other::other = shift;
+print "1\n" if $str =~ /\Q$other\E/; # expect: S019
+
+# A method of the same name, and a nested call, do not change the variable.
+our $m1 = qr/a/;
+our $m2 = qr/a/;
+my $obj = bless {}, 'main';
+$obj->open($m1) if 0;
+chomp( foo $m2 ) if 0;
+print "1\n" if $str =~ /$m1$m2/;

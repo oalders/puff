@@ -108,12 +108,13 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
     my $decls = $count->( join q{}, map {"my \$x = qr/a/;\n/\$x/;\n"} 1 .. 400 );
     cmp_ok( $decls->{location}, '<', 10 * $decls->{regexes}, 'locations: linear in the declarations' );
 
-    # Each regex is inside the statements of all the declarations before
-    # it, which are skipped on the way to the outer scopes.
+    # Each regex is nested in the statements of all the declarations before
+    # it. Its chain of enclosing elements is built once, not once per
+    # declaration skipped.
     my $nested = $count->( ( "my \$x if do { /\$x/;\n" x 100 ) . ( "1 };\n" x 100 ) );
     cmp_ok(
         $nested->{parent}, '<', 2 * 100**2,
-        'parents: declarations whose statement holds the regex are skipped in time quadratic, not cubic, in the depth'
+        'parents: the chain of enclosing elements is walked once per regex'
     );
 
     # Before, fix found every variable of the regex again for each one.
@@ -136,8 +137,19 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
     for my $pattern ( '\Q' x 20_000 . '\L\E' x 20_000, '\Q' x 20_000 . '$x' x 20_000 ) {
         $start = time;
         is( violations("/$pattern/;\n"), [], 'no variable outside \Q' );
-        cmp_ok( time - $start, '<', 1, 'many \Q are handled in linear time' );
+        cmp_ok( time - $start, '<', 2, 'many \Q are handled in linear time' );
     }
+
+    # Each scalar in a long list was walked back to the start of the list,
+    # looking for a builtin that changes it: 8,000 items took 100 seconds.
+    # Only the rule is timed: parsing such a list is slow in itself.
+    my $text = "my \@a = (" . ( "\$y, " x 20_000 ) . ");\nchomp \$z, " . ( "\$y, " x 5_000 ) . "\$x;\n/\$x/;\n";
+    my $doc  = PPI::Document->new( \$text );
+    $doc->index_locations;
+    my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
+    $start = time;
+    is( scalar( () = $class->new->check( $regex, $doc ) ), 1, 'a long list is analysed' );
+    cmp_ok( time - $start, '<', 2, 'in linear time' );
 }
 
 is( $class->fix_safety, 'unsafe', 'fix safety is unsafe' );

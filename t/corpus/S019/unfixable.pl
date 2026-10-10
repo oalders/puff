@@ -27,3 +27,8 @@ print "1\n" if $str =~ /
 # @{[ ... ]} holds Perl code, where \Q...\E would not quote.
 print "1\n" if $str =~ /@{[ $input ]}/; # expect: S019
 print "1\n" if $str =~ /a@{[ $input . $ref->{k} ]}b/; # expect: S019 S019
+
+# quotemeta and \Q quote only their own arguments.
+print "1\n" if $str =~ /@{[ $input . quotemeta($ref) ]}/; # expect: S019
+print "1\n" if $str =~ /@{[ quotemeta $ref . $input ]}/; # expect: S019
+print "1\n" if $str =~ /@{[ "\Q$ref\E$input" ]}/; # expect: S019
