@@ -111,7 +111,11 @@ sub _is_simple_substitution ( $stmt, $elem ) {
     return 1 if @tokens == 1;
     return 0 unless @tokens >= 3 && $tokens[-2]->isa('PPI::Token::Operator') && $tokens[-2]->content eq '=~';
     for my $token ( @tokens[ 0 .. $#tokens - 2 ] ) {
-        return 0 unless $token->isa('PPI::Token::Symbol') || $token->isa('PPI::Token::Cast') || $token->isa('PPI::Structure::Subscript') || $token->isa('PPI::Token::Operator') && $token->content eq '->';
+        return 0
+            unless $token->isa('PPI::Token::Symbol')
+            || $token->isa('PPI::Token::Cast')
+            || $token->isa('PPI::Structure::Subscript')
+            || $token->isa('PPI::Token::Operator') && $token->content eq '->';
     }
     return 1;
 }
@@ -122,11 +126,16 @@ sub _is_simple_substitution ( $stmt, $elem ) {
 sub _kind ($elem) {
     my $sections = $elem->{sections};
     return unless $sections && @$sections == 2;
-    my $pattern = $elem->get_match_string // return;
+    my $pattern     = $elem->get_match_string      // return;
     my $replacement = $elem->get_substitute_string // return;
-    return 'lt'    if $pattern =~ $LT    && $replacement =~ $LT_ENTITY;
+    return 'lt' if $pattern    =~ $LT    && $replacement =~ $LT_ENTITY;
     return 'quote' if $pattern =~ $QUOTE && $replacement =~ $QUOTE_ENTITY;
-    return 'class' if $pattern =~ /\A \(? (?: \[ [^\]]* \] | [^()]* \| [^()]* ) \)? \z/x && $pattern =~ /</ && $pattern =~ /"/ && $pattern !~ $APOS && $replacement =~ / & | \$ \w+ (?: -> )? \{ | \bord\b /x;
+    return 'class'
+        if $pattern     =~ /\A \(? (?: \[ [^\]]* \] | [^()]* \| [^()]* ) \)? \z/x
+        && $pattern     =~ /</
+        && $pattern     =~ /"/
+        && $pattern     !~ $APOS
+        && $replacement =~ / & | \$ \w+ (?: -> )? \{ | \bord\b /x;
     return;
 }
 
@@ -141,7 +150,11 @@ sub _peers ($elem) {
     my $scope = $elem;
     while ( $scope = $scope->parent ) {
         last if $scope->isa('PPI::Statement::Sub') || $scope->isa('PPI::Document');
-        last if $scope->isa('PPI::Structure::Block') && $scope->sprevious_sibling && $scope->sprevious_sibling->isa('PPI::Token::Word') && $scope->sprevious_sibling->content eq 'sub';
+        last
+            if $scope->isa('PPI::Structure::Block')
+            && $scope->sprevious_sibling
+            && $scope->sprevious_sibling->isa('PPI::Token::Word')
+            && $scope->sprevious_sibling->content eq 'sub';
     }
     return unless $scope;
     my $in_sub = !$scope->isa('PPI::Document');
@@ -153,7 +166,11 @@ sub _peers ($elem) {
 sub _in_sub ($elem) {
     while ( $elem = $elem->parent ) {
         return 1 if $elem->isa('PPI::Statement::Sub');
-        return 1 if $elem->isa('PPI::Structure::Block') && $elem->sprevious_sibling && $elem->sprevious_sibling->isa('PPI::Token::Word') && $elem->sprevious_sibling->content eq 'sub';
+        return 1
+            if $elem->isa('PPI::Structure::Block')
+            && $elem->sprevious_sibling
+            && $elem->sprevious_sibling->isa('PPI::Token::Word')
+            && $elem->sprevious_sibling->content eq 'sub';
     }
     return 0;
 }

@@ -6,11 +6,11 @@ use parent 'Puff::Rule';
 use Puff::PPIUtil qw( is_builtin_call call_args );
 use Scalar::Util  qw( refaddr );
 
-my %OPENER   = map { $_ => 1 } qw( open opendir sysopen socket );
-my %FIXABLE  = map { $_ => 1 } qw( open opendir sysopen );
-my %EXCLUDED = map { $_ => 1 } qw( STDIN STDOUT STDERR DATA ARGV ARGVOUT _ my our local state );
-my %MODIFIER = map { $_ => 1 } qw( if unless while until for foreach );
-my %PRINT    = map { $_ => 1 } qw( print printf say );
+my %OPENER       = map { $_ => 1 } qw( open opendir sysopen socket );
+my %FIXABLE      = map { $_ => 1 } qw( open opendir sysopen );
+my %EXCLUDED     = map { $_ => 1 } qw( STDIN STDOUT STDERR DATA ARGV ARGVOUT _ my our local state );
+my %MODIFIER     = map { $_ => 1 } qw( if unless while until for foreach );
+my %PRINT        = map { $_ => 1 } qw( print printf say );
 my %HANDLE_FIRST = map { $_ => 1 } qw(
     close eof binmode fileno flock seek tell truncate read sysread syswrite
     readdir closedir rewinddir telldir seekdir
@@ -177,7 +177,8 @@ sub _same_element ( $x, $y ) {
 }
 
 sub _is_string ($token) {
-    return $token->isa('PPI::Token::Quote')
+    return
+           $token->isa('PPI::Token::Quote')
         || $token->isa('PPI::Token::QuoteLike')
         || $token->isa('PPI::Token::HereDoc');
 }
@@ -229,14 +230,14 @@ sub _is_print ($elem) {
 }
 
 sub _inside ( $elem, $scope ) {
-    for ( my $p = $elem->parent; $p; $p = $p->parent ) {
+    for ( my $p = $elem->parent ; $p ; $p = $p->parent ) {
         return 1 if refaddr($p) == refaddr($scope);
     }
     return 0;
 }
 
 sub _enclosing_sub ($elem) {
-    for ( my $p = $elem->parent; $p; $p = $p->parent ) {
+    for ( my $p = $elem->parent ; $p ; $p = $p->parent ) {
         return $p if $p->isa('PPI::Statement::Sub');
     }
     return;

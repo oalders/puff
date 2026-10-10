@@ -20,9 +20,10 @@ sub _statistics ( $self, $by_code, $out ) {
     my $width = length( $codes[0] ? $by_code->{ $codes[0] }{count} : 0 );
     for my $code (@codes) {
         my $stat    = $by_code->{$code};
-        my $summary = $stat->{rule} ? $stat->{rule}->summary : q{};
+        my $summary = $stat->{rule}                                         ? $stat->{rule}->summary        : q{};
         my $partial = $stat->{fixable} && $stat->{fixable} < $stat->{count} ? " ($stat->{fixable} fixable)" : q{};
-        my $line    = sprintf "%*d  %-5s %-5s %s%s", $width, $stat->{count}, $code, $stat->{marker} =~ s/\A //r, $summary, $partial;
+        my $line = sprintf "%*d  %-5s %-5s %s%s", $width, $stat->{count}, $code, $stat->{marker} =~ s/\A //r, $summary,
+            $partial;
         print {$out} $line =~ s/\s+\z//r, "\n";
     }
     return;
@@ -50,7 +51,7 @@ sub report ( $self, $run, $out, $err ) {
             my $marker = $self->_marker($v);
             $total++;
             $enabled++ if $marker eq ' [*]';
-            $unsafe++  if $marker eq ' [**]';
+            $unsafe++ if $marker eq ' [**]';
             if ( $self->{statistics} ) {
                 my $stat = $by_code{ $v->code } //= { count => 0, fixable => 0, marker => q{}, rule => $v->rule };
                 $stat->{count}++;
@@ -66,8 +67,8 @@ sub report ( $self, $run, $out, $err ) {
 
     my $checked = grep { !defined $_->{error} } @files;
     printf {$out} "Found %s (checked %s).\n", _n( $total, 'violation' ), _n( $checked, 'file' );
-    print {$out} "$enabled fixable with --fix\n"               if $enabled;
-    print {$out} "$unsafe more fixable with --unsafe-fixes\n" if $unsafe;
+    print  {$out} "$enabled fixable with --fix\n" if $enabled;
+    print  {$out} "$unsafe more fixable with --unsafe-fixes\n" if $unsafe;
     if ( $self->{mode} eq 'fix' ) {
         my @written = grep { $_->{written} } @files;
         my $count   = 0;
@@ -80,7 +81,7 @@ sub report ( $self, $run, $out, $err ) {
 
 sub report_errors ( $class, $files, $err ) {
     for my $file (@$files) {
-        print {$err} "$file->{file}: error: $file->{error}\n"   if defined $file->{error};
+        print {$err} "$file->{file}: error: $file->{error}\n" if defined $file->{error};
         print {$err} "$file->{file}: $file->{fixes_skipped}\n" if defined $file->{fixes_skipped};
     }
     return;
@@ -90,17 +91,16 @@ sub report_errors ( $class, $files, $err ) {
 # handle), so lost output is never silent. Shared with the other reporters.
 sub flush_or_die ( $class, $out ) {
     my $flushed = $out->flush;
-    my $errno   = $!;    # before anything else can change it
+    my $errno   = $!;            # before anything else can change it
     return if $flushed && !$out->error;
     die "puff: cannot write output: " . ( $flushed ? q{write error} : $errno ) . "\n";
-    return;
 }
 
 sub _marker ( $self, $v ) {
     return '' unless $v->fixable && $v->rule;
     my $safety = $v->rule->fix_safety;
-    return ' [*]'  if $safety eq 'safe';
-    return ''      if $safety ne 'unsafe';
+    return ' [*]' if $safety eq 'safe';
+    return '' if $safety ne 'unsafe';
     return $self->{fix_mode} eq 'unsafe' ? ' [*]' : ' [**]';
 }
 

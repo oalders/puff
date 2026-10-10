@@ -15,7 +15,8 @@ sub events ( $mode, $code ) {
     return [ map { JSON::PP->new->decode($_) } split /\n/, $buffer ];
 }
 
-my $violation = Puff::Violation->new( code => 'X001', message => 'msg', file => 'a.pl', line => 2, column => 3, fixable => 0 );
+my $violation
+    = Puff::Violation->new( code => 'X001', message => 'msg', file => 'a.pl', line => 2, column => 3, fixable => 0 );
 
 subtest 'start, file and done' => sub {
     my $events = events(
@@ -57,18 +58,21 @@ subtest 'diff mode adds diff, written files count fixes' => sub {
     my $events = events(
         'diff',
         sub ( $jsonl, $out ) {
-            $jsonl->file( { file => 'a.pl', diff => "--- a\n" } );
+            $jsonl->file( { file => 'a.pl', diff    => "--- a\n" } );
             $jsonl->file( { file => 'b.pl', written => 1, fixed_count => 2 } );
         }
     );
-    is( $events->[0]{diff},  "--- a\n", 'diff is in the event' );
-    is( $events->[1]{diff},  undef,     'null when there is none' );
-    is( $events->[1]{fixed}, 2,         'fixed counts written fixes' );
+    is( $events->[0]{diff}, "--- a\n", 'diff is in the event' );
+    is( $events->[1]{diff}, undef, 'null when there is none' );
+    is( $events->[1]{fixed}, 2, 'fixed counts written fixes' );
 };
 
 subtest 'abort before start is just done' => sub {
     my $events = events( 'lint', sub ( $jsonl, $out ) { $jsonl->abort( 2, "it broke\n" ) } );
-    is( $events, [ { type => 'done', exit_code => 2, error => 'it broke' } ], 'done with the error, trailing newline removed' );
+    is(
+        $events, [ { type => 'done', exit_code => 2, error => 'it broke' } ],
+        'done with the error, trailing newline removed'
+    );
 };
 
 subtest 'a failed write dies' => sub {

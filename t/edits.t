@@ -13,7 +13,9 @@ sub fix ( $key_start, $id, @edits ) {
     };
 }
 
-sub ids ($fixes) { return [ map { $_->{id} } @$fixes ] }
+sub ids ($fixes) {
+    return [ map { $_->{id} } @$fixes ];
+}
 
 subtest 'one replace' => sub {
     my ( $new, $acc, $def ) = Puff::Edits::apply( $t, [ fix( 2, 'a', [ 2, 4, 'XY' ] ) ] );
@@ -101,13 +103,13 @@ subtest 'order comes from key' => sub {
     );
     is $new, 'abXfghij', 'early wins';
     is ids($acc), ['early'], 'early accepted';
-    is ids($def), ['late'],  'late deferred';
+    is ids($def), ['late'], 'late deferred';
 
     my @in = (
-        { id => 'z', key => [ 3, 'B', 1 ], edits => [ { start => 3, end => 3, text => 'Z' } ] },
-        { id => 'y', key => [ 3, 'A', 2 ], edits => [ { start => 3, end => 3, text => 'Y' } ] },
+        { id => 'z', key => [ 3, 'B', 1 ], edits  => [ { start => 3, end => 3, text => 'Z' } ] },
+        { id => 'y', key => [ 3, 'A', 2 ], edits  => [ { start => 3, end => 3, text => 'Y' } ] },
         { id => 'x', key => [ 3, 'A', 10 ], edits => [ { start => 3, end => 3, text => 'X' } ] },
-        { id => 'w', key => [ 3, 'A', 9 ], edits => [ { start => 3, end => 3, text => 'W' } ] },
+        { id => 'w', key => [ 3, 'A', 9 ], edits  => [ { start => 3, end => 3, text => 'W' } ] },
     );
     ($new) = Puff::Edits::apply( $t, \@in );
     is $new, 'abcYWXZdefghij', 'start, code (string), line (numeric)';

@@ -44,8 +44,8 @@ sub explanation {
 }
 
 sub check ( $self, $elem, $doc ) {
-    my $name = $elem->content =~ s/\ACORE:://r;
-    my $prev = $elem->sprevious_sibling;
+    my $name      = $elem->content =~ s/\ACORE:://r;
+    my $prev      = $elem->sprevious_sibling;
     my $is_method = $prev && $prev->isa('PPI::Token::Operator') && $prev->content eq '->';
 
     if ( $name eq 'chmod' && ( $is_method || is_builtin_call($elem) ) ) {
@@ -59,8 +59,10 @@ sub check ( $self, $elem, $doc ) {
         else {
             return unless $is_method && is_constant_string($mode) && _symbolic_other_write( $mode->string );
         }
-        return $self->violation( $elem,
-            message => 'chmod ' . $mode->content . ' makes the file world-writable (CWE-732); use 0755 or 0644' );
+        return $self->violation(
+            $elem,
+            message => 'chmod ' . $mode->content . ' makes the file world-writable (CWE-732); use 0755 or 0644'
+        );
     }
 
     if ( $name eq 'umask' && !$is_method && is_builtin_call($elem) ) {
@@ -68,9 +70,10 @@ sub check ( $self, $elem, $doc ) {
         return unless @$args == 1 && @{ $args->[0] } == 1;
         my $mask = _number( $args->[0][0] ) // return;
         return if $mask & $OTHER_WRITE;
-        return $self->violation( $elem,
-            message => 'umask ' . $args->[0][0]->content
-                . ' leaves new files world-writable (CWE-732); use 022 or 077' );
+        return $self->violation(
+            $elem,
+            message => 'umask ' . $args->[0][0]->content . ' leaves new files world-writable (CWE-732); use 022 or 077'
+        );
     }
     return;
 }

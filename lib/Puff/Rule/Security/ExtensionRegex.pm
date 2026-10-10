@@ -51,7 +51,10 @@ sub fix ( $self, $violation, $fix ) {
     my ( $anchor, $pattern ) = _finding($elem) or return 0;
     my $section = $elem->{sections}[0];
     my $start   = $fix->source->start_of($elem) + $section->{position};
-    $fix->replace_range( $start, $start + $section->{size}, substr( $pattern, 0, length($pattern) - length($anchor) ) . '\z' );
+    $fix->replace_range(
+        $start, $start + $section->{size},
+        substr( $pattern, 0, length($pattern) - length($anchor) ) . '\z'
+    );
     return 1;
 }
 
@@ -60,7 +63,7 @@ sub fix ( $self, $violation, $fix ) {
 sub _finding ($elem) {
     my $sections = $elem->{sections};
     return unless $sections && @$sections == 1;
-    my $pattern = $elem->get_match_string // return;
+    my $pattern   = $elem->get_match_string // return;
     my %modifiers = $elem->get_modifiers;
     return if $modifiers{x} || $modifiers{m} && $pattern =~ /\$\z/;
     return unless $pattern =~ /\A $EXTENSION ( \$ | \\Z )? \z/x;

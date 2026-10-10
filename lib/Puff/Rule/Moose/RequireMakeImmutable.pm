@@ -126,8 +126,8 @@ sub _statements ($region) {
 # The `1;` statement that ends the package, or undef.
 sub _final_true ($region) {
     my @statements = grep { !$_->isa('PPI::Statement::End') && !$_->isa('PPI::Statement::Data') } _statements($region);
-    my $last = $statements[-1] or return;
-    my @tokens = $last->schildren;
+    my $last       = $statements[-1] or return;
+    my @tokens     = $last->schildren;
     return unless @tokens == 2 && $tokens[0]->isa('PPI::Token::Number') && $tokens[0]->content eq '1';
     return unless $tokens[1]->isa('PPI::Token::Structure') && $tokens[1]->content eq ';';
     return $last;

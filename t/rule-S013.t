@@ -4,7 +4,7 @@ use Test2::V0;
 use Puff::Engine ();
 use Puff::Rules  ();
 use Puff::Source ();
-use Puff::Test qw( run_corpus );
+use Puff::Test   qw( run_corpus );
 
 run_corpus('S013');
 

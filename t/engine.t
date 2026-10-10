@@ -76,9 +76,9 @@ package T005 {    # toggles a and b forever
 package T006 {    # fix dies
     use v5.36;
     use parent -norequire, 'WordRule';
-    sub code       {'T006'}
-    sub fix_safety {'safe'}
-    sub from       {'boom'}
+    sub code                            {'T006'}
+    sub fix_safety                      {'safe'}
+    sub from                            {'boom'}
     sub fix ( $self, $violation, $fix ) { die "nope\n" }
 }
 
@@ -99,15 +99,17 @@ sub summary ($result) {
 subtest 'lint only' => sub {
     my $text   = "baz; foo;\nfoo; # puff: ignore T001\n# puff: ignore\nfoo;\n";
     my $result = run_engine( engine( 'none', qw( T002 T001 ) ), $text );
-    is( summary($result), [ [ 'T002', 1, 1 ], [ 'T001', 1, 6 ], [ 'P001', 3, 1 ], [ 'T001', 4, 1 ] ],
-        'sorted by line and column, suppressed dropped, P001 included' );
+    is(
+        summary($result), [ [ 'T002', 1, 1 ], [ 'T001', 1, 6 ], [ 'P001', 3, 1 ], [ 'T001', 4, 1 ] ],
+        'sorted by line and column, suppressed dropped, P001 included'
+    );
     is( [ map { $_->file } @{ $result->{violations} } ], [ ('x.pl') x 4 ], 'file set' );
     my ($p001) = grep { $_->code eq 'P001' } @{ $result->{violations} };
     is( $p001->fixable, 0, 'P001 is not fixable' );
     is( $p001->message, 'suppression comment must list codes', 'P001 message' );
-    is( $result->{new_text},      undef, 'no new text' );
-    is( $result->{fixed_count},   0,     'nothing fixed' );
-    is( $result->{error},         undef, 'no error' );
+    is( $result->{new_text}, undef, 'no new text' );
+    is( $result->{fixed_count}, 0, 'nothing fixed' );
+    is( $result->{error}, undef, 'no error' );
     is( $result->{fixes_skipped}, undef, 'fixes not skipped' );
 };
 
@@ -118,37 +120,37 @@ subtest 'P001 cannot be suppressed' => sub {
 
 subtest 'safe mode' => sub {
     my $result = run_engine( engine( 'safe', qw( T001 T002 ) ), "foo; baz;\nfoo;\n" );
-    is( $result->{new_text},    "bar; baz;\nbar;\n", 'T001 fixed, T002 left' );
-    is( summary($result),       [ [ 'T002', 1, 6 ] ], 'T002 still reported' );
-    is( $result->{fixed_count}, 2,                    'two fixed' );
-    is( $result->{error},       undef,                'no error' );
+    is( $result->{new_text}, "bar; baz;\nbar;\n", 'T001 fixed, T002 left' );
+    is( summary($result), [ [ 'T002', 1, 6 ] ], 'T002 still reported' );
+    is( $result->{fixed_count}, 2, 'two fixed' );
+    is( $result->{error}, undef, 'no error' );
 };
 
 subtest 'unsafe mode' => sub {
     my $result = run_engine( engine( 'unsafe', qw( T001 T002 ) ), "foo; baz;\n" );
-    is( $result->{new_text},    "bar; qux;\n", 'both fixed' );
-    is( summary($result),       [],            'nothing left' );
-    is( $result->{fixed_count}, 2,             'two fixed' );
+    is( $result->{new_text}, "bar; qux;\n", 'both fixed' );
+    is( summary($result), [], 'nothing left' );
+    is( $result->{fixed_count}, 2, 'two fixed' );
 };
 
 subtest 'nothing fixable leaves new_text undef' => sub {
     my $result = run_engine( engine( 'safe', 'T002' ), "baz;\n" );
-    is( $result->{new_text},    undef, 'unchanged' );
-    is( $result->{fixed_count}, 0,     'nothing fixed' );
+    is( $result->{new_text}, undef, 'unchanged' );
+    is( $result->{fixed_count}, 0, 'nothing fixed' );
     is( summary($result), [ [ 'T002', 1, 1 ] ], 'still reported' );
 };
 
 subtest 'fix loop' => sub {
     my $result = run_engine( engine( 'safe', qw( T003 T004 ) ), "foo;\n" );
-    is( $result->{new_text},    "done;\n", 'second pass fixed what the first produced' );
-    is( summary($result),       [],        'nothing left' );
-    is( $result->{fixed_count}, 1,         'original count minus remaining' );
+    is( $result->{new_text}, "done;\n", 'second pass fixed what the first produced' );
+    is( summary($result), [], 'nothing left' );
+    is( $result->{fixed_count}, 1, 'original count minus remaining' );
 };
 
 subtest 'pass cap' => sub {
     my $result = run_engine( engine( 'safe', 'T005' ), "a;\n" );
-    is( $result->{error},    'fix loop did not converge', 'error' );
-    is( $result->{new_text}, undef,                       'original kept' );
+    is( $result->{error}, 'fix loop did not converge', 'error' );
+    is( $result->{new_text}, undef, 'original kept' );
     is( $result->{fixed_count}, 0, 'nothing fixed' );
     is( summary($result), [ [ 'T005', 1, 1 ] ], 'violations of the original text' );
 };
@@ -157,8 +159,8 @@ subtest 'CRLF' => sub {
     my $result = run_engine( engine( 'unsafe', 'T001' ), "foo;\r\nfoo;\r\n" );
     is( summary($result), [ [ 'T001', 1, 1 ], [ 'T001', 2, 1 ] ], 'violations reported' );
     like( $result->{fixes_skipped}, qr/CR/, 'fixes_skipped set' );
-    is( $result->{new_text},    undef, 'nothing fixed' );
-    is( $result->{fixed_count}, 0,     'fixed_count 0' );
+    is( $result->{new_text}, undef, 'nothing fixed' );
+    is( $result->{fixed_count}, 0, 'fixed_count 0' );
     is( [ map { $_->fixable } @{ $result->{violations} } ], [ 0, 0 ], 'violations not offered as fixable' );
 };
 
@@ -166,8 +168,10 @@ subtest 'lone CR' => sub {
     my $result = run_engine( engine( 'unsafe', 'T001' ), "foo;\rfoo;\n" );
     like( $result->{fixes_skipped}, qr/CR/, 'fixes_skipped set' );
     is( $result->{new_text}, undef, 'nothing fixed' );
-    is( [ map { $_->fixable } @{ $result->{violations} } ], [ (0) x @{ $result->{violations} } ],
-        'violations not offered as fixable' );
+    is(
+        [ map { $_->fixable } @{ $result->{violations} } ], [ (0) x @{ $result->{violations} } ],
+        'violations not offered as fixable'
+    );
 };
 
 subtest 'CRLF lint only does not mention skipped fixes' => sub {
@@ -178,18 +182,18 @@ subtest 'CRLF lint only does not mention skipped fixes' => sub {
 
 subtest 'fix that dies is an error' => sub {
     my $result = run_engine( engine( 'safe', qw( T006 T001 ) ), "boom; foo;\n" );
-    is( $result->{error},       'rule T006 fix failed: nope', 'error names the rule' );
-    is( $result->{new_text},    undef,                        'file left unfixed' );
-    is( $result->{fixed_count}, 0,                            'nothing fixed' );
+    is( $result->{error}, 'rule T006 fix failed: nope', 'error names the rule' );
+    is( $result->{new_text}, undef, 'file left unfixed' );
+    is( $result->{fixed_count}, 0, 'nothing fixed' );
     is( summary($result), [ [ 'T006', 1, 1 ], [ 'T001', 1, 7 ] ], 'violations of the original text' );
 };
 
 package T010 {    # fix declines with Puff::Fix->decline
     use v5.36;
     use parent -norequire, 'WordRule';
-    sub code       {'T010'}
-    sub fix_safety {'safe'}
-    sub from       {'nah'}
+    sub code                            {'T010'}
+    sub fix_safety                      {'safe'}
+    sub from                            {'nah'}
     sub fix ( $self, $violation, $fix ) { Puff::Fix->decline('not today') }
 }
 
@@ -215,13 +219,13 @@ package main;
 
 subtest 'Puff::Fix->decline is a silent decline' => sub {
     my $result = run_engine( engine( 'safe', qw( T010 T001 ) ), "nah; foo;\n" );
-    is( $result->{error},       undef,           'no error' );
-    is( $result->{new_text},    "nah; bar;\n",   'other fixes still applied' );
-    is( summary($result),       [ [ 'T010', 1, 1 ] ], 'declined violation reported' );
-    is( $result->{fixed_count}, 1,                    'only the applied fix counted' );
+    is( $result->{error}, undef, 'no error' );
+    is( $result->{new_text}, "nah; bar;\n", 'other fixes still applied' );
+    is( summary($result), [ [ 'T010', 1, 1 ] ], 'declined violation reported' );
+    is( $result->{fixed_count}, 1, 'only the applied fix counted' );
 
     $result = run_engine( engine( 'safe', 'T011' ), "print <<EOT;\nhi\nEOT\n" );
-    is( $result->{error},    undef, 'heredoc guard declines without an error' );
+    is( $result->{error}, undef, 'heredoc guard declines without an error' );
     is( $result->{new_text}, undef, 'nothing changed' );
 };
 
@@ -234,7 +238,7 @@ package T012 {    # one fix whose own edits overlap
 
     sub fix ( $self, $violation, $fix ) {
         my $start = $fix->source->start_of( $violation->element );
-        $fix->replace_range( $start,     $start + 2, 'AB' );
+        $fix->replace_range( $start, $start + 2, 'AB' );
         $fix->replace_range( $start + 1, $start + 3, 'CD' );
         return 1;
     }
@@ -243,7 +247,7 @@ package T012 {    # one fix whose own edits overlap
 package T013 {    # check returns something that is not a violation
     use v5.36;
     use parent -norequire, 'WordRule';
-    sub code {'T013'}
+    sub code                         {'T013'}
     sub check ( $self, $elem, $doc ) { return 'oops' }
 }
 
@@ -251,7 +255,7 @@ package main;
 
 subtest 'a fix whose own edits overlap is not applied' => sub {
     my $result = run_engine( engine( 'safe', 'T012' ), "foo;\n" );
-    is( $result->{error},    undef, 'no error' );
+    is( $result->{error}, undef, 'no error' );
     is( $result->{new_text}, undef, 'text unchanged' );
     is( summary($result), [ [ 'T012', 1, 1 ] ], 'still reported' );
 };
@@ -272,9 +276,9 @@ subtest 'unparseable source' => sub {
     };
 
     my $result = run_engine( engine( 'none', 'T001' ), "broken;\n" );
-    is( $result->{error},      'cannot parse', 'error from PPI' );
-    is( $result->{violations}, [],             'no violations' );
-    is( $result->{new_text},   undef,          'no new text' );
+    is( $result->{error}, 'cannot parse', 'error from PPI' );
+    is( $result->{violations}, [], 'no violations' );
+    is( $result->{new_text}, undef, 'no new text' );
 
     package T007 {
         use parent -norequire, 'WordRule';
@@ -284,16 +288,16 @@ subtest 'unparseable source' => sub {
         sub to         {'broken'}
     }
     $result = run_engine( engine( 'safe', 'T007' ), "foo;\n" );
-    is( $result->{error},       'cannot parse', 'fixed text that does not parse is an error' );
-    is( $result->{new_text},    undef,          'original kept' );
-    is( $result->{fixed_count}, 0,              'nothing fixed' );
+    is( $result->{error}, 'cannot parse', 'fixed text that does not parse is an error' );
+    is( $result->{new_text}, undef, 'original kept' );
+    is( $result->{fixed_count}, 0, 'nothing fixed' );
     is( summary($result), [ [ 'T007', 1, 1 ] ], 'violations of the original text' );
 };
 
 package T008 {    # check dies
     use v5.36;
     use parent -norequire, 'WordRule';
-    sub code {'T008'}
+    sub code                         {'T008'}
     sub check ( $self, $elem, $doc ) { die "kaboom\n" }
 }
 
@@ -301,6 +305,7 @@ package T009 {    # check dies only on what T001 produces
     use v5.36;
     use parent -norequire, 'WordRule';
     sub code {'T009'}
+
     sub check ( $self, $elem, $doc ) {
         die "saw bar\n" if $elem->content eq 'bar';
         return;
@@ -321,9 +326,9 @@ subtest 'rule whose check dies' => sub {
 
 subtest 'rule whose check dies on the fixed text' => sub {
     my $result = run_engine( engine( 'safe', qw( T009 T001 ) ), "foo;\n" );
-    is( $result->{error},       'rule T009 failed: saw bar', 'error set' );
-    is( $result->{new_text},    undef,                       'original kept' );
-    is( $result->{fixed_count}, 0,                           'nothing fixed' );
+    is( $result->{error}, 'rule T009 failed: saw bar', 'error set' );
+    is( $result->{new_text}, undef, 'original kept' );
+    is( $result->{fixed_count}, 0, 'nothing fixed' );
     is( summary($result), [ [ 'T001', 1, 1 ] ], 'violations of the original lint' );
 };
 
@@ -332,15 +337,17 @@ subtest 'S002 and S003 fix the same open' => sub {
     require Puff::Rule::Security::BarewordFilehandle;
     my $engine = engine( 'unsafe', qw( Puff::Rule::Security::TwoArgOpen Puff::Rule::Security::BarewordFilehandle ) );
     my $result = run_engine( $engine, qq{open(FH, "<\$f"); my \@l = <FH>; close FH;\n} );
-    is( $result->{error},       undef, 'no error' );
-    is( $result->{new_text},    qq{open(my \$fh, '<', \$f); my \@l = <\$fh>; close \$fh;\n}, 'both fixes applied' );
-    is( summary($result),       [], 'nothing left' );
-    is( $result->{fixed_count}, 2,  'two fixed' );
+    is( $result->{error}, undef, 'no error' );
+    is( $result->{new_text}, qq{open(my \$fh, '<', \$f); my \@l = <\$fh>; close \$fh;\n}, 'both fixes applied' );
+    is( summary($result), [], 'nothing left' );
+    is( $result->{fixed_count}, 2, 'two fixed' );
 };
 
 subtest 'builtin_rules_info' => sub {
-    is( [ Puff::Engine->builtin_rules_info ],
-        [ { code => 'P001', summary => 'suppression comment must list codes' } ], 'P001 listed' );
+    is(
+        [ Puff::Engine->builtin_rules_info ],
+        [ { code => 'P001', summary => 'suppression comment must list codes' } ], 'P001 listed'
+    );
 };
 
 done_testing;

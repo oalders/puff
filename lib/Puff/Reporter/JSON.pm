@@ -31,8 +31,8 @@ sub violation_data ( $class, $v ) {
         line    => $v->line + 0,
         column  => $v->column + 0,
         fix     => {
-            safety    => $v->rule ? $v->rule->fix_safety : 'none',
-            available => $v->fixable ? JSON::PP::true : JSON::PP::false,
+            safety    => $v->rule    ? $v->rule->fix_safety : 'none',
+            available => $v->fixable ? JSON::PP::true       : JSON::PP::false,
             applied   => JSON::PP::false,
         },
     };

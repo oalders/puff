@@ -8,7 +8,7 @@ use Puff::Rule   ();
 
 my @docs;    # PPI drops token locations when a document is destroyed
 
-sub doc_for ( $src ) {
+sub doc_for ($src) {
     my $doc = PPI::Document->new( \( $src->text ) );
     push @docs, $doc;
     $doc->index_locations;
@@ -16,8 +16,7 @@ sub doc_for ( $src ) {
 }
 
 sub word ( $doc, $content ) {
-    return $doc->find_first(
-        sub { $_[1]->isa('PPI::Token::Word') && $_[1]->content eq $content } );
+    return $doc->find_first( sub { $_[1]->isa('PPI::Token::Word') && $_[1]->content eq $content } );
 }
 
 my $src = Puff::Source->from_string('open(FH, "<$f");');
@@ -48,15 +47,15 @@ subtest 'Puff::Fix helpers' => sub {
 };
 
 subtest 'heredoc declines' => sub {
-    my $hsrc  = Puff::Source->from_string("print <<EOT;\nhi\nEOT\nprint 1;\n");
-    my $hdoc  = doc_for($hsrc);
-    my $stmt  = $hdoc->find_first('PPI::Statement');
+    my $hsrc    = Puff::Source->from_string("print <<EOT;\nhi\nEOT\nprint 1;\n");
+    my $hdoc    = doc_for($hsrc);
+    my $stmt    = $hdoc->find_first('PPI::Statement');
     my $heredoc = $hdoc->find_first('PPI::Token::HereDoc');
-    my $fix   = Puff::Fix->new( source => $hsrc );
+    my $fix     = Puff::Fix->new( source => $hsrc );
     like( dies { $fix->replace( $stmt, 'x' ) }, qr/heredoc/, 'statement' );
-    like( dies { $fix->delete($heredoc) },      qr/heredoc/, 'token itself' );
+    like( dies { $fix->delete($heredoc) }, qr/heredoc/, 'token itself' );
     like( dies { $fix->insert_before( $stmt, 'x' ) }, qr/heredoc/, 'insert_before' );
-    like( dies { $fix->insert_after( $stmt, 'x' ) },  qr/heredoc/, 'insert_after' );
+    like( dies { $fix->insert_after( $stmt, 'x' ) }, qr/heredoc/, 'insert_after' );
     is( $fix->edits, [], 'nothing recorded' );
     isa_ok( dies { $fix->replace( $stmt, 'x' ) }, 'Puff::Fix::Decline' );
 };
@@ -73,14 +72,17 @@ package My::Rule {
     sub code    {'X001'}
     sub options { { x => 1 } }
 }
+
 package My::Fixable {
     our @ISA = ('My::Rule');
     sub fix_safety {'unsafe'}
 }
+
 package My::Summary {
     our @ISA = ('My::Rule');
     sub summary {'the summary'}
 }
+
 package My::NoFix {
     our @ISA = ('My::Rule');
     sub fix_safety {'none'}
@@ -94,18 +96,20 @@ subtest 'Puff::Rule' => sub {
     my $rule = My::Rule->new;
     my $v    = $rule->violation( $fh, message => 'm' );
     isa_ok( $v, 'Puff::Violation' );
-    is( $v->code,    'X001', 'code' );
-    is( $v->line,    1,      'line' );
-    is( $v->column,  6,      'column' );
-    is( $v->message, 'm',    'message' );
-    is( $v->rule,    $rule,  'rule' );
-    is( $v->element, $fh,    'element' );
+    is( $v->code, 'X001', 'code' );
+    is( $v->line, 1, 'line' );
+    is( $v->column, 6, 'column' );
+    is( $v->message, 'm', 'message' );
+    is( $v->rule, $rule, 'rule' );
+    is( $v->element, $fh, 'element' );
     ok( !$v->fixable, "base fix_safety none: not fixable" );
     is( My::Summary->new->violation($fh)->message, 'the summary', 'message defaults to summary' );
-    ok( My::Fixable->new->violation( $fh, message => "m" )->fixable, "fixable by default when fix_safety declared" );
+    ok( My::Fixable->new->violation( $fh, message  => "m" )->fixable, "fixable by default when fix_safety declared" );
     ok( !My::Fixable->new->violation( $fh, message => "m", fixable => 0 )->fixable, "explicit 0" );
-    ok( !My::NoFix->new->violation( $fh, message => 'm', fixable => 1 )->fixable,
-        'fix_safety none' );
+    ok(
+        !My::NoFix->new->violation( $fh, message => 'm', fixable => 1 )->fixable,
+        'fix_safety none'
+    );
 
     $v->file('a.pl');
     is( $v->file, 'a.pl', 'file setter' );

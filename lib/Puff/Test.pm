@@ -32,8 +32,10 @@ sub _check_file ( $rule, $code, $file ) {
 
     my $lint = _engine( $rule, 'none' )->process_source( $src, file => $file );
     is( $lint->{error}, undef, 'lint has no error' );
-    is( _lines( $lint->{violations}, $code ), _expected_lines( $src->text, $code ),
-        'reported lines match # expect comments' );
+    is(
+        _lines( $lint->{violations}, $code ), _expected_lines( $src->text, $code ),
+        'reported lines match # expect comments'
+    );
 
     my $fixed = _engine( $rule, 'unsafe' )->process_source( $src, file => $file );
     is( $fixed->{error}, undef, 'fix has no error' );

@@ -7,16 +7,16 @@ use Puff::Suppressions;
 sub sup ($code) { Puff::Suppressions->new( PPI::Document->new( \$code ) ) }
 
 my $s = sup("my \$x = rand(); # puff: ignore S001\nmy \$y = rand();\n");
-ok $s->is_suppressed( 'S001', 1 ),  'line ignore matches';
+ok $s->is_suppressed( 'S001', 1 ), 'line ignore matches';
 ok !$s->is_suppressed( 'S002', 1 ), 'other code not suppressed';
 ok !$s->is_suppressed( 'S001', 2 ), 'other line not suppressed';
 is $s->problems, [], 'no problems';
 
 $s = sup("foo(); # puff: ignore S001, S002\nbar(); # puff: ignore S\n");
-ok $s->is_suppressed( 'S001', 1 ),  'first code';
-ok $s->is_suppressed( 'S002', 1 ),  'second code';
+ok $s->is_suppressed( 'S001', 1 ), 'first code';
+ok $s->is_suppressed( 'S002', 1 ), 'second code';
 ok !$s->is_suppressed( 'S003', 1 ), 'unlisted';
-ok $s->is_suppressed( 'S003', 2 ),  'prefix S';
+ok $s->is_suppressed( 'S003', 2 ), 'prefix S';
 ok !$s->is_suppressed( 'B001', 2 ), 'prefix does not match other letter';
 
 $s = sup("# puff: ignore-file S00\nfoo();\n\nbar();\n");

@@ -44,7 +44,10 @@ my %MODIFIER = map { $_ => 1 } qw( if unless while until for foreach );
 sub check ( $self, $elem, $doc ) {
     return unless defined _unterminated($elem);
     return unless $self->_loads_try_module($doc);
-    return $self->violation( $elem, message => 'try/catch is not ended with a semicolon; the next statement becomes arguments to try' );
+    return $self->violation(
+        $elem,
+        message => 'try/catch is not ended with a semicolon; the next statement becomes arguments to try'
+    );
 }
 
 sub fix ( $self, $violation, $fix ) {
@@ -76,9 +79,11 @@ sub _unterminated ($try) {
 
 sub _loads_try_module ( $self, $doc ) {
     my %wanted = map { $_ => 1 } @{ $self->option('modules') };
-    my $found  = $doc->find_first( sub ( $top, $el ) {
-        $el->isa('PPI::Statement::Include') && ( $el->type // q{} ) eq 'use' && $wanted{ $el->module // q{} };
-    } );
+    my $found  = $doc->find_first(
+        sub ( $top, $el ) {
+            $el->isa('PPI::Statement::Include') && ( $el->type // q{} ) eq 'use' && $wanted{ $el->module // q{} };
+        }
+    );
     return $found ? 1 : 0;
 }
 

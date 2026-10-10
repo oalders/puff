@@ -105,10 +105,9 @@ sub _import_position ($doc) {
         $start_idx = $pkg_idx;
     }
 
-    my ($anchor) = reverse grep {
-               $_->isa('PPI::Statement::Include')
-            && ( $_->type eq 'use' || $_->type eq 'no' )
-    } @top[ $start_idx .. $target_idx - 1 ];
+    my ($anchor)
+        = reverse grep { $_->isa('PPI::Statement::Include') && ( $_->type eq 'use' || $_->type eq 'no' ) }
+        @top[ $start_idx .. $target_idx - 1 ];
     $anchor //= $packages->[0];
 
     return $anchor ? ( after => $anchor ) : ( before => $target );

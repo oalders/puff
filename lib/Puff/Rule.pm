@@ -16,8 +16,8 @@ sub fix_safety  {'none'}
 sub options     { {} }
 sub cwe         { () }
 
-sub check ( $self, $elem, $doc ) { return }
-sub fix ( $self, $violation, $fix ) { return 0 }
+sub check ( $self, $elem, $doc )      {return}
+sub fix   ( $self, $violation, $fix ) { return 0 }
 
 sub option ( $self, $name ) {
     die 'rule ' . $self->code . " has no option $name\n" unless exists $self->options->{$name};
@@ -27,7 +27,7 @@ sub option ( $self, $name ) {
 }
 
 sub violation ( $self, $elem, %args ) {
-    my $loc = $elem->location or die "PPI element has no location\n";
+    my $loc     = $elem->location or die "PPI element has no location\n";
     my $fixable = $self->fix_safety eq 'none' ? 0 : ( $args{fixable} // 1 );
     return Puff::Violation->new(
         rule    => $self,

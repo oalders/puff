@@ -7,9 +7,9 @@ use Scalar::Util qw( weaken );
 
 use Puff::PPIUtil qw( is_constant_string );
 
-my $SUFFIX       = qr/s?(?:_(?:hex|b64|base64|bytes))?\z/i;
-my $STRONG_NAME  = qr/(?:\A|_)(?:password|passwd|secret|csrf|nonce|hmac)$SUFFIX|\Ahmac_/i;
-my $WEAK_NAME    = qr/(?:\A|_)(?:token|sig|signature|digest|mac|hash)$SUFFIX/i;
+my $SUFFIX        = qr/s?(?:_(?:hex|b64|base64|bytes))?\z/i;
+my $STRONG_NAME   = qr/(?:\A|_)(?:password|passwd|secret|csrf|nonce|hmac)$SUFFIX|\Ahmac_/i;
+my $WEAK_NAME     = qr/(?:\A|_)(?:token|sig|signature|digest|mac|hash)$SUFFIX/i;
 my $CRYPTO_MODULE = qr/(?:\A|::)(?:Crypt|Authen|Authentication|OAuth\w*|JWT|WebToken|Session|HMAC\w*)(?:::|\z)/;
 
 sub code       {'S011'}
@@ -65,12 +65,14 @@ sub check ( $self, $elem, $doc ) {
 
     my ($name) = grep { defined && $self->_is_secret_name( $_, $doc ) } _left_name($left), _right_name($right);
     return unless defined $name;
-    return $self->violation( $elem,
-        message => "'$op' on $name leaks timing (CWE-208); use a constant-time comparison" );
+    return $self->violation(
+        $elem,
+        message => "'$op' on $name leaks timing (CWE-208); use a constant-time comparison"
+    );
 }
 
 sub _is_secret_name ( $self, $name, $doc ) {
-    return 1 if $name =~ $STRONG_NAME;
+    return 1 if $name     =~ $STRONG_NAME;
     return 0 unless $name =~ $WEAK_NAME;
     unless ( $self->{crypto_doc} && $self->{crypto_doc} == $doc ) {
         $self->{crypto_doc} = $doc;
@@ -85,8 +87,8 @@ sub _uses_crypto ($doc) {
         sub {
             my $el = $_[1];
             return 1 if $el->isa('PPI::Statement::Include') && ( $el->module // '' ) =~ $CRYPTO_MODULE;
-            return 1 if $el->isa('PPI::Statement::Package') && $el->namespace =~ $CRYPTO_MODULE;
-            return 1 if $el->isa('PPI::Token::Word') && $el->content =~ /(?:\A|::)hmac_/i;
+            return 1 if $el->isa('PPI::Statement::Package') && $el->namespace        =~ $CRYPTO_MODULE;
+            return 1 if $el->isa('PPI::Token::Word')        && $el->content          =~ /(?:\A|::)hmac_/i;
             return 1 if $el->isa('PPI::Token::QuoteLike::Words') && grep {/\Ahmac_/i} $el->literal;
             return 0;
         }
@@ -126,9 +128,9 @@ sub _right_name ($el) {
             last unless $next->content eq '->';
             next;
         }
-        if ( $next->isa('PPI::Structure::Subscript') ) { $name = _key_name($next) }
-        elsif ( $next->isa('PPI::Token::Word') ) { $name = _word_name($next) }
-        elsif ( !$next->isa('PPI::Structure::List') ) { last }
+        if    ( $next->isa('PPI::Structure::Subscript') ) { $name = _key_name($next) }
+        elsif ( $next->isa('PPI::Token::Word') )          { $name = _word_name($next) }
+        elsif ( !$next->isa('PPI::Structure::List') )     {last}
     }
     return $name;
 }
@@ -148,7 +150,7 @@ sub _key_name ($subscript) {
     return undef unless @parts == 1;
     my $key = $parts[0];
     return $key->content if $key->isa('PPI::Token::Word');
-    return $key->string  if is_constant_string($key);
+    return $key->string if is_constant_string($key);
     return undef;
 }
 

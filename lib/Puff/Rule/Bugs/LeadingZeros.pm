@@ -43,23 +43,27 @@ sub explanation {
 
 # Builtin => index of the argument that is a permission mode.
 my %MODE_ARG = (
-    chmod           => 0,
-    umask           => 0,
-    mkdir           => 1,
-    mkfifo          => 1,
-    'POSIX::mkfifo' => 1,
-    dbmopen         => 2,
-    sysopen         => 3,
-    mkpath          => 2,
+    chmod                => 0,
+    umask                => 0,
+    mkdir                => 1,
+    mkfifo               => 1,
+    'POSIX::mkfifo'      => 1,
+    dbmopen              => 2,
+    sysopen              => 3,
+    mkpath               => 2,
     'File::Path::mkpath' => 2,
 );
 
 sub check ( $self, $elem, $doc ) {
     return unless $elem->content =~ /\A[+-]?(?:0+_*)+[1-9]/;
-    return if !$self->option('strict') && ( _is_mode_argument($elem) || _is_mode_value($elem) || _is_bit_operand($elem) );
+    return
+        if !$self->option('strict') && ( _is_mode_argument($elem) || _is_mode_value($elem) || _is_bit_operand($elem) );
     return $self->violation(
         $elem,
-        message => 'Number ' . $elem->content . ' has a leading zero, so it is octal; write ' . ( _oct_call($elem) // 'it in decimal' ),
+        message => 'Number '
+            . $elem->content
+            . ' has a leading zero, so it is octal; write '
+            . ( _oct_call($elem) // 'it in decimal' ),
         fixable => defined _oct_call($elem) ? 1 : 0,
     );
 }
@@ -91,7 +95,8 @@ sub _is_mode_argument ($elem) {
 # f ..., $elem.
 sub _call_word ($elem) {
     my $parent = $elem->parent or return;
-    if ( $parent->isa('PPI::Statement::Expression') && $parent->parent && $parent->parent->isa('PPI::Structure::List') ) {
+    if ( $parent->isa('PPI::Statement::Expression') && $parent->parent && $parent->parent->isa('PPI::Structure::List') )
+    {
         my $word = $parent->parent->sprevious_sibling;
         return _is_mode_builtin($word) ? $word : undef;
     }
@@ -113,7 +118,7 @@ sub _is_mode_builtin ($word) {
 sub _is_mode_value ($elem) {
     my $op = $elem->sprevious_sibling or return 0;
     return 0 unless $op->isa('PPI::Token::Operator') && $op->content eq '=>';
-    my $key = $op->sprevious_sibling or return 0;
+    my $key  = $op->sprevious_sibling or return 0;
     my $name = $key->isa('PPI::Token::Quote') ? $key->string : $key->content;
     return $name =~ /mode|perm|chmod/i;
 }

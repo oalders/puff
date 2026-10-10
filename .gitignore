@@ -1,7 +1,7 @@
-local/
-.build/
-Puff-*
 *.bak
-.tmp/
+.build/
 .superpowers/
+.tmp/
+Puff-*
+local/
 paad/

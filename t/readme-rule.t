@@ -11,10 +11,10 @@ use Cwd        qw( getcwd );
 use Path::Tiny qw( path tempdir );
 use Puff::Test qw( run_corpus );
 
-my $root  = path(getcwd)->absolute;
-my @PERL  = ( $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib', 'perl5' ) );
-my $PUFF  = $root->child( 'bin', 'puff' )->stringify;
-my $RULE  = $root->child( 't', 'lib-rules', 'NoFixme.pm' );
+my $root = path(getcwd)->absolute;
+my @PERL = ( $^X, '-I' . $root->child('lib'), '-I' . $root->child( 'local', 'lib', 'perl5' ) );
+my $PUFF = $root->child( 'bin', 'puff' )->stringify;
+my $RULE = $root->child( 't', 'lib-rules', 'NoFixme.pm' );
 
 sub puff ( $dir, @args ) {
     my $orig = getcwd;
@@ -34,7 +34,7 @@ my $readme = $root->child('README.md')->slurp_utf8;
 
 my ( $out, $exit ) = puff( $dir, 'check', 'a.pl' );
 is( $exit, 1, 'violations found' );
-like( $out, qr{^a\.pl:1:1: X001 Use TODO instead of FIXME \[\*\]$}m,  'first comment reported' );
+like( $out, qr{^a\.pl:1:1: X001 Use TODO instead of FIXME \[\*\]$}m, 'first comment reported' );
 like( $out, qr{^a\.pl:2:15: X001 Use TODO instead of FIXME \[\*\]$}m, 'second comment reported' );
 
 ( $out, $exit ) = puff( $dir, 'rule', 'X001' );
@@ -56,7 +56,8 @@ ok( index( $readme, $indented ) >= 0, 'README shows t/lib-rules/NoFixme.pm verba
 # The README's sample lib/a.pl and the `puff check` output it shows.
 subtest 'README sample output' => sub {
     my ($sample) = $readme =~ /Given this `lib\/a\.pl`:\n\n((?:    .*\n)+)/ or return fail('sample a.pl in README');
-    my ($shown)  = $readme =~ /\n    \$ puff check\n((?:    .*\n)+)\nThe points/ or return fail('sample output in README');
+    my ($shown)  = $readme =~ /\n    \$ puff check\n((?:    .*\n)+)\nThe points/
+        or return fail('sample output in README');
     s/^    //mg for $sample, $shown;
 
     my $proj = tempdir();
@@ -64,8 +65,8 @@ subtest 'README sample output' => sub {
     $proj->child( 'lib', 'a.pl' )->spew_utf8($sample);
     $proj->child('.puff.toml')->spew_utf8($config);
     my ( $got, $code ) = puff( $proj, 'check' );
-    is( $got,  $shown, 'README output matches a real run' );
-    is( $code, 1,      'exit 1' );
+    is( $got, $shown, 'README output matches a real run' );
+    is( $code, 1, 'exit 1' );
 };
 
 # The corpus harness, as the README shows it, with the rule loaded from

@@ -757,3 +757,24 @@ built-in rules need neither argument: `t/rule-S001.t` is just
 `run_corpus('S001')`. Run the tests from the repository root:
 
     prove -lr -Ilocal/lib/perl5 t
+
+## Contributing
+
+Tidying and linting run through [precious](https://github.com/houseabsolute/precious),
+configured in `precious.toml`. It runs perltidy (with `.perltidyrc`),
+perlcritic (with `.perlcriticrc`), puff itself with its default rules, and
+omegasort on `.gitignore`. You need `precious` and `omegasort` on your
+`PATH` (both have prebuilt binaries on their GitHub release pages). The Perl
+tools are develop prerequisites; Perl::Tidy is pinned to one release so
+everyone formats the same way:
+
+    cpanm -L local --installdeps --with-develop .
+
+    precious lint --all     # check every file
+    precious tidy --all     # reformat every file in place
+    precious lint --staged  # check only what you are about to commit
+
+`t/corpus/` is left alone: its fixtures are compared byte for byte by the
+tests. Run the test suite from the repository root:
+
+    prove -lr -Ilocal/lib/perl5 t

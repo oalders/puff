@@ -39,7 +39,8 @@ sub check ( $self, $elem, $doc ) {
     return unless $rhs->isa('PPI::Structure::Constructor');
     my $target = _list_target($elem) // return;
     my $ref    = $rhs->start->content eq '[' ? '[...]' : '{...}';
-    return $self->violation( $elem,
+    return $self->violation(
+        $elem,
         message => "$target assigned a $ref reference; use ( ... ) for a list, or ( $ref ) for one reference",
         fixable => _whole_rhs($rhs) ? 1 : 0,
     );
@@ -50,7 +51,7 @@ sub fix ( $self, $violation, $fix ) {
     return 0 unless $rhs->isa('PPI::Structure::Constructor') && _whole_rhs($rhs);
     my ( $start, $finish ) = ( $rhs->start, $rhs->finish );
     return 0 unless $start && $finish;
-    $fix->replace( $start,  '(' );
+    $fix->replace( $start, '(' );
     $fix->replace( $finish, ')' );
     return 1;
 }
@@ -60,9 +61,9 @@ sub fix ( $self, $violation, $fix ) {
 sub _list_target ($op) {
     my $prev  = $op->sprevious_sibling or return;
     my $slice = 0;
-    while ( $prev->isa('PPI::Structure::Subscript') || $prev->isa('PPI::Structure::Constructor')
-        || $prev->isa('PPI::Structure::Block') )
-    {
+    while ($prev->isa('PPI::Structure::Subscript')
+        || $prev->isa('PPI::Structure::Constructor')
+        || $prev->isa('PPI::Structure::Block') ) {
         $slice = 1 unless $prev->isa('PPI::Structure::Block');
         $prev  = $prev->sprevious_sibling or return;
     }

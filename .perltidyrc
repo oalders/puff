@@ -1,0 +1,13 @@
+--converge
+--no-outdent-long-comments
+-bar
+-bbt=1
+-boc
+-ci=4
+-i=4
+-l=120
+-nolq
+-pt=1
+-se
+-vxl="if unless ,"
+-wbb="% + - * / x != == >= <= =~ !~ < > | & >= < = **= += *= &= <<= &&= -= /= |= >>= ||= .= %= ^= x="

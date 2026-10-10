@@ -86,7 +86,7 @@ sub _norequire ( $include, $doc ) {
         }
     }
     return unless @names;
-    my %local  = map { $_->namespace => 1 } @{ $doc->find('PPI::Statement::Package') || [] };
+    my %local  = map { $_->namespace         => 1 } @{ $doc->find('PPI::Statement::Package') || [] };
     my %loaded = map { ( $_->module // q{} ) => 1 } @{ $doc->find('PPI::Statement::Include') || [] };
     for my $name (@names) {
         next unless $HOME{$name};

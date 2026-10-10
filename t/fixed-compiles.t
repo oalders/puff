@@ -11,6 +11,7 @@ use TestCommand qw( run_capture );
 use Path::Tiny qw( path );
 
 my %SKIP = (
+
     # 'S00N/name.fixed.pl' => 'reason',
 );
 

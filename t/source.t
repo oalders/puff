@@ -1,8 +1,8 @@
 use v5.36;
 use Test2::V0;
 
-use Path::Tiny qw( tempdir );
-use PPI        ();
+use Path::Tiny   qw( tempdir );
+use PPI          ();
 use Puff::Source ();
 
 my @docs;    # PPI drops token locations when a document is destroyed
@@ -11,9 +11,7 @@ sub first_word ( $src, $content ) {
     my $doc = PPI::Document->new( \( $src->text ) );
     push @docs, $doc;
     $doc->index_locations;
-    return $doc->find_first(
-        sub { $_[1]->isa('PPI::Token::Word') && $_[1]->content eq $content }
-    );
+    return $doc->find_first( sub { $_[1]->isa('PPI::Token::Word') && $_[1]->content eq $content } );
 }
 
 sub word_maps_to_itself ( $src, $content, $name ) {
@@ -27,7 +25,7 @@ sub word_maps_to_itself ( $src, $content, $name ) {
 
 subtest 'offset_of_location' => sub {
     my $src = Puff::Source->from_string("my \$x = 1;\nrand();\n");
-    is( $src->offset_of_location( 1, 1 ), 0,  'line 1 col 1' );
+    is( $src->offset_of_location( 1, 1 ), 0, 'line 1 col 1' );
     is( $src->offset_of_location( 2, 1 ), 11, 'line 2 col 1' );
     ok( !$src->has_cr, 'no CR' );
 };
@@ -38,13 +36,11 @@ subtest 'heredoc, POD, __END__ and __DATA__' => sub {
         'rand', 'heredoc'
     );
     word_maps_to_itself(
-        Puff::Source->from_string(
-            "print <<~EOT, <<'B';\n  x\n  EOT\nb\nB\nmy \$y = rand();\n"),
+        Puff::Source->from_string("print <<~EOT, <<'B';\n  x\n  EOT\nb\nB\nmy \$y = rand();\n"),
         'rand', 'two heredocs'
     );
     word_maps_to_itself(
-        Puff::Source->from_string(
-            "=pod\n\nhello\n\n=cut\n\nrand();\n__END__\nrand\n"),
+        Puff::Source->from_string("=pod\n\nhello\n\n=cut\n\nrand();\n__END__\nrand\n"),
         'rand', 'pod and __END__'
     );
     word_maps_to_itself(
@@ -58,8 +54,8 @@ subtest 'end_of' => sub {
     my $doc = PPI::Document->new( \( $src->text ) );
     $doc->index_locations;
     my $stmt = $doc->child(0);
-    is( $src->start_of($stmt), 0,  'statement start' );
-    is( $src->end_of($stmt),   10, 'statement end is after the semicolon' );
+    is( $src->start_of($stmt), 0, 'statement start' );
+    is( $src->end_of($stmt), 10, 'statement end is after the semicolon' );
 };
 
 my $dir = tempdir();
@@ -94,7 +90,7 @@ subtest 'Latin-1 fallback' => sub {
 
 subtest 'carriage returns' => sub {
     ok( Puff::Source->from_string("a;\r\nb;\r\n")->has_cr, 'CRLF detected' );
-    ok( Puff::Source->from_string("a;\rb;\r")->has_cr,       'lone CR detected' );
+    ok( Puff::Source->from_string("a;\rb;\r")->has_cr, 'lone CR detected' );
     ok( Puff::Source->from_string("a; # x\ry\nb;\n")->has_cr, 'CR inside a line detected' );
 };
 

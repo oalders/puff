@@ -6,9 +6,9 @@ package Try::Tiny;
 
 use v5.36;
 
-sub try :prototype(&;@) { return }
-sub catch :prototype(&;@) { return }
-sub finally :prototype(&;@) { return }
+sub try     : prototype(&;@) {return}
+sub catch   : prototype(&;@) {return}
+sub finally : prototype(&;@) {return}
 
 sub import {
     my $caller = caller;

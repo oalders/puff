@@ -4,14 +4,15 @@ use Test2::V0;
 use Puff::Engine ();
 use Puff::Rules  ();
 use Puff::Source ();
-use Puff::Test qw( run_corpus );
+use Puff::Test   qw( run_corpus );
 
 run_corpus('S007');
 
 sub lines_with ( $options, $text ) {
     my ($class) = grep { $_->code eq 'S007' } Puff::Rules->load;
-    my $rule    = $class->new( options => $options );
-    my $result  = Puff::Engine->new( rules => [$rule] )->process_source( Puff::Source->from_string($text), file => 'x.pl' );
+    my $rule = $class->new( options => $options );
+    my $result
+        = Puff::Engine->new( rules => [$rule] )->process_source( Puff::Source->from_string($text), file => 'x.pl' );
     return [ map { $_->line } @{ $result->{violations} } ];
 }
 

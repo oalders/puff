@@ -2,7 +2,7 @@ use v5.36;
 use Test2::V0;
 
 use Puff::CLI::Command::check ();
-use Time::HiRes qw( time );
+use Time::HiRes               qw( time );
 
 my $progress = \&Puff::CLI::Command::check::_progress;
 

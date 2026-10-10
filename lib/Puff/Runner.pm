@@ -55,8 +55,8 @@ sub run ( $self, @paths ) {
 }
 
 sub exit_code ( $self, $results ) {
-    return 2 if grep { defined $_->{error} } @$results;
-    return 1 if grep { @{ $_->{violations} // [] } } @$results;
+    return 2 if grep                            { defined $_->{error} } @$results;
+    return 1 if grep                            { @{ $_->{violations} // [] } } @$results;
     return 1 if $self->{mode} eq 'diff' && grep { defined $_->{diff} } @$results;
     return 0;
 }
@@ -91,7 +91,7 @@ sub _find ( $self, $root ) {
 # perl. Unreadable files and files with a NUL byte (binaries) are false.
 sub _has_perl_shebang ($file) {
     return 0 unless -f $file;    # never open a FIFO or device: it could block
-    open my $fh, '<:raw', $file or return 0;
+    open my $fh, '<:raw', $file                   or return 0;
     defined read( $fh, my $head, $SHEBANG_BYTES ) or return 0;
     close $fh;
     return 0 if $head =~ /\0/;
@@ -99,6 +99,7 @@ sub _has_perl_shebang ($file) {
     my ( $interpreter, @args ) = split ' ', $line;
     return 0 unless defined $interpreter;
     my $name = $interpreter =~ s{\A.*/}{}r;
+
     if ( $name eq 'env' ) {
         shift @args while @args && ( $args[0] =~ /\A-/ || $args[0] =~ /=/ );
         return 0 unless @args;
