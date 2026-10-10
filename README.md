@@ -1113,17 +1113,17 @@ everyone formats the same way:
     precious tidy --all     # reformat every file in place
     precious lint --staged  # check only what you are about to commit
 
-perltidy and perlcritic are found on `PATH`, and they load modules from
-`PERL5LIB`. If you installed the develop prerequisites into `local/` as above,
-put `local/bin` on `PATH` and `local/lib/perl5` on `PERL5LIB`:
+If you installed the develop prerequisites into `local/` as above, precious
+needs `local/bin` on `PATH` (for perltidy and perlcritic) and `local/lib/perl5`
+on `PERL5LIB` (for the modules they load). From the repository root:
 
-    PATH=$PWD/local/bin:$PATH \
-      PERL5LIB=$PWD/local/lib/perl5${PERL5LIB:+:$PERL5LIB} \
-      precious lint --all
+    export PATH=$PWD/local/bin:$PATH
+    export PERL5LIB=$PWD/local/lib/perl5${PERL5LIB:+:$PERL5LIB}
+    precious lint --all
 
-Append to an existing `PERL5LIB` rather than replacing it, otherwise modules
-installed elsewhere (for example in `~/perl5`) become invisible. The same
-applies to `precious tidy --all`.
+Keep any existing `PERL5LIB` at the end, as above, rather than overwriting it:
+otherwise modules installed elsewhere (for example in `~/perl5`) become
+invisible.
 
 `t/corpus/` is left alone: its fixtures are compared byte for byte by the
 tests. Run the test suite from the repository root:
