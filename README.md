@@ -845,16 +845,18 @@ are not reported. There is no fix.
 same packages as M002 it reports a lazy attribute (`lazy => 1`, or Moo's
 `is => 'lazy'`) with no `default` and no `builder`: Moose and Mouse die when
 the class is built, and in Moo the accessor returns undef unless a value
-was passed to the constructor. Moo's
-`is => 'lazy'` and Moose's `lazy_build => 1` imply the builder
-`_build_NAME`. It also reports a lazy attribute whose builder has a known
+was passed to the constructor. Moo's `is => 'lazy'` and Moose's
+`lazy_build => 1` imply the builder `_build_NAME`. It also reports a lazy attribute whose builder has a known
 name (`builder => '_load'`, or `_build_NAME` from Moo's `builder => 1` or
 `is => 'lazy'`) that the package does not define with `sub _load`,
 `*_load = ...` or `add_method`; a mention in a comment, POD or a string does
 not count. That check is skipped for roles and for packages that may inherit
 the method (`extends` or `with`, also inside `BEGIN`, `use parent`,
-`use base`, `@ISA`). Roles applied at run time, `->meta->superclasses`,
-`handles` and in-house modules that set up inheritance are not seen.
+`use base`, `@ISA`), and for packages that may define methods under names
+that are not literal (`*{ EXPR } = ...` or `add_method( $name => ... )`).
+Roles applied at run time (`apply_all_roles`, `with_roles`, `use roles`),
+`->meta->superclasses`, `handles` and in-house modules that set up
+inheritance are not seen.
 `has '+name'`, a lazy flag that is not a literal, `builder => sub {...}`
 and a `has` whose name or options are not literal are not reported. There
 is no fix.
@@ -866,9 +868,9 @@ inside `sub BUILD` (and the same inside `sub DEMOLISH`) in a package that
 uses one of them or their `::Role` modules: the parent's method runs twice.
 Calls inside an anonymous sub in the method are not reported. The unsafe fix
 removes the call when it is a statement of its own, with its line when
-nothing else is on it; a trailing comment is kept on its own line. A call whose value is used (`return
-$self->SUPER::BUILD(@_)`) has no fix. It is unsafe because a parent outside
-the framework may rely on the call.
+nothing else is on it; a trailing comment stays where it was. A call whose
+value is used (`return $self->SUPER::BUILD(@_)`) has no fix. It is unsafe
+because a parent outside the framework may rely on the call.
 
 **M005** is not selected by default; turn it on with `--select M`. It
 reports `use Moose`, `use Mouse`, `use Moo` or one of their `::Role`
@@ -876,8 +878,8 @@ modules in a package with no `use namespace::autoclean`,
 `use namespace::clean`, `use namespace::sweep` or
 `use MooseX::MarkAsMethods autoclean => 1`, and no `no Moose` (or the
 matching `no`). An in-house module that cleans the namespace is not
-recognized. namespace::autoclean keeps `use overload` working. Otherwise `has`, `extends`, `with` and the rest stay
-callable as methods of the class. Each package is checked on its own, and
+recognized. namespace::autoclean keeps `use overload` working. Otherwise
+`has`, `extends`, `with` and the rest stay callable as methods of the class. Each package is checked on its own, and
 `use Moose ()` is not reported. The unsafe fix adds
 `use namespace::autoclean;` on its own line after the `use`, with the same
 indentation; it is not offered when other code shares that line. It is

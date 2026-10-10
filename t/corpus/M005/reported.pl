@@ -39,6 +39,10 @@ package My::Maybe;
 use Moose; # expect: M005
 use MooseX::MarkAsMethods autoclean => $ENV{CLEAN};
 
+package My::NotAKey;
+use Moose; # expect: M005
+use MooseX::MarkAsMethods other => 'autoclean', 1 => 1;
+
 package main;
 use Moose; # expect: M005
 

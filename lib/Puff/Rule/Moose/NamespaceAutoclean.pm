@@ -89,16 +89,22 @@ sub _cleaned ($region) {
 }
 
 # Whether `use MooseX::MarkAsMethods` passes a literal true `autoclean`.
+# Only keys count: the elements at even positions of the argument list.
 sub _autoclean_option ($include) {
     my @args = $include->arguments;
     @args = map { $_->schildren } map { $_->schildren } @args
         if @args == 1 && $args[0]->isa('PPI::Structure::List');
-    while ( my $key = shift @args ) {
-        next unless ( _literal($key) // q{} ) eq 'autoclean';
-        my ( $comma, $value, $after ) = @args;
-        return 0 unless $comma && $comma->isa('PPI::Token::Operator') && $comma->content =~ /\A(?:,|=>)\z/;
-        return 0 if $after     && !( $after->isa('PPI::Token::Operator') && $after->content =~ /\A(?:,|=>)\z/ );
-        return $value          && !$value->isa('PPI::Token::Word') && _literal($value) ? 1 : 0;
+    my @items = ( [] );
+    for my $arg (@args) {
+        if   ( $arg->isa('PPI::Token::Operator') && $arg->content =~ /\A(?:,|=>)\z/ ) { push @items, [] }
+        else                                                                          { push @{ $items[-1] }, $arg }
+    }
+    pop @items unless @{ $items[-1] };
+    for ( my $i = 0 ; $i < @items ; $i += 2 ) {
+        my ( $key, $value ) = @items[ $i, $i + 1 ];
+        next unless @$key == 1 && ( _literal( $key->[0] ) // q{} ) eq 'autoclean';
+        return 0 unless $value && @$value == 1 && !$value->[0]->isa('PPI::Token::Word');
+        return _literal( $value->[0] ) ? 1 : 0;
     }
     return 0;
 }

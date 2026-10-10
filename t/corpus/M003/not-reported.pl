@@ -105,4 +105,47 @@ has qualified => ( is => 'lazy' );
 
 sub My::Qualified::_build_qualified { 1 }
 
+package My::Pkg;
+
+use Moo;
+
+has glob_name => ( is => 'lazy' );
+
+*My::Pkg::_build_glob_name = sub { 1 };
+
+package My::BeginISA;
+
+use Moo;
+BEGIN { our @ISA = ('My::Parent') }
+
+has begin_isa => ( is => 'lazy' );
+
+package My::GlobString;
+
+use Moo;
+
+has glob_string => ( is => 'lazy' );
+
+*{"_build_glob_string"} = sub { 1 };
+
+package My::GlobExpr;
+
+use Moo;
+
+has glob_expr => ( is => 'ro', lazy => 1, builder => '_glob_expr' );
+
+{
+    no strict 'refs';
+    *{ __PACKAGE__ . '::_glob_expr' } = sub { 1 };
+}
+
+package My::AddMethodVar;
+
+use Moose;
+
+has added_var => ( is => 'ro', lazy => 1, builder => '_added_var' );
+
+my $method = '_added_var';
+__PACKAGE__->meta->add_method( $method => sub { 1 } );
+
 1;

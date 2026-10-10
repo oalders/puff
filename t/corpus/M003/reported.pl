@@ -54,4 +54,20 @@ sub _build_other { 1 }
 
 =cut
 
+package My::AddOther;
+
+use Moose;
+
+has added_other => ( is => 'ro', lazy => 1, builder => '_added_other' ); # expect: M003
+
+__PACKAGE__->meta->add_method( _something_else => sub { 1 } );
+
+package My::RunTimeRole;
+
+use Moose;
+
+has run_time_role => ( is => 'ro', lazy => 1, builder => '_from_run_time_role' ); # expect: M003
+
+Moose::Util::apply_all_roles( __PACKAGE__, 'My::Builds' );
+
 1;

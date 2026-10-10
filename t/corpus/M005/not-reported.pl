@@ -36,6 +36,22 @@ package My::MarkedRole;
 use Moose::Role;
 use MooseX::MarkAsMethods ( 'autoclean', '1' );
 
+package My::MarkedMore;
+use Moose;
+use MooseX::MarkAsMethods autoclean => 1, other => 2;
+
+package My::MarkedParens;
+use Moose;
+use MooseX::MarkAsMethods (autoclean => 1);
+
+package My::MarkedString;
+use Moose;
+use MooseX::MarkAsMethods autoclean => "1";
+
+package My::MarkedYes;
+use Moose;
+use MooseX::MarkAsMethods autoclean => 'yes';
+
 package My::Other;
 use MooseX::Types;
 
