@@ -5,9 +5,13 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
 
+# Two-argument open trims only ASCII whitespace (space, \t, \n, \x0B, \f,
+# \r) and keeps U+00A0, U+2028 and the like in the filename, so every \s
+# below takes /a.
+
 # A whole escape sequence at the end of a "..." string: it may stand for
 # whitespace (\x20, \040, \x{20}, \o{40}, \N{SPACE}, \t, ...).
-my $TRAILING_ESCAPE = qr/\\(?:x\{[^}]*\}|x[0-9a-fA-F]{0,2}|o\{[^}]*\}|[0-7]{1,3}|N\{[^}]*\}|c.|.)\s*\z/s;
+my $TRAILING_ESCAPE = qr/\\(?:x\{[^}]*\}|x[0-9a-fA-F]{0,2}|o\{[^}]*\}|[0-7]{1,3}|N\{[^}]*\}|c.|.)\s*\z/as;
 
 sub code       {'S002'}
 sub summary    {'Use three-argument open'}
@@ -37,11 +41,14 @@ sub explanation {
         variable (the mode could be inside it), or is a "..." string with an
         escape such as \t, \n, \x20, \040 or \x{20} at the start or end of
         the mode or filename (whitespace that two-argument open strips at
-        runtime). Declined calls
-        are reported as not fixable.
+        runtime). Declined calls are reported as not fixable.
+
+        Two-argument open strips only ASCII whitespace. A non-ASCII space such
+        as U+00A0 or U+2028 at either end of the filename is part of the
+        name, so the fix keeps it there.
 
         The fix is unsafe because it changes behaviour:
-        - two-argument open trims whitespace around the filename and
+        - two-argument open trims ASCII whitespace around the filename and
           three-argument open does not;
         - a filename containing a mode, pipe, `&` or `-` is now taken
           literally, which is the point, but code that relied on passing a
@@ -76,7 +83,7 @@ sub fix ( $self, $violation, $fix ) {
 # command, and have no three-argument form.
 sub _is_fork_open ($arg) {
     return 0 unless @$arg == 1 && $arg->[0]->isa('PPI::Token::Quote') && is_constant_string( $arg->[0] );
-    return $arg->[0]->string =~ /\A\s*(?:-\||\|-)\s*\z/;
+    return $arg->[0]->string =~ /\A\s*(?:-\||\|-)\s*\z/a;
 }
 
 # The text that replaces the second argument (a list of significant
@@ -96,20 +103,20 @@ sub _replacement ($arg) {
     my $s = $el->string;
 
     return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/ || $s eq '-';
-    return if $double && $s =~ /\A\s*[\$\@]/;
+    return if $double && $s =~ /\A\s*[\$\@]/a;
 
     # An escape such as \t or \n at either end is whitespace that two-arg
     # open strips at runtime and three-arg open keeps.
-    return if $double && ( $s =~ /\A\s*\\/ || $s =~ $TRAILING_ESCAPE );
+    return if $double && ( $s =~ /\A\s*\\/a || $s =~ $TRAILING_ESCAPE );
 
-    if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/s ) {
+    if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/as ) {
         my ( $mode, $file ) = ( $1, $2 );
         return if $file eq '' || $file =~ /\A&/ || $file eq '-';
         return if $double && ( $file =~ /\A\\/ || $file =~ $TRAILING_ESCAPE );
         my $quoted = $double && $file =~ /\A\$[A-Za-z_]\w*\z/ ? $file : "$q$file$q";
         return "'$mode', $quoted";
     }
-    return if $s =~ /\A\s|\s\z/;
+    return if $s =~ /\A\s|\s\z/a;
     return "'<', " . $el->content;
 }
 
