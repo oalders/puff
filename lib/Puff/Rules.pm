@@ -4,29 +4,49 @@ use v5.36;
 
 use Module::Pluggable::Object ();
 use Path::Tiny                qw( path );
-use Puff::Path                qw( display_name );
+use Puff::Path                qw( display_lines display_name );
 
 my $CODE_RE  = qr/\A[A-Z]+[0-9]{3}\z/;
 my $RESERVED = 'P001';
 
 sub load ( $class, %args ) {
-    my @candidates = Module::Pluggable::Object->new(
-        search_path      => ['Puff::Rule'],
-        require          => 1,
-        on_require_error => sub ( $module, $error ) {
-            die "Cannot load rule $module: $error";
-        },
-    )->plugins;
+    my @candidates = _escape_warnings(
+        sub {
+            Module::Pluggable::Object->new(
+                search_path      => ['Puff::Rule'],
+                require          => 1,
+                on_require_error => sub ( $module, $error ) {
+                    die "Cannot load rule $module: " . display_lines("$error");
+                },
+            )->plugins;
+        }
+    );
 
     for my $dir ( @{ $args{rule_paths} // [] } ) {
         my $root = path($dir);
         die "rule-paths: '" . display_name($dir) . "' is not a directory\n" unless $root->is_dir;
         my @files = sort grep {/\.pm\z/} map { $_->stringify } _all_files($root);
         for my $file (@files) {
-            my $text     = path($file)->slurp_utf8;
-            my @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
-            my $abs      = path($file)->absolute->stringify;
-            require $abs;    # puff: ignore S016 - rule-paths come from the user's own config
+            my $abs = path($file)->absolute->stringify;
+            my @packages;
+
+            # Perl's errors and warnings are byte strings with the path inside, so show them
+            # line by line (display_name would escape the newlines) like other path errors.
+            my $loaded = _escape_warnings(
+                sub {
+                    eval {
+                        my $text = path($file)->slurp_utf8;
+                        @packages = $text =~ /^\s*package\s+([\w:]+)/mg;
+                        require $abs;    # puff: ignore S016 - rule-paths come from the user's own config
+                        1;
+                    };
+                }
+            );
+            unless ($loaded) {
+                my $error = display_lines( "$@" || 'unknown error' );
+                $error .= "\n" unless $error =~ /\n\z/;
+                die "rule-paths: cannot load '" . display_name($abs) . "': $error";
+            }
             push @candidates, @packages;
         }
     }
@@ -36,8 +56,10 @@ sub load ( $class, %args ) {
         next if $seen{$candidate}++;
         next if $candidate eq 'Puff::Rule' || !$candidate->isa('Puff::Rule');
         my $code = $candidate->code;
-        die "Rule $candidate has invalid code '"
-            . ( $code // 'undef' )
+        die "Rule "
+            . display_name($candidate)
+            . " has invalid code '"
+            . ( defined $code ? display_name("$code") : 'undef' )
             . "' (expected letters followed by three digits)\n"
             unless defined $code && $code =~ $CODE_RE;
         die "Rule $candidate uses code $code, which is reserved for the puff engine\n"
@@ -52,6 +74,19 @@ sub load ( $class, %args ) {
     }
     my @sorted = sort { $a->code cmp $b->code } @classes;
     return @sorted;
+}
+
+# Runs $code with any warning shown through display_lines, passed on to the
+# previous __WARN__ handler if there is one. The text ends in a newline so
+# perl does not add a second "at ... line N".
+sub _escape_warnings ($code) {
+    my $prev = $SIG{__WARN__};
+    local $SIG{__WARN__} = sub ($warning) {
+        my $text = display_lines("$warning");
+        $text .= "\n" unless $text =~ /\n\z/;
+        ref $prev eq 'CODE' ? $prev->($text) : warn $text;
+    };
+    return $code->();
 }
 
 sub _all_files ($dir) {
@@ -139,5 +174,8 @@ X>), or if C<rule_options> names an option a selected rule does not declare.
 An C<ignore> entry that matches nothing is allowed.
 
 C<load> also dies if a C<Puff::Rule::*> module on C<@INC> fails to compile.
+Load errors, and warnings raised while rules load, have their file names
+and control characters escaped as L<Puff::Path> C<display_lines> does.
+Warnings go to any C<__WARN__> handler already in place.
 
 =cut

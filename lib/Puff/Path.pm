@@ -5,7 +5,7 @@ use v5.36;
 use Encode   ();
 use Exporter qw( import );
 
-our @EXPORT_OK = qw( display_name );
+our @EXPORT_OK = qw( display_name display_lines );
 
 # A path (bytes, as the filesystem and @ARGV give it) as a character string
 # for output.
@@ -14,6 +14,12 @@ sub display_name ($path) {
         ? $path    # already characters
         : Encode::decode( 'UTF-8', $path, Encode::FB_PERLQQ | Encode::LEAVE_SRC );
     return $name =~ s/([\x00-\x1F\x7F\x{80}-\x{9F}])/sprintf '\\x%02X', ord $1/ger;
+}
+
+# Multi-line text (an error or warning from perl, say) with each line shown
+# like a path, so the newlines survive.
+sub display_lines ($text) {
+    return join "\n", map { display_name($_) } split /\n/, $text, -1;
 }
 
 1;
@@ -26,9 +32,10 @@ __END__
 
 =head1 SYNOPSIS
 
-    use Puff::Path qw( display_name );
+    use Puff::Path qw( display_name display_lines );
 
     print display_name($path), "\n";
+    print display_lines($message);
 
 =head1 DESCRIPTION
 
@@ -47,5 +54,11 @@ it would fail), but a character string whose non-ASCII characters are all
 in C<\x80> to C<\xFF> cannot be told from bytes and is misread: encode it
 to UTF-8 first. The result is for showing only, and escaping loses
 information: open files by the original path.
+
+C<display_lines($text)> does the same for text of several lines, such as
+an error message from perl that contains a path. Each line is treated as
+C<display_name> treats a path, and the newlines between lines are kept, so
+a trailing newline stays. Like C<display_name> it takes bytes; callers must
+stringify an object, such as an exception, before passing it in.
 
 =cut

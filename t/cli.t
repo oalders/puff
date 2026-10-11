@@ -471,6 +471,22 @@ subtest 'config file' => sub {
     is( $exit, 2, 'unknown key exits 2' );
     like( $err, qr/Unknown key 'ignroe'/, 'error names the key' );
     is( $out, '', 'nothing on STDOUT' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{ignore = [""]\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'an empty selector in the config exits 2' );
+    like( $err, qr/^Key 'ignore' in config file '.*\.puff\.toml' has an empty rule selector$/m, 'and says so' );
+    is( $out, '', 'nothing on STDOUT' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{select = []\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 0, 'select = [] exits 0' ) or diag $err;
+    unlike( $out, qr/S001/, 'and reports nothing' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{select = [" S001 "]\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 1, 'a selector with spaces around it is trimmed' ) or diag $err;
+    like( $out, qr/S001/, 'S001 reported' );
 };
 
 subtest 'exclude' => sub {
@@ -618,6 +634,14 @@ subtest 'errors exit 2' => sub {
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S999' );
     is( $exit, 2, 'selecting an unknown rule exits 2' );
     like( $err, qr/^Unknown rule selector: S999$/m, 'and says so' );
+
+    for my $option (qw( --select --extend-select --ignore )) {
+        for my $value ( ' , ', q{}, ' ', 'B001,,', ',B001' ) {
+            ( $out, $err, $exit ) = puff( $dir, 'check', $option, $value );
+            is( $exit, 2, "$option '$value' exits 2" );
+            like( $err, qr/^Error: $option has an empty rule selector$/m, "$option '$value' says so" );
+        }
+    }
 };
 
 subtest 'CRLF files are linted but not fixed' => sub {
@@ -730,6 +754,83 @@ subtest 'non-ASCII rule-paths entries' => sub {
     $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["r\x{e8}gles"]\nextend-select = ["X"]\n});
     ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
     like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
+
+    $dir->child( $rules, 'Broken.pm' )
+        ->spew_utf8("package Broken;\nuse strict;\n\$one = 1;\n\$two = 2;\n\$three = 3;\n1;\n");
+    ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    is( $exit, 2, 'a rule file that does not compile is a fatal error' );
+    like( $err, qr{^rule-paths: cannot load '.*/\Q$rules\E/Broken\.pm': }m, 'load error names the file in UTF-8' );
+    my @named = $err =~ /^.* at .*\/\Q$rules\E\/Broken\.pm line \d+\.$/mg;
+    cmp_ok( scalar @named, '>', 1, 'every line of the message from perl names the path in UTF-8' );
+    unlike( $err, qr{\.\s+at \S*Rules\.pm line \d+}, 'no second "at ... line" added to the message' );
+    unlike( $err, qr{\xc3\x83}, 'not double-encoded' );
+
+    my $warned = "w\xc3\xa4rn";    # UTF-8 bytes
+    $dir->child($warned)->mkpath;
+    $dir->child( $warned, 'Warns.pm' )->spew_utf8("package Warns;\nuse warnings;\nmy \$x = 1;\nmy \$x = 2;\n1;\n");
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["w\x{e4}rn"]\n});
+    ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    like(
+        $err, qr{masks earlier declaration .* at .*/\Q$warned\E/Warns\.pm line 4},
+        'a warning names the path in UTF-8'
+    );
+    unlike( $err, qr{\xc3\x83}, 'the warning is not double-encoded' );
+    is( $exit, 1, 'a warning is not fatal' );
+    my @warnings = $err =~ /masks earlier declaration/g;
+    is( scalar @warnings, 1, 'the warning is shown once' );
+
+    my $locked = "l\xc3\xa5s";    # UTF-8 bytes
+    $dir->child($locked)->mkpath;
+    my $file = $dir->child( $locked, 'Locked.pm' );
+    $file->spew_utf8("package Locked;\n1;\n");
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["l\x{e5}s"]\n});
+SKIP: {
+        skip 'chmod 0 does not stop this user reading (root?)', 3 unless chmod( 0, "$file" ) && !-r $file;
+        ( $out, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+        is( $exit, 2, 'an unreadable rule file is a fatal error' );
+        like( $err, qr{^rule-paths: cannot load '.*/\Q$locked\E/Locked\.pm': }m, 'named in UTF-8' );
+        unlike( $err, qr{\xc3\x83}, 'not double-encoded' );
+    }
+    chmod 0644, "$file";
 };
+
+subtest 'a rule-paths rule with a bad code' => sub {
+    my $dir = project( 'a.pl' => 'S001/basic.pl' );
+    $dir->child('rules')->mkpath;
+    $dir->child( 'rules', 'BadCode.pm' )
+        ->spew_utf8("package BadCode;\nuse parent 'Puff::Rule';\nsub code { \"X\\e[31m\\n001\" }\n1;\n");
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["rules"]\n});
+    my ( undef, $err, $exit ) = puff_raw( $dir, 'check', 'a.pl' );
+    is( $exit, 2, 'exits 2' );
+    like( $err, qr{^Rule BadCode has invalid code 'X\\x1B\[31m\\x0A001'}m, 'the code is escaped' );
+    unlike( $err, qr{\e}, 'no raw ESC' );
+};
+
+for my $case (@NAME_CASES) {
+    my ( $label, $base, $shown ) = @$case;
+    subtest "unreadable --config with a $label" => sub {
+        my $name = "$base.toml";
+        my $want = quotemeta "$shown.toml";
+        my $dir  = project();
+        my $file = spew_named( $dir, $name, "select = [\"S001\"]\n" );
+        skip_all("cannot chmod: $!") unless chmod 0, "$file";
+    SKIP: {
+            skip 'chmod 0 does not stop this user reading (root?)', 3 if -r $file;
+
+            # strerror text is locale-dependent
+            local $ENV{LC_ALL} = 'C';
+            my ( undef, $err, $exit ) = puff_raw( $dir, 'check', '--config', $name );
+            is( $exit, 2, 'exit 2' );
+
+            # Both the quoted name and the name inside the OS error text are
+            # escaped. Only the Latin-1 case can tell escaped from raw bytes.
+            my ($reason) = $err =~ m{^Invalid config file '$want': (.*)$}m;
+            like( $reason, qr{'$want'.*Permission denied$}, "$label shown in the OS error text" )
+                or diag $err;
+            unlike( $err, qr{\xE9}, "no raw Latin-1 byte in $label output" );
+        }
+        chmod 0644, "$file";
+    };
+}
 
 done_testing;

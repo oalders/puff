@@ -66,13 +66,22 @@ sub _read_file ( $class, $self, $file ) {
         return [@$value];
     };
 
-    $self->{select}        = $list->('select') if exists $data->{select};
-    $self->{extend_select} = $list->('extend-select') if exists $data->{'extend-select'};
-    $self->{ignore}        = $list->('ignore') if exists $data->{ignore};
+    # Surrounding whitespace is dropped, as on the command line. An empty
+    # string is a prefix of every code, so it would quietly mean ALL.
+    my $selectors = sub ($key) {
+        my @value = map {s/\A\s+|\s+\z//gr} @{ $list->($key) };
+        die "Key '$key' in config file '$name' has an empty rule selector\n" if grep { !length } @value;
+        return \@value;
+    };
+    $self->{select}        = $selectors->('select') if exists $data->{select};
+    $self->{extend_select} = $selectors->('extend-select') if exists $data->{'extend-select'};
+    $self->{ignore}        = $selectors->('ignore') if exists $data->{ignore};
 
     # TOML gives characters; paths are bytes, like the config file's own
     # path and the paths is_excluded is given.
-    push @{ $self->{exclude} }, map { Encode::encode_utf8($_) } @{ $list->('exclude') } if exists $data->{exclude};
+    if ( exists $data->{exclude} ) {
+        push @{ $self->{exclude} }, map { Encode::encode_utf8($_) } @{ $list->('exclude') };
+    }
     if ( exists $data->{'rule-paths'} ) {
         my $base = $file->absolute->parent;
         $self->{rule_paths} = [
@@ -169,6 +178,11 @@ key and file.
 Defaults: C<select> C<["S", "B"]>, C<extend-select> and C<ignore> empty,
 C<exclude> C</local /blib /.build /.git>, C<unsafe-fixes> false. Entries in the
 file's C<exclude> are added to the default list (the defaults always apply).
+Entries are UTF-8 encoded on load, so C<exclude> and L</is_excluded> work on
+byte strings, like filesystem paths. Matching is byte-exact, with no Unicode
+normalization, so an NFC entry does not match an NFD directory name. A
+character string with non-ASCII characters pushed onto C<< ->exclude >>
+would not match byte-string paths.
 Relative C<rule-paths> are resolved against the config file's directory;
 absolute ones are used as they are. C<unsafe-fixes> must be a TOML boolean.
 C<[rules.CODE]> tables become C<rule_options>.
@@ -188,8 +202,8 @@ the current directory when none was. Resolved with C<realpath>.
 
 C<$relpath> is a path relative to the directory being searched, and
 C<$base> is that directory relative to L</root> (C<''> for the root itself,
-C<undef> when the directory is outside the root). Entries match by
-segments, never mid-name:
+C<undef> when the directory is outside the root). Both are byte strings, as
+the filesystem returns them. Entries match by segments, never mid-name:
 
 =over
 
