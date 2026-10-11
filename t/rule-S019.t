@@ -127,27 +127,35 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
 
 # Each bare chomp walked its arguments to the end of the statement, so a
 # statement with many of them was quadratic: 1,500 took 9 seconds. Sibling
-# lookups are counted, as timings would be flaky. Each case takes about
-# 1,010 lookups for 1,000 chomps (the quadratic walk took about 2 million),
-# so the bound is 4 times that.
+# lookups are counted, as timings would be flaky. The bound of each case is
+# about 4 times the lookups it takes (2,020 for the bare chomps, 5,026 for
+# the chomps after `chomp $y` and the wide nested list, 3,321 for the deep
+# one, 927 after a chomp); the quadratic walk took about 2 million, and
+# climbing each element of the deep list to its outermost list without a
+# cache takes 48,470.
 {
     no warnings 'redefine';
     my $calls = 0;
-    my $orig  = PPI::Element->can('snext_sibling');
-    local *PPI::Element::snext_sibling = sub { $calls++; goto &$orig };
-    my $n     = 1_000;
+    my ( $next, $prev ) = map { PPI::Element->can($_) } qw( snext_sibling sprevious_sibling );
+    local *PPI::Element::snext_sibling     = sub { $calls++; goto &$next };
+    local *PPI::Element::sprevious_sibling = sub { $calls++; goto &$prev };
+    my ( $n, $d ) = ( 1_000, 300 );
     my %lists = (
-        'bare chomps'           => 'chomp, ' x $n,
-        'chomps after keys'     => join( q{}, map {"a$_ => chomp, "} 1 .. $n ),
-        'chomps after chomp $y' => 'chomp $y, ' . 'chomp, ' x $n,
+        'bare chomps'           => [ 'chomp, ' x $n, 8_000 ],
+        'chomps after keys'     => [ join( q{}, map {"a$_ => chomp, "} 1 .. $n ), 8_000 ],
+        'chomps after chomp $y' => [ 'chomp $y, ' . 'chomp, ' x $n, 20_000 ],
+        'wide nested list'      => [ 'chomp $y, ' . '($y), ' x $n, 20_000 ],
+        'deep nested list'      => [ '($y, ' x $d . ')' x $d, 12_000 ],
+        'deep list after chomp' => [ 'chomp $y, ' . '($y, ' x $d . ')' x $d, 4_000 ],
     );
     for my $label ( sort keys %lists ) {
-        my $text    = "my \$x = shift;\n/\$x/;\nmy \@a = ($lists{$label});\n";
+        my ( $list, $bound ) = @{ $lists{$label} };
+        my $text    = "my \$x = shift;\n/\$x/;\nmy \@a = ($list);\n";
         my $doc     = PPI::Document->new( \$text );
         my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
         $calls = 0;
         is( scalar( () = $class->new->check( $regex, $doc ) ), 1, "$label: \$x is reported" );
-        cmp_ok( $calls, '<', 4 * $n, "$label: sibling lookups are linear in the chomps" );
+        cmp_ok( $calls, '<', $bound, "$label: sibling lookups are linear in the list" );
     }
 }
 is( violations("my \$x = qr/a/;\nmy \@a = (chomp, \$x);\n/\$x/;\n"), [], 'a bare chomp does not change the next item' );
@@ -160,22 +168,32 @@ is(
     violations("my \$x = qr/a/;\nchomp \$y, open my \$fh, \$x;\n/\$x/;\n"), [],
     'another builtin takes the rest of the list: open does not change its second argument'
 );
+is( violations("my \$x = qr/a/;\nchomp \$y if \$x;\n/\$x/;\n"), [], 'a statement modifier ends the arguments' );
+
+# Perl 5.40's ^^=, which PPI splits in two. The corpus files compile on
+# older perls, so it is tested here.
+is( scalar @{ violations("my \$x = qr/a/;\n\$x ^^= \$y;\n/\$x/;\n") }, 1, '^^= is a write' );
 
 # The chain of elements enclosing a regex was built again for each of its
-# variables. Parent lookups are counted: 200 variables at a depth of 100
-# took 40,600; now the chain is built once, in about 200.
+# variables, and then walked for each. Parent lookups are counted: 200
+# variables at a depth of 100 took 40,600; now the chain is built once, in
+# about 200. refaddr calls count the walks: about 41,400 before, about 400
+# now that each name is looked up once per regex.
 {
     no warnings 'redefine';
-    my $calls = 0;
-    my $orig  = PPI::Element->can('parent');
+    my ( $calls, $refs ) = ( 0, 0 );
+    my $orig = PPI::Element->can('parent');
     local *PPI::Element::parent = sub { $calls++; goto &$orig };
+    my $refaddr = $class->can('refaddr');
+    local *Puff::Rule::Security::RegexInterpolation::refaddr = sub { $refs++; goto &$refaddr };
     my $text    = "our \$x = qr/a/;\n" . ( "{\n" x 100 ) . '/' . ( '$x' x 200 ) . "/;\n" . ( "}\n" x 100 );
     my $doc     = PPI::Document->new( \$text );
     my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
     is( [ $class->new->check( $regex, $doc ) ], [], 'a nested qr// variable is not reported' );
-    $calls = 0;
+    ( $calls, $refs ) = ( 0, 0 );
     $class->new->check( $regex, $doc );
-    cmp_ok( $calls, '<', 4 * 100, 'parent lookups: the chain is built once per regex' );
+    cmp_ok( $calls, '<', 6 * 100, 'parent lookups: the chain is built once per regex' );
+    cmp_ok( $refs, '<', 2_000, 'the chain is walked once per name and regex' );
 }
 
 # Long or hostile regexes are scanned in linear time. Each took over 8
