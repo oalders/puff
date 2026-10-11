@@ -732,4 +732,31 @@ subtest 'non-ASCII rule-paths entries' => sub {
     like( $out, qr{^a\.pl:\d+:1: X001 }m, 'rules load from it' ) or diag $err;
 };
 
+for my $case (@NAME_CASES) {
+    my ( $label, $base, $shown ) = @$case;
+    subtest "unreadable --config with a $label" => sub {
+        my $name = "$base.toml";
+        my $want = quotemeta "$shown.toml";
+        my $dir  = project();
+        my $file = spew_named( $dir, $name, "select = [\"S001\"]\n" );
+        skip_all("cannot chmod: $!") unless chmod 0, "$file";
+    SKIP: {
+            skip 'chmod 0 does not stop this user reading (root?)', 3 if -r $file;
+
+            # strerror text is locale-dependent
+            local $ENV{LC_ALL} = 'C';
+            my ( undef, $err, $exit ) = puff_raw( $dir, 'check', '--config', $name );
+            is( $exit, 2, 'exit 2' );
+
+            # Both the quoted name and the name inside the OS error text are
+            # escaped. Only the Latin-1 case can tell escaped from raw bytes.
+            my ($reason) = $err =~ m{^Invalid config file '$want': (.*)$}m;
+            like( $reason, qr{'$want'.*Permission denied$}, "$label shown in the OS error text" )
+                or diag $err;
+            unlike( $err, qr{\xE9}, "no raw Latin-1 byte in $label output" );
+        }
+        chmod 0644, "$file";
+    };
+}
+
 done_testing;
