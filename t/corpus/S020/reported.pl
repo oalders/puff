@@ -99,3 +99,86 @@ my $fc = Furl::HTTP->new->timeout(5);    # expect: S020
 my $replaced = LWP::UserAgent->new;    # expect: S020
 $replaced = LWP::UserAgent->new( timeout => 5 );
 $replaced->timeout(5);
+
+# Any assignment operator assigns the name again, and the setters after it
+# belong to whatever it holds.
+my $or_assigned = LWP::UserAgent->new;    # expect: S020
+$or_assigned ||= HTTP::Tiny->new( timeout => 5 );
+$or_assigned->timeout(5);
+my $dor_assigned = LWP::UserAgent->new;    # expect: S020
+$dor_assigned //= HTTP::Tiny->new( timeout => 5 );
+$dor_assigned->timeout(5);
+my $list_assigned = LWP::UserAgent->new;    # expect: S020
+($list_assigned) = HTTP::Tiny->new( timeout => 5 );
+$list_assigned->timeout(5);
+my $same_statement = LWP::UserAgent->new;    # expect: S020
+$same_statement->agent('x'), $same_statement = HTTP::Tiny->new( timeout => 5 );
+$same_statement->timeout(5);
+
+# local and a for loop variable declare the name again.
+our $localized = LWP::UserAgent->new;    # expect: S020
+local $localized;
+$localized->timeout(5);
+my $looped = LWP::UserAgent->new;    # expect: S020
+for my $looped ( 1 .. 2 ) { }
+$looped->timeout(5);
+my $looped_bare = LWP::UserAgent->new;    # expect: S020
+foreach $looped_bare ( 1 .. 2 ) { }
+$looped_bare->timeout(5);
+
+# A setter on an alias is not followed.
+my $aliased = LWP::UserAgent->new;    # expect: S020
+my $alias   = $aliased;
+$alias->timeout(5);
+
+# Quoted class names.
+my $quoted = 'LWP::UserAgent'->new;    # expect: S020
+my $colons = LWP::UserAgent::->new( timeout => 0 );    # expect: S020
+my $q_tiny = q{HTTP::Tiny}->new;    # expect: S020
+my $q_paren = q(LWP::UserAgent)->new;    # expect: S020
+
+# A statement modifier after `, ...`, `&& ...` or `and ...` makes the
+# setter conditional.
+my $mod_comma = LWP::UserAgent->new;    # expect: S020
+$mod_comma->timeout(10), print "x" if $global;
+my $mod_and = LWP::UserAgent->new;    # expect: S020
+$mod_and->timeout(10) && print "x" unless $global;
+my $mod_for = HTTP::Tiny->new;    # expect: S020
+$mod_for->timeout(10), 1 for ();
+my $mod_while = HTTP::Tiny->new;    # expect: S020
+$mod_while->timeout(10) and print "x" while 0;
+
+# An assignment inside an argument list or a condition assigns the name
+# again.
+my $in_args = LWP::UserAgent->new;    # expect: S020
+say( $in_args = HTTP::Tiny->new( timeout => 5 ) );
+$in_args->timeout(5);
+my $in_cond = LWP::UserAgent->new;    # expect: S020
+if ( ( $in_cond = HTTP::Tiny->new( timeout => 5 ) ) ) { }
+$in_cond->timeout(5);
+my $in_list = LWP::UserAgent->new;    # expect: S020
+my @pair = ( 1, ( $in_list ) = HTTP::Tiny->new( timeout => 5 ) );
+$in_list->timeout(5);
+my $in_while = LWP::UserAgent->new;    # expect: S020
+while ( my $in_while = shift @pair ) { }
+$in_while->timeout(5);
+my $c_style = LWP::UserAgent->new;    # expect: S020
+for ( my $c_style = 0 ; $c_style < 1 ; $c_style++ ) { }
+$c_style->timeout(5);
+
+# A setter followed by `||` or `or` is not counted.
+my $or_die = LWP::UserAgent->new;    # expect: S020
+$or_die->timeout(10) || die 'no timeout';
+
+# An assignment later in the setter's own statement voids the setter.
+my $same_stmt = LWP::UserAgent->new;    # expect: S020
+$same_stmt->timeout(10), $same_stmt = HTTP::Tiny->new( timeout => 5 );
+
+# `local` in an argument list redeclares the name.
+our $local_arg = LWP::UserAgent->new;    # expect: S020
+print( local $local_arg );
+$local_arg->timeout(10);
+
+# A setter followed by `? ... : ...` is not counted.
+my $ternary = LWP::UserAgent->new;    # expect: S020
+$ternary->timeout(10) ? 1 : 0;

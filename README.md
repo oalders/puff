@@ -638,7 +638,9 @@ defaults to no limit) nor `inactivity_timeout` (either one is enough);
 when the client's default is short, so the limit is written where the client
 is made. These literal values are reported too:
 
-- 0, which turns the timeout off, and negative numbers;
+- 0, which turns the timeout off (HTTP::Tiny instead polls without
+  waiting, so a read or write fails unless the socket is already ready),
+  and negative numbers;
 - anything longer than `max-timeout` seconds (default 60; it must be a
   positive, finite number). For Mojo::UserAgent all three keys are checked;
 - `timeout => undef` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny,
@@ -654,25 +656,35 @@ are not reported.
 
 A missing timeout is not reported when a timeout setter is chained onto the
 constructor (`Mojo::UserAgent->new->request_timeout(10)`) or is called by a
-later statement in the same block that is nothing but a setter call on the
-variable (`my $ua = LWP::UserAgent->new; $ua->timeout(10);`). The setters
-are `timeout` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and
+later statement in the same block that starts with a setter call on the
+variable (`my $ua = LWP::UserAgent->new; $ua->timeout(10);`), optionally
+followed by `, ...`, `&& ...` or `and ...` (not `|| ...`, `or ...` or
+`? ... : ...`). The setters are `timeout` for LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and
 `request_timeout` or `inactivity_timeout` for Mojo::UserAgent
 (`connect_timeout` is checked but not enough); Furl and Furl::HTTP have
 none. The client must be assigned to a plain scalar by the whole statement:
-`my $ua = Class->new(...);` (or `our`, `state`, or no declarator),
-optionally followed by `or die ...` or `|| die ...`, or
+`my $ua = Class->new(...);` (or `our`, `state`, no declarator, or
+`my ($ua) = ...`), optionally followed by `or die ...` or `|| die ...`, or
 `my $ua = $arg // Class->new;` (or `||`). A setter in a nested block, sub,
-loop or condition, one with a statement modifier (`$ua->timeout(10) if $x;`),
-one before the constructor, and one after the name is declared or assigned
-again do not count. Every setter value is checked like a constructor value,
-even when the constructor already has a good timeout
+loop or condition, one with a statement modifier (`$ua->timeout(10) if $x;`,
+also after `, ...`), one before the constructor, one after the name is
+declared again (`my`, `our`, `state`, `local` or a `for` loop variable) or
+assigned again (`=`, `||=`, `//=` or any other assignment operator, even
+later in the setter's own statement), and one on an alias (`my $d = $ua; $d->timeout(10);`) do not count. A redeclaration
+or assignment is seen anywhere in a statement of the same block, argument
+lists and conditions included (`foo($ua = Other->new);`,
+`while (my $ua = ...)`), but not inside a nested block
+(`if ($x) { $ua = Other->new }`), where the client may stay the same on
+some paths, nor in `foreach my ($k, $v) (...)`.
+`local $ua->{timeout} = 5;` does not redeclare `$ua`. Every setter value is
+checked like a constructor value, even when the constructor already has a
+good timeout
 (`->new(timeout => 5); $ua->timeout(0);` is reported), and the violation is
 reported at the constructor. A client stored elsewhere (`$self->{ua} = ...`)
 or used straight away (`LWP::UserAgent->new->get($url)`) needs the timeout
-in the constructor. Subclasses, wrapper functions, class names in a variable
-and quoted class names (`'LWP::UserAgent'->new`, `LWP::UserAgent::->new`)
-are not checked. There is no fix.
+in the constructor. Quoted class names (`'LWP::UserAgent'->new`,
+`LWP::UserAgent::->new`) are checked; subclasses, wrapper functions and
+class names in a variable are not. There is no fix.
 
     [rules.S020]
     max-timeout = 30
