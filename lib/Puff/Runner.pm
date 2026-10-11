@@ -3,7 +3,7 @@ package Puff::Runner;
 use v5.36;
 
 use Path::Tiny   qw( path );
-use Puff::Path   qw( display_name );
+use Puff::Path   qw( decode_text display_name );
 use Puff::Source ();
 use Text::Diff   qw( diff );
 
@@ -110,15 +110,17 @@ sub _has_perl_shebang ($file) {
 }
 
 # $file is the raw path, used for reading and writing; results carry its
-# display_name. Read and write errors are built from the raw path and $!, so
-# they are decoded the same way.
+# display_name. Errors are left unescaped, as characters, for the reporters
+# to escape (or encode, for JSON): read and write errors are built from the
+# raw path and $!, so they are decoded like a path; engine errors are
+# characters already (a rule's die message can quote the source).
 sub _process ( $self, $file ) {
     my $name = display_name($file);
     my %out  = ( file => $name, violations => [], fixed_count => 0 );
 
     my $src = eval { Puff::Source->from_file($file) };
     if ( !$src ) {
-        $out{error} = display_name( ( $@ || 'cannot read file' ) =~ s/\s+\z//r );
+        $out{error} = decode_text( ( $@ || 'cannot read file' ) =~ s/\s+\z//r );
         return \%out;
     }
 
@@ -147,7 +149,7 @@ sub _process ( $self, $file ) {
             $out{written} = 1;
         }
         else {
-            $out{error}       = display_name( ( $@ || 'cannot write file' ) =~ s/\s+\z//r );
+            $out{error}       = decode_text( ( $@ || 'cannot write file' ) =~ s/\s+\z//r );
             $out{fixed_count} = 0;
         }
     }
@@ -209,10 +211,16 @@ C<error> (read, parse, rule, engine, fix or write failure; the file is
 left unchanged, and other files are still processed), C<fixes_skipped>, C<diff> (diff mode) and C<written> (fix mode).
 
 File names in the results (each entry's C<file>, each violation's
-C<file>, the diff headers and paths inside error messages) are display
-names from L<Puff::Path/display_name>: character strings for output, with
-C<\xHH> escapes for bytes that are not valid UTF-8 and for control
-characters. They are not paths to open. The files themselves are read and
+C<file> and the diff headers) are display names from
+L<Puff::Path/display_name>: character strings for output, with C<\xHH>
+escapes for bytes that are not valid UTF-8 and for control characters, and
+C<\x{HHHH}> for bidi and other invisible characters. They are not paths
+to open. Each C<error> is a character string that is not escaped: a read
+or write error, which holds the raw path, is decoded with
+L<Puff::Path/decode_text>, and an engine error is passed on as it is. The
+text reporter escapes errors and violation messages; the JSON reporters
+leave them to the JSON encoder. C<diff> bodies are not escaped, because a
+diff is file content. The files themselves are read and
 written by their original byte paths, and C<files> returns those raw paths.
 
 The exit code is 2 if any file has an error, else 1 if violations remain or

@@ -4,7 +4,7 @@ use v5.36;
 
 use Encode     ();
 use Path::Tiny qw( path );
-use Puff::Path qw( display_name );
+use Puff::Path qw( display_name display_text );
 use TOML::Tiny qw( from_toml );
 
 my @DEFAULT_EXCLUDE = qw( /local /blib /.build /.git );
@@ -51,12 +51,14 @@ sub _read_file ( $class, $self, $file ) {
     # A read error holds the raw path bytes; a TOML error is about the text.
     die "Invalid config file '$name': " . display_name( "$@" =~ s/ at \S+ line \d+\.?\s*\z|\s+\z//r ) . "\n"
         unless defined $text;
+
+    # TOML errors and keys are characters from the file: escape them too.
     my $data = eval { from_toml($text) };
-    die "Invalid config file '$name': $@\n" if !$data || $@;
+    die "Invalid config file '$name': " . display_text( "$@" =~ s/\s+\z//r ) . "\n" if !$data || $@;
     ref $data eq 'HASH' or die "Invalid config file '$name'\n";
 
     for my $key ( sort keys %$data ) {
-        die "Unknown key '$key' in config file '$name'\n" unless $KNOWN_KEY{$key};
+        die "Unknown key '" . display_text($key) . "' in config file '$name'\n" unless $KNOWN_KEY{$key};
     }
 
     my $list = sub ($key) {
@@ -101,7 +103,8 @@ sub _read_file ( $class, $self, $file ) {
         my $rules = $data->{rules};
         die "Key 'rules' in config file '$name' must be a table\n" if ref $rules ne 'HASH';
         for my $code ( keys %$rules ) {
-            die "Key 'rules.$code' in config file '$name' must be a table\n" if ref $rules->{$code} ne 'HASH';
+            die "Key 'rules." . display_text($code) . "' in config file '$name' must be a table\n"
+                if ref $rules->{$code} ne 'HASH';
             $self->{rule_options}{$code} = { %{ $rules->{$code} } };
         }
     }

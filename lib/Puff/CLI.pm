@@ -4,9 +4,11 @@ use v5.36;
 
 use App::Cmd::Setup -app;
 
-use Puff::Config ();
-use Puff::Engine ();
-use Puff::Rules  ();
+use Puff::Config         ();
+use Puff::Engine         ();
+use Puff::Path           qw( display_error );
+use Puff::Reporter::Text ();
+use Puff::Rules          ();
 
 our $EXIT_CODE = 0;
 
@@ -20,14 +22,30 @@ sub main ($class) {
     binmode STDOUT, ':utf8';
     binmode STDERR, ':utf8';
     local $EXIT_CODE = 0;
+
+    # Getopt::Long warns about an unknown option, quoting @ARGV.
+    local $SIG{__WARN__} = sub ($warning) { warn _for_stderr("$warning") };
     my $ok    = eval { $class->run; 1 };
     my $error = $@;
 
     if ( !$ok ) {
+
+        # Every fatal error is escaped here, like warnings above: it can
+        # quote @ARGV (an unknown command), a path from the OS or the config
+        # file.
+        # Escaping a part that was escaped already changes nothing.
+        $error = _for_stderr("$error");
         print STDERR $error =~ /\n\z/ ? $error : "$error\n";
         return 2;
     }
     return $EXIT_CODE;
+}
+
+# A fatal error or warning, escaped, with every line after the first
+# indented as in Puff::Reporter::Text->error_line, so a newline in @ARGV or a
+# warning cannot start a line that passes for a violation.
+sub _for_stderr ($text) {
+    return Puff::Reporter::Text->indent_lines( display_error($text) );
 }
 
 # App::Cmd prints an unknown command's usage to STDOUT and exits 1 from an
@@ -83,6 +101,9 @@ __END__
 An L<App::Cmd> application with the commands C<check>, C<rule> and C<rules>.
 C<main> runs it and returns the exit code: the command's
 C<$Puff::CLI::EXIT_CODE>, or 2 for any usage, config, rule-loading or
-internal error, whose message goes to STDERR.
+internal error, whose message goes to STDERR. Fatal errors and warnings
+have their control, bidi and other invisible characters escaped (see
+L<Puff::Path/display_error>), and every line after the first indented, so
+they cannot pass for a violation line.
 
 =cut
