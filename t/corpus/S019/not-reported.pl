@@ -8,6 +8,11 @@ my $self = { pattern => 'x', config => { regex => 'y' } };
 print "1\n" if $str =~ /\Q$input\E/;
 print "1\n" if $str =~ /^\Q$input/;
 print "1\n" if $str =~ /\Q\L$input\E$str\E/;
+print "1\n" if $str =~ /\Qa\Ub\Lc\E$input/;
+print "1\n" if $str =~ /\Qa\Ub\Qc\Ld\E$input/;
+print "1\n" if $str =~ /\Qa\Fb\E$input/;
+print "1\n" if $str =~ /\Qa\Ub\Lc\Fd\E$input/;
+print "1\n" if $str =~ /\E\Q$input/;
 
 # Escaped sigils, anchors and punctuation variables.
 print "1\n" if $str =~ /\$input/;
@@ -48,9 +53,12 @@ for my $item (@words) {
 }
 sub uses_outer { return $_[0] =~ /$word/ }
 
-# Arrays and code blocks.
+# Arrays, code blocks, and @{[ ... ]} that quotes or is quoted.
 print "1\n" if $str =~ /@words/;
-print "1\n" if $str =~ /@{[ $input ]}/;
+print "1\n" if $str =~ /@{[ quotemeta $input ]}/;
+print "1\n" if $str =~ /@{[ quotemeta($input) ]}/;
+print "1\n" if $str =~ /@{[ "\Q$input\E" ]}/;
+print "1\n" if $str =~ /\Q@{[ $input ]}/;
 print "1\n" if $str =~ /(?{ $input })/;
 
 # Not a regex token.
@@ -60,3 +68,7 @@ my @parts = split $input, $str;
 # An all-caps scalar is taken to be a constant.
 our ( $WS, $Foo::CRLF, $X1_Y ) = ( ' ', "\r\n", 'x' );
 print "1\n" if $str =~ /^$WS*$Foo::CRLF$X1_Y/;
+
+# A qualified name assigned only a qr//.
+$main::qualified = qr/a/;
+print "1\n" if $str =~ /$main::qualified/;
