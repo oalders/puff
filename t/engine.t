@@ -1,8 +1,9 @@
 use v5.36;
 use Test2::V0;
 
-use Puff::Engine ();
-use Puff::Source ();
+use Puff::Engine    ();
+use Puff::Source    ();
+use Puff::Violation ();
 
 # Test-only rules: each flags one bareword and rewrites it.
 package WordRule {
@@ -383,6 +384,96 @@ subtest 'per-violation fix safety' => sub {
 
     $result = run_engine( engine( 'none', 'T015' ), "x;\n" );
     like( $result->{error}, qr/rule T015 failed: rule T015 gave fix_safety 'none'/, 'bad fix_safety dies' );
+};
+
+package T016 {    # a rule-paths style rule: no per-violation fix_safety
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T016'}
+    sub fix_safety {'unsafe'}
+    sub from       {'plain'}
+    sub to         {'done'}
+}
+
+package T017 {    # builds a violation with a fix_safety that is not safe or unsafe
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T017'}
+    sub fix_safety {'safe'}
+    sub from       {'odd'}
+    sub to         {'done'}
+
+    # Rule::violation dies on a bad fix_safety, so build it directly.
+    sub check ( $self, $elem, $doc ) {
+        return unless $elem->content eq $self->from;
+        return Puff::Violation->new(
+            rule       => $self,
+            code       => $self->code,
+            element    => $elem,
+            line       => $elem->location->[0],
+            column     => $elem->location->[1],
+            message    => 'odd',
+            fixable    => 1,
+            fix_safety => 'bogus',
+        );
+    }
+}
+
+package T018 {    # a rule with no fix whose violation claims a safe fix
+    use v5.36;
+    use parent -norequire, 'WordRule';
+    sub code       {'T018'}
+    sub fix_safety {'none'}
+    sub from       {'odd'}
+    sub to         {'done'}
+
+    # Rule::violation clears fixable for a none rule, so build it directly.
+    sub check ( $self, $elem, $doc ) {
+        return unless $elem->content eq $self->from;
+        return Puff::Violation->new(
+            rule       => $self,
+            code       => $self->code,
+            element    => $elem,
+            line       => $elem->location->[0],
+            column     => $elem->location->[1],
+            message    => 'odd',
+            fixable    => 1,
+            fix_safety => 'safe',
+        );
+    }
+}
+
+package main;
+
+subtest 'a violation without its own safety uses the rule\'s' => sub {
+    my $result = run_engine( engine( 'safe', 'T016' ), "plain;\n" );
+    is( $result->{new_text}, undef, 'unsafe rule is not fixed in safe mode' );
+    is( summary($result), [ [ 'T016', 1, 1 ] ], 'still reported in safe mode' );
+    is( [ map { $_->fix_safety } @{ $result->{violations} } ], ['unsafe'], 'violation reports the rule\'s safety' );
+
+    $result = run_engine( engine( 'unsafe', 'T016' ), "plain;\n" );
+    is( $result->{new_text}, "done;\n", 'fixed in unsafe mode' );
+};
+
+subtest 'an unknown fix_safety is never fixed' => sub {
+    for my $mode (qw( safe unsafe )) {
+        my $result = run_engine( engine( $mode, 'T017' ), "odd;\n" );
+        is( $result->{new_text}, undef, "not fixed in $mode mode" );
+        is( summary($result), [ [ 'T017', 1, 1 ] ], "still reported in $mode mode" );
+        is(
+            [ map { $_->fix_safety } @{ $result->{violations} } ], ['bogus'],
+            "fix_safety is still bogus in $mode mode"
+        );
+    }
+};
+
+subtest 'a rule with fix_safety none is never fixed' => sub {
+    for my $mode (qw( safe unsafe )) {
+        my $result = run_engine( engine( $mode, 'T018' ), "odd;\n" );
+        is( $result->{error}, undef, "no error in $mode mode" );
+        is( $result->{new_text}, undef, "not fixed in $mode mode" );
+        is( summary($result), [ [ 'T018', 1, 1 ] ], "still reported in $mode mode" );
+    }
 };
 
 subtest 'builtin_rules_info' => sub {
