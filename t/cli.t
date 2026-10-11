@@ -877,12 +877,69 @@ subtest 'control and bidi characters in messages are escaped' => sub {
     );
 };
 
+# The unlike checks on $err in these subtests rely on puff() decoding STDERR:
+# a raw U+202E is the bytes E2 80 AE, which qr/\x{202E}/ would not match
+# in the undecoded output of puff_raw().
 subtest 'an engine error is escaped' => sub {
     my $dir = hostile_project(qq{my \$x = "die\e[2J\x{202E}";\n});
     my ( undef, $err, $exit ) = puff( $dir, 'check' );
     is( $exit, 2, 'exit 2' );
     like( $err, qr{^hostile\.pl: error: .*cannot check die\\x1B\[2J\\x\{202E\}}m, 'escaped on STDERR' );
     unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
+};
+
+subtest 'an engine error for a file named with U+202E is escaped once' => sub {
+    my $dir  = hostile_project(qq{1;\n});
+    my $name = Encode::encode_utf8("a\x{202E}lp.pl");
+    spew_named( $dir, $name, qq{my \$x = "die\e[2J";\n} );
+    my ( undef, $err, $exit ) = puff( $dir, 'check', $name );
+    is( $exit, 2, 'exit 2' );
+    like(
+        $err, qr{^a\\x\{202E\}lp\.pl: error: rule X900 failed: cannot check die\\x1B\[2J$}m,
+        'name and error each escaped once'
+    );
+    unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
+
+    my $out;
+    ( $out, undef, $exit ) = puff_raw( $dir, 'check', '--output-format', 'jsonl', $name );
+    my ($event) = grep { $_->{type} eq 'file' } jsonl($out);
+    is( $event->{file}, 'a\x{202E}lp.pl', 'JSONL file field is the display name' );
+    is( $event->{error}, "rule X900 failed: cannot check die\e[2J", 'JSONL error is raw, with a real ESC' );
+};
+
+subtest 'a newline in a violation message cannot forge a line' => sub {
+    my $dir = hostile_project(qq{my \$x = "a\nb.pl:1:1: S001 forged";\n});
+    my ( $out, undef, $exit ) = puff( $dir, 'check' );
+    is( $exit, 1, 'exit 1' );
+    like( $out, qr{^hostile\.pl:1:9: X900 literal a\\x0Ab\.pl:1:1: S001 forged$}m, 'newline shown as \x0A' );
+    unlike( $out, qr{^b\.pl:}m, 'no forged violation line' );
+};
+
+subtest 'a multi-line error is indented' => sub {
+    my $dir = hostile_project(qq{my \$x = "die\nb.pl:1:1: S001 forged";\n});
+    my ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'exit 2' );
+    like(
+        $err, qr{^hostile\.pl: error: rule X900 failed: cannot check die\n    b\.pl:1:1: S001 forged$}m,
+        'the newline is kept and the next line indented'
+    );
+    unlike( $err, qr{^b\.pl:}m, 'no forged violation line' );
+};
+
+subtest 'argv in usage errors is escaped' => sub {
+    my $dir = project();
+    my ( undef, $err, $exit ) = puff( $dir, 'check', "--bogus\e[31m\xe2\x80\xae" );
+    is( $exit, 2, 'unknown option exits 2' );
+    like( $err, qr{^Unknown option: bogus\\x1B\[31m\\x\{202E\}$}m, 'option escaped' );
+    unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
+
+    ( undef, $err, $exit ) = puff( $dir, "nocmd\e[31m" );
+    is( $exit, 2, 'unknown command exits 2' );
+    is( $err, "Unrecognized command: nocmd\\x1B[31m\n", 'command escaped' );
+
+    ( undef, $err, $exit ) = puff( $dir, 'check', '--select', "\xe2\x80\xaeS" );
+    is( $exit, 2, 'unknown selector exits 2' );
+    is( $err, "Unknown rule selector: \\x{202E}S\n", 'selector from argv decoded, then escaped' );
 };
 
 subtest 'a file name with U+202E is escaped' => sub {
@@ -917,11 +974,13 @@ subtest 'control characters in config keys are escaped' => sub {
     is( $exit, 2, 'unknown option exits 2' );
     like( $err, qr{^Unknown option '\\x1B\[2J' for rule S001$}m, 'option name escaped' );
 
-    $dir->child('.puff.toml')->spew_utf8(qq{select = ["S"]\n\x{202E}\n});
+    # TOML::Tiny quotes the offending line in its error.
+    $dir->child('.puff.toml')->spew_utf8(qq{x = \x{202E}\e[2J\n});
     ( undef, $err, $exit ) = puff( $dir, 'check' );
     is( $exit, 2, 'TOML error exits 2' );
-    like( $err, qr{^Invalid config file '.*'}m, 'TOML error reported' );
-    unlike( $err, qr/\x{202E}/, 'no raw U+202E in the TOML error' );
+    like( $err, qr{^Invalid config file '.*': toml syntax error}m, 'TOML error reported' );
+    like( $err, qr{\\x\{202E\}\\x1B\[2J}, 'the quoted line is escaped' );
+    unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E in the TOML error' );
 };
 
 subtest '--diff keeps control characters but warns' => sub {
@@ -939,6 +998,25 @@ subtest '--diff keeps control characters but warns' => sub {
     );
     like( $err, qr{^esc\.pl: warning: diff contains control or bidi characters$}m, 'warning for esc.pl' );
     unlike( $err, qr{plain\.pl: warning}, 'no warning for a plain diff' );
+};
+
+subtest '--diff warnings: hostile names, form feeds and U+3164' => sub {
+    my $dir = project();
+    $dir->child('rules')->mkpath;
+    $root->child( 't', 'lib-rules', 'NoFixme.pm' )->copy( $dir->child( 'rules', 'NoFixme.pm' ) );
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["rules"]\nselect = ["X001"]\n});
+    spew_named( $dir, Encode::encode_utf8("e\x{202E}vil.pl"), qq{# FIXME \e[31mred\n} );
+    $dir->child('ff.pl')->spew_utf8(qq{# FIXME page\n\f\n1;\n});
+    $dir->child('filler.pl')->spew_utf8(qq{# FIXME \x{3164}\n});
+    my ( undef, $err, $exit ) = puff( $dir, 'check', '--diff' );
+    is( $exit, 1, 'exit 1' );
+    like(
+        $err, qr{^e\\x\{202E\}vil\.pl: warning: diff contains control or bidi characters$}m,
+        'warning with the name escaped'
+    );
+    unlike( $err, qr/\x{202E}/, 'no raw U+202E' );
+    unlike( $err, qr{ff\.pl: warning}, 'no warning for a form feed' );
+    like( $err, qr{^filler\.pl: warning: diff contains control or bidi characters$}m, 'warning for U+3164' );
 };
 
 done_testing;

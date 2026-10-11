@@ -62,12 +62,13 @@ sub load ( $class, %args ) {
             . ( defined $code ? display_name("$code") : 'undef' )
             . "' (expected letters followed by three digits)\n"
             unless defined $code && $code =~ $CODE_RE;
-        die "Rule $candidate uses code $code, which is reserved for the puff engine\n"
+        my ( $shown, $shown_code ) = map { display_name("$_") } $candidate, $code;
+        die "Rule $shown uses code $shown_code, which is reserved for the puff engine\n"
             if $code eq $RESERVED;
-        die "Rule $candidate uses code $code, but the prefix ALL is reserved for selecting every rule\n"
+        die "Rule $shown uses code $shown_code, but the prefix ALL is reserved for selecting every rule\n"
             if index( $code, 'ALL' ) == 0;
         if ( my $other = $by_code{$code} ) {
-            die "Rules $other and $candidate both use code $code\n";
+            die 'Rules ' . display_name($other) . " and $shown both use code $shown_code\n";
         }
         $by_code{$code} = $candidate;
         push @classes, $candidate;

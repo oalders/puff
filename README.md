@@ -198,12 +198,17 @@ Look at what would change before writing anything:
 The diff goes to STDOUT and the `Would fix` line to STDERR.
 
 In text output and error messages, puff escapes control characters as
-`\xHH` and bidi and other invisible format characters (such as U+202E or a
-zero-width space) as `\x{HHHH}`, whether or not the output is a terminal.
-A message can quote your source, and such a character in it could hide or
-reorder what you see. A `--diff` is not escaped, because it is file content
-meant for `patch`, like `git diff`; when it holds such a character, puff
-prints `FILE: warning: diff contains control or bidi characters` on STDERR.
+`\xHH` and bidi and other invisible characters (such as U+202E, a
+zero-width space or U+3164) as `\x{HHHH}`, whether or not the output is a
+terminal. A message can quote your source, and such a character in it could
+hide or reorder what you see. A violation message is one line, so a newline
+in it shows as `\x0A`; an error of several lines keeps its newlines and
+indents every line after the first. JSON and JSONL output is not escaped
+this way: the JSON encoder escapes it, and `error` and `message` hold the
+real text. A `--diff` is not escaped, because it is file content meant for
+`patch`, like `git diff`; when it holds such a character (a form feed does
+not count), puff prints `FILE: warning: diff contains control or bidi
+characters` on STDERR.
 
 How fixes are applied:
 

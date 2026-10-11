@@ -3,7 +3,7 @@ package Puff::Reporter::Text;
 use v5.36;
 
 use IO::Handle ();
-use Puff::Path qw( display_text has_unsafe_text );
+use Puff::Path qw( display_line display_text has_unsafe_text );
 
 sub new ( $class, %args ) {
     return bless {
@@ -65,7 +65,7 @@ sub report ( $self, $run, $out, $err ) {
                 $stat->{marker} = $marker;
                 next;
             }
-            printf {$out} "%s:%d:%d: %s %s%s\n", $v->file, $v->line, $v->column, $v->code, display_text( $v->message ),
+            printf {$out} "%s:%d:%d: %s %s%s\n", $v->file, $v->line, $v->column, $v->code, display_line( $v->message ),
                 $marker;
         }
     }
@@ -85,13 +85,20 @@ sub report ( $self, $run, $out, $err ) {
     return;
 }
 
-# Puff::Runner has already escaped the file names and errors.
+# Puff::Runner has already escaped the file names; errors are escaped here.
 sub report_errors ( $class, $files, $err ) {
     for my $file (@$files) {
-        print {$err} "$file->{file}: error: $file->{error}\n" if defined $file->{error};
+        print {$err} $class->error_line( $file->{file}, $file->{error} ) if defined $file->{error};
         print {$err} "$file->{file}: $file->{fixes_skipped}\n" if defined $file->{fixes_skipped};
     }
     return;
+}
+
+# "FILE: error: ERROR\n", with the error escaped. An error of several lines
+# (from perl or PPI) keeps its newlines, but every line after the first is
+# indented, so it cannot pass for a violation line.
+sub error_line ( $class, $name, $error ) {
+    return "$name: error: " . ( display_text($error) =~ s/\n/\n    /gr ) . "\n";
 }
 
 # Flushes $out and dies if writing to it failed (a full disk, a closed
@@ -138,9 +145,13 @@ remaining violation, sorted by file, line and column:
 A file name that is not valid UTF-8 is shown with C<\xHH> escapes for its
 invalid bytes (see L<Puff::Path>). File names, messages and errors always
 have their control characters escaped as C<\xHH>, and bidi and other
-format characters as C<\x{HHHH}>, whether or not the output is a
+invisible characters as C<\x{HHHH}>, whether or not the output is a
 terminal: a message can quote the source, and an escape sequence or a
-right-to-left override in it could hide or reorder what is shown.
+right-to-left override in it could hide or reorder what is shown. A
+message is one line, so a newline in it is shown as C<\x0A>. An error of
+several lines (from perl or PPI, say) keeps its newlines, with every line
+after the first indented by four spaces, so it cannot pass for a violation
+line.
 
 C<[*]> marks a violation that C<--fix> would fix with the current settings
 (C<fix_mode> is C<safe> or C<unsafe>: the fixes C<--fix> applies); C<[**]>
@@ -158,13 +169,16 @@ some can. The summary lines follow as usual.
 In C<diff> mode it prints each file's unified diff instead, and C<Would fix
 N violations in M files.> on the error handle. A diff is file content meant
 for C<patch>, so, like C<git diff>, it is not escaped; when a diff holds a
-control character other than tab and newline, or a format character, a
+control character other than tab, newline and form feed, or a bidi or other
+invisible character, a
 C<FILE: warning: diff contains control or bidi characters> line goes to the
 error handle.
 
 File errors and skipped fixes go to the error handle;
 C<< Puff::Reporter::Text->report_errors(\@files, $err) >> prints them and is
-shared with L<Puff::Reporter::JSON>. So is
+shared with L<Puff::Reporter::JSON>, and
+C<< Puff::Reporter::Text->error_line($name, $error) >> returns one such
+escaped error line. So is
 C<< Puff::Reporter::Text->flush_or_die($out) >>, which flushes the output
 handle and dies if any write to it failed.
 
