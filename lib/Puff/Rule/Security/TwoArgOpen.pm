@@ -5,9 +5,13 @@ use parent 'Puff::Rule';
 
 use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string );
 
+# Two-argument open trims only ASCII whitespace (space, \t, \n, \x0B, \f,
+# \r) and keeps U+00A0, U+2028 and the like in the filename, so every \s
+# below takes /a.
+
 # A whole escape sequence at the end of a "..." string: it may stand for
 # whitespace (\x20, \040, \x{20}, \o{40}, \N{SPACE}, \t, ...).
-my $TRAILING_ESCAPE = qr/\\(?:x\{[^}]*\}|x[0-9a-fA-F]{0,2}|o\{[^}]*\}|[0-7]{1,3}|N\{[^}]*\}|c.|.)\s*\z/s;
+my $TRAILING_ESCAPE = qr/\\(?:x\{[^}]*\}|x[0-9a-fA-F]{0,2}|o\{[^}]*\}|[0-7]{1,3}|N\{[^}]*\}|c.|.)\s*\z/as;
 
 sub code       {'S002'}
 sub summary    {'Use three-argument open'}
@@ -32,16 +36,24 @@ sub explanation {
         `open(FH, $file)` as `open(FH, '<', $file)`. It only handles a second
         argument that is a single '...' or "..." string or a single scalar
         variable, and declines when the string is empty, starts with `|` or
-        `&`, ends with `|`, is `-`, has a filename starting with `&` or equal
-        to `-`, has a mode but no filename, is a "..." string starting with a
-        variable (the mode could be inside it), or is a "..." string with an
-        escape such as \t, \n, \x20, \040 or \x{20} at the start or end of
-        the mode or filename (whitespace that two-argument open strips at
-        runtime). Declined calls
-        are reported as not fixable.
+        `&`, ends with `|`, is `-` or starts with `-` and NUL, has a filename
+        starting with `&`, has a filename that is `-` or starts with `-` and
+        ASCII whitespace, `:` or NUL (all of these open STDIN or STDOUT), has
+        a mode but no filename, is a "..." string starting with a variable
+        (the mode could be inside it), or is a "..." string with an escape
+        right after such a `-` or with an escape such as \t, \n, \x20, \040
+        or \x{20} at the start or end of the mode or filename (whitespace
+        that two-argument open strips at runtime), or is a "..." string with a
+        variable right after such a `-` (its value could be empty or start
+        with whitespace, `:` or NUL). Declined calls are reported as not
+        fixable.
+
+        Two-argument open strips only ASCII whitespace. A non-ASCII space such
+        as U+00A0 or U+2028 at either end of the filename is part of the
+        name, so the fix keeps it there.
 
         The fix is unsafe because it changes behaviour:
-        - two-argument open trims whitespace around the filename and
+        - two-argument open trims ASCII whitespace around the filename and
           three-argument open does not;
         - a filename containing a mode, pipe, `&` or `-` is now taken
           literally, which is the point, but code that relied on passing a
@@ -76,7 +88,7 @@ sub fix ( $self, $violation, $fix ) {
 # command, and have no three-argument form.
 sub _is_fork_open ($arg) {
     return 0 unless @$arg == 1 && $arg->[0]->isa('PPI::Token::Quote') && is_constant_string( $arg->[0] );
-    return $arg->[0]->string =~ /\A\s*(?:-\||\|-)\s*\z/;
+    return $arg->[0]->string =~ /\A\s*(?:-\||\|-)\s*\z/a;
 }
 
 # The text that replaces the second argument (a list of significant
@@ -95,21 +107,33 @@ sub _replacement ($arg) {
     my $q = $double ? '"' : q{'};
     my $s = $el->string;
 
-    return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/ || $s eq '-';
-    return if $double && $s =~ /\A\s*[\$\@]/;
+    return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/;
+
+    # "-" alone, or followed by NUL, opens STDIN. A backslash after the "-"
+    # might start an escape for NUL, and a variable after it might be empty
+    # or start with NUL.
+    return if $s =~ /\A\s*-(?:\z|\0|\\)/a;
+    return if $double && $s =~ /\A\s*-?[\$\@]/a;
 
     # An escape such as \t or \n at either end is whitespace that two-arg
     # open strips at runtime and three-arg open keeps.
-    return if $double && ( $s =~ /\A\s*\\/ || $s =~ $TRAILING_ESCAPE );
+    return if $double && ( $s =~ /\A\s*\\/a || $s =~ $TRAILING_ESCAPE );
 
-    if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/s ) {
+    if ( $s =~ /\A\s*(\+?(?:>>|<|>))\s*(.*?)\s*\z/as ) {
         my ( $mode, $file ) = ( $1, $2 );
-        return if $file eq '' || $file =~ /\A&/ || $file eq '-';
+        return if $file eq '' || $file =~ /\A&/;
+
+        # After a mode, "-" alone or followed by ASCII whitespace, ":" or NUL
+        # opens STDIN or STDOUT. A backslash after the "-" might start an
+        # escape for one of those, and a variable after it might be empty or
+        # start with one.
+        return if $file =~ /\A-(?:\z|[\s:\0\\])/a;
+        return if $double && $file =~ /\A-[\$\@]/;
         return if $double && ( $file =~ /\A\\/ || $file =~ $TRAILING_ESCAPE );
         my $quoted = $double && $file =~ /\A\$[A-Za-z_]\w*\z/ ? $file : "$q$file$q";
         return "'$mode', $quoted";
     }
-    return if $s =~ /\A\s|\s\z/;
+    return if $s =~ /\A\s|\s\z/a;
     return "'<', " . $el->content;
 }
 
@@ -128,7 +152,9 @@ Reports calls to the built-in C<open> with exactly two arguments.
 The unsafe fix splits a C<'...'> or C<"..."> second argument into a mode and
 a filename (C<"E<lt>$file"> becomes C<'E<lt>', $file>), or adds C<'E<lt>'>
 before a filename with no mode or a single scalar variable. Anything else,
-including pipes, C<&> duplication, C<->, other quote styles and expressions,
-is reported with C<fixable> 0.
+including pipes, C<&> duplication, C<-> (alone, or followed by whitespace,
+C<:> or NUL, which perl also treats as STDIN or STDOUT, or by a variable in
+a C<"..."> string), other quote styles and expressions, is reported with
+C<fixable> 0.
 
 =cut
