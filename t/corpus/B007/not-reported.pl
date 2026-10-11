@@ -21,8 +21,12 @@ for my $item ( 3, 4 ) { print $item }
 while ( my $line = shift ) { print $line }
 while ( my $line = shift ) { print $line }
 
-# A prototype declares nothing.
-sub proto ($$) { my $x = shift; return $x }
+# A prototype declares nothing, not even one with `_` in it.
+{
+    no feature 'signatures';
+    sub proto ($$) { my $x = shift; return $x }
+    sub proto_topic ($_) { our $_; return $_[0] }
+}
 
 # Defaults in a signature may use other variables; only parameters count.
 sub defaults ( $self, $opt = [ $x, $el ] ) { my $el = 1; return $el }
@@ -36,6 +40,15 @@ our $VERSION = '1.0';
 
 package Baz {
     our $VERSION = '2.0';
+}
+
+# A catch variable belongs to its catch block.
+{
+    use feature 'try';
+    no warnings 'experimental::try';
+    try { die } catch ($err) { print $err }
+    try { die } catch ($err) { print $err }
+    my $err = 1;
 }
 
 # Inner scopes are B008's business, not this rule's.

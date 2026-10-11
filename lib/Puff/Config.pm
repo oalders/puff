@@ -66,9 +66,16 @@ sub _read_file ( $class, $self, $file ) {
         return [@$value];
     };
 
-    $self->{select}        = $list->('select') if exists $data->{select};
-    $self->{extend_select} = $list->('extend-select') if exists $data->{'extend-select'};
-    $self->{ignore}        = $list->('ignore') if exists $data->{ignore};
+    # Surrounding whitespace is dropped, as on the command line. An empty
+    # string is a prefix of every code, so it would quietly mean ALL.
+    my $selectors = sub ($key) {
+        my @value = map {s/\A\s+|\s+\z//gr} @{ $list->($key) };
+        die "Key '$key' in config file '$name' has an empty rule selector\n" if grep { !length } @value;
+        return \@value;
+    };
+    $self->{select}        = $selectors->('select') if exists $data->{select};
+    $self->{extend_select} = $selectors->('extend-select') if exists $data->{'extend-select'};
+    $self->{ignore}        = $selectors->('ignore') if exists $data->{ignore};
 
     # TOML gives characters; paths are bytes, like the config file's own
     # path and the paths is_excluded is given.

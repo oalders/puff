@@ -471,6 +471,22 @@ subtest 'config file' => sub {
     is( $exit, 2, 'unknown key exits 2' );
     like( $err, qr/Unknown key 'ignroe'/, 'error names the key' );
     is( $out, '', 'nothing on STDOUT' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{ignore = [""]\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'an empty selector in the config exits 2' );
+    like( $err, qr/^Key 'ignore' in config file '.*\.puff\.toml' has an empty rule selector$/m, 'and says so' );
+    is( $out, '', 'nothing on STDOUT' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{select = []\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 0, 'select = [] exits 0' ) or diag $err;
+    unlike( $out, qr/S001/, 'and reports nothing' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{select = [" S001 "]\n});
+    ( $out, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 1, 'a selector with spaces around it is trimmed' ) or diag $err;
+    like( $out, qr/S001/, 'S001 reported' );
 };
 
 subtest 'exclude' => sub {
@@ -618,6 +634,14 @@ subtest 'errors exit 2' => sub {
     ( $out, $err, $exit ) = puff( $dir, 'check', '--select', 'S999' );
     is( $exit, 2, 'selecting an unknown rule exits 2' );
     like( $err, qr/^Unknown rule selector: S999$/m, 'and says so' );
+
+    for my $option (qw( --select --extend-select --ignore )) {
+        for my $value ( ' , ', q{}, ' ', 'B001,,', ',B001' ) {
+            ( $out, $err, $exit ) = puff( $dir, 'check', $option, $value );
+            is( $exit, 2, "$option '$value' exits 2" );
+            like( $err, qr/^Error: $option has an empty rule selector$/m, "$option '$value' says so" );
+        }
+    }
 };
 
 subtest 'CRLF files are linted but not fixed' => sub {

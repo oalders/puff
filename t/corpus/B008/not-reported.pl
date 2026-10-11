@@ -40,3 +40,19 @@ sub f ($p) { my $p = 1; return $p }
 
 # String evals are not parsed.
 eval 'my $twice = 3';
+
+# A prototype declares nothing.
+our $_;
+{
+    no feature 'signatures';
+    sub topic ($_) { return $_[0] }    # read as declaring $_, it would shadow `our $_`
+    sub pair  ($$) { my ( $l, $r ) = @_; return $l + $r }
+}
+
+# A catch variable is not visible after its catch block.
+{
+    use feature 'try';
+    no warnings 'experimental::try';
+    try { die } catch ($problem) { print $problem }
+    my $problem = 1;
+}

@@ -63,3 +63,14 @@ our $setting = 1;
     my $setting = 2; # expect: B008
     print $setting;
 }
+
+{
+    use feature 'try';
+    no warnings 'experimental::try';
+    my $e;
+    try { die } catch ($e) { print $e } # expect: B008
+    try { die }
+    catch ($caught) {
+        try { die } catch ($caught) { print $caught } # expect: B008
+    }
+}
