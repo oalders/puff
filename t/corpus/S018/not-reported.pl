@@ -55,7 +55,7 @@ system("ls \c[");
 system("ls \N{SEMICOLON} date");
 system("ls \Q;\E");
 $out = `ls \x7c wc`;
-system("exec make");
-system(" exec make");
-system(". env.sh");
+system("exec make");    # NBSP after exec
+system(" exec make");    # leading NBSP
+system(". env.sh");    # NBSP after .
 system("é=1 ls");
