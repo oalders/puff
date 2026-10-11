@@ -111,6 +111,19 @@ ok( !$c->is_excluded('xt/corpus/x.pl'), 'prefix not mid-segment' );
 ok( !$c->is_excluded('t/corpusx/x.pl'), 'prefix at segment boundary' );
 ok( !$c->is_excluded('a/t/corpus/x.pl'), 'prefix anchored at start' );
 
+subtest 'non-ASCII exclude entries are UTF-8 bytes' => sub {
+    my $proj = $tmp->child('utf8');
+    $proj->mkpath;
+    $proj->child('.puff.toml')->spew_utf8(qq{exclude = ["caf\x{e9}", "/r\x{e9}s/top", "na\x{ef}ve/sub"]\n});
+    my $c = Puff::Config->load( path => $proj->child('.puff.toml')->stringify, cli => {} );
+    ok( ( grep { $_ eq "caf\xc3\xa9" } @{ $c->exclude } ), 'entry is encoded to UTF-8 bytes' );
+    ok( $c->is_excluded("a/caf\xc3\xa9/x.pm"), 'segment entry matches a byte-string path' );
+    ok( $c->is_excluded("r\xc3\xa9s/top/x.pm"), 'anchored entry matches from the root' );
+    ok( $c->is_excluded( 'top/x.pm', "r\xc3\xa9s" ), 'anchored entry matches via a byte-string base' );
+    ok( $c->is_excluded("na\xc3\xafve/sub/x.pm"), 'slashed entry matches a byte-string prefix' );
+    ok( !$c->is_excluded("a/caf\xe9/x.pm"), 'a Latin-1 path does not match the UTF-8 entry' );
+};
+
 subtest 'root is the config file directory' => sub {
     my $proj = $tmp->child('proj');
     $proj->child('sub')->mkpath;
