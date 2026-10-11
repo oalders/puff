@@ -43,8 +43,10 @@ sub explanation {
         (the mode could be inside it), or is a "..." string with an escape
         right after such a `-` or with an escape such as \t, \n, \x20, \040
         or \x{20} at the start or end of the mode or filename (whitespace
-        that two-argument open strips at runtime). Declined calls are
-        reported as not fixable.
+        that two-argument open strips at runtime), or is a "..." string with a
+        variable right after such a `-` (its value could be empty or start
+        with whitespace, `:` or NUL). Declined calls are reported as not
+        fixable.
 
         Two-argument open strips only ASCII whitespace. A non-ASCII space such
         as U+00A0 or U+2028 at either end of the filename is part of the
@@ -107,10 +109,11 @@ sub _replacement ($arg) {
 
     return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/;
 
-    # "-" alone, or followed by NUL, opens STDIN. An escape after the "-"
-    # might be NUL.
+    # "-" alone, or followed by NUL, opens STDIN. A backslash after the "-"
+    # might start an escape for NUL, and a variable after it might be empty
+    # or start with NUL.
     return if $s =~ /\A\s*-(?:\z|\0|\\)/a;
-    return if $double && $s =~ /\A\s*[\$\@]/a;
+    return if $double && $s =~ /\A\s*-?[\$\@]/a;
 
     # An escape such as \t or \n at either end is whitespace that two-arg
     # open strips at runtime and three-arg open keeps.
@@ -121,9 +124,11 @@ sub _replacement ($arg) {
         return if $file eq '' || $file =~ /\A&/;
 
         # After a mode, "-" alone or followed by ASCII whitespace, ":" or NUL
-        # opens STDIN or STDOUT. An escape after the "-" might be one of
-        # those.
+        # opens STDIN or STDOUT. A backslash after the "-" might start an
+        # escape for one of those, and a variable after it might be empty or
+        # start with one.
         return if $file =~ /\A-(?:\z|[\s:\0\\])/a;
+        return if $double && $file =~ /\A-[\$\@]/;
         return if $double && ( $file =~ /\A\\/ || $file =~ $TRAILING_ESCAPE );
         my $quoted = $double && $file =~ /\A\$[A-Za-z_]\w*\z/ ? $file : "$q$file$q";
         return "'$mode', $quoted";
@@ -148,7 +153,8 @@ The unsafe fix splits a C<'...'> or C<"..."> second argument into a mode and
 a filename (C<"E<lt>$file"> becomes C<'E<lt>', $file>), or adds C<'E<lt>'>
 before a filename with no mode or a single scalar variable. Anything else,
 including pipes, C<&> duplication, C<-> (alone, or followed by whitespace,
-C<:> or NUL, which perl also treats as STDIN or STDOUT), other quote styles
-and expressions, is reported with C<fixable> 0.
+C<:> or NUL, which perl also treats as STDIN or STDOUT, or by a variable in
+a C<"..."> string), other quote styles and expressions, is reported with
+C<fixable> 0.
 
 =cut

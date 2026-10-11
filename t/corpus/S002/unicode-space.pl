@@ -27,6 +27,9 @@ open(FH, "x\t "); # expect: S002
 open(FH, " $x"); # expect: S002
 open(FH, " @x"); # expect: S002
 open(FH, " \tfoo"); # expect: S002
+# "-" next to U+00A0 is part of the name, not STDIN.
+open(FH, "<- "); # expect: S002
+open(FH, " -"); # expect: S002
 # Literal \x0B is trimmed after a mode; literal \f with no mode is declined.
 open(FH, ">x"); # expect: S002
 open(FH, "x"); # expect: S002

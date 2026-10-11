@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 
-my ( $mode, $f, $h );
+my ( $mode, $f, $h, $v, $w, $e, @a );
 open(P, "ls |"); # expect: S002
 open(P, "| cat"); # expect: S002
 open(D, ">&STDOUT"); # expect: S002
@@ -32,4 +32,13 @@ open(FH, "<-:raw"); # expect: S002
 open(FH, '+>>-:x'); # expect: S002
 # With no mode, "-" followed by NUL opens STDIN.
 open(FH, "-\0z"); # expect: S002
+# "-" alone after a mode opens STDIN or STDOUT.
+open(FH, "<-"); # expect: S002
+open(FH, '>-'); # expect: S002
+# A variable right after "-" might be empty or start with whitespace, ":" or
+# NUL, so it might open STDIN or STDOUT.
+open(FH, "<-$v"); # expect: S002
+open(FH, ">-$w"); # expect: S002
+open(FH, "-$e"); # expect: S002
+open(FH, "-@a"); # expect: S002
 open(FH, "x\r"); # expect: S002
