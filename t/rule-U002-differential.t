@@ -9,40 +9,47 @@ use Puff::Rules  ();
 use Puff::Source ();
 use TestCommand  qw( run_capture );
 
-# Every string over a small alphabet that ends in `\n`, as `print "...";`.
-# Where U002 fixes one, the `say` it becomes must compile and print the
-# same bytes. One perl process compiles and runs each statement on its own
-# (a string eval compiles as perl -c does), without strict and with $\
-# unset, and prints its output in hex, or `error` if it does not compile.
+# Every string over an alphabet that ends in `\n`, as `print "...";`, up
+# to length 3, and every 7th string of length 4. Where U002 fixes one, the
+# `say` it becomes must compile and print the same bytes. One perl process
+# compiles and runs each statement on its own (a string eval compiles as
+# perl -c does), without strict, with $\ unset and with variables named
+# `a` and `n` set, and prints its output in hex, or `error` if it does not
+# compile.
 
-my @alphabet = ( 'a', '$', '@', '\\', 'n', '{', '}', q{ } );
+my @alphabet = ( 'a', '$', '@', '\\', 'n', '{', '}', q{ }, qw( ^ : [ ] - > ), q{,}, qw| ( ) 0 | );
 my @bodies   = (q{});
 my @level    = (q{});
-for ( 1 .. 4 ) {
+for my $length ( 1 .. 4 ) {
     @level = map {
         my $s = $_;
         map { $s . $_ } @alphabet
     } @level;
-    push @bodies, @level;
+    my $step = $length == 4 ? 7 : 1;
+    push @bodies, @level[ grep { !( $_ % $step ) } 0 .. $#level ];
 }
 my @lines = map {qq{print "$_\\n";}} @bodies;
 
-# Fixing is slow on files with many prints, so the lines go in small batches.
+# Each line is fixed on its own, since a `$\` anywhere in a file withholds
+# every fix in it.
 my ($class) = grep { $_->code eq 'U002' } Puff::Rules->load;
 my $engine = Puff::Engine->new( rules => [ $class->new ], fix_mode => 'unsafe' );
 my @fixed;
-for ( my $i = 0 ; $i < @lines ; $i += 25 ) {
-    my @batch  = @lines[ $i .. ( $i + 24 < $#lines ? $i + 24 : $#lines ) ];
-    my $text   = join "\n", q{use feature 'say';}, @batch, q{};
+for my $line (@lines) {
+    my $text   = qq{use feature 'say';\n$line\n};
     my $result = $engine->process_source( Puff::Source->from_string($text), file => 'x.pl' );
     die $result->{error} if $result->{error};
     my @got = split /\n/, $result->{new_text} // $text;
-    shift @got;
-    die "batch at $i lost lines" unless @got == @batch;
-    push @fixed, @got;
+    die "lost lines in $line" unless @got == 2;
+    push @fixed, $got[1];
 }
 
 my $DRIVER = <<'END';
+our ( $a, $n ) = ( 'A', 'N' );
+our @a = ( 1, 2 );
+our @n = ( 3, 4 );
+our %a = ( a => 'v', n => 'w', 0 => 'z' );
+our %n = %a;
 while ( my $code = <> ) {
     chomp $code;
     my $sub = eval "no strict; no warnings; use feature 'say'; sub { $code }";
@@ -58,7 +65,12 @@ while ( my $code = <> ) {
 END
 
 my @pairs = grep { $fixed[$_] ne $lines[$_] } 0 .. $#lines;
-ok( @pairs > 100, 'fixes are offered (' . @pairs . ')' );
+
+# A count that falls means fixes are being withheld; one that rises needs
+# the new fixes checked. Strings with no `$`, `@` or `\` are always fixed.
+is( scalar @pairs, 16_554, 'the expected number of fixes is offered' );
+my @plain = grep { $bodies[$_] !~ /[\$\@\\]/ } 0 .. $#bodies;
+is( [ grep { $fixed[$_] eq $lines[$_] } @plain ], [], 'every string with no $, @ or \\ is fixed' );
 
 my $dir = tempdir();
 $dir->child('driver.pl')->spew_utf8($DRIVER);

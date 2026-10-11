@@ -53,10 +53,12 @@ sub explanation {
         `$\` is the variable, followed by an `n`. So a string is skipped
         if, before its final `\n`, it has `$\`, `@$`, `@\`, or a `$` or `@`
         followed by white space; if an odd run of backslashes comes just
-        before the `\n`; or if a `$` or `@` comes just before it, except
-        `$$` or `$@` after a character other than `$`, `@` or `\`. So
-        `"pid $$\n"` and `"$@\n"` are reported, but `"a\$\n"`, `"a@\n"`
-        and `"$$$\n"` are not, though some of them do end in a newline.
+        before the `\n`; if a `$` and one other non-word character other
+        than `$` or `@` come just before it (`"a$^\n"` is `$^\` and `n`); or
+        if a `$` or `@` comes just before it, except `$$` or `$@` after a
+        character other than `$`, `@` or `\`. So `"pid $$\n"` and `"$@\n"`
+        are reported, but `"a\$\n"`, `"a@\n"`, `"a$:\n"` and `"$$$\n"` are
+        not, though some of them do end in a newline.
         A `qq` whose delimiter is a letter, digit or `_`
         (`qq n a\nn`) is skipped. `use if ..., feature => 'say'` is not
         recognised, so code that enables `say` that way is not checked.
@@ -64,15 +66,17 @@ sub explanation {
         The fix replaces `print` with `say` and removes the trailing `\n`
         from the string, keeping its quotes. It is safe, except that `say`
         always ends the output with "\n" where `print` adds `$\`. So the
-        violation has no fix when the file mentions `$\`,
-        `$OUTPUT_RECORD_SEPARATOR` or `$ORS` (or the globs `*\`, `*ORS` and
-        `*OUTPUT_RECORD_SEPARATOR`, and `$ \` with a space), calls
-        `output_record_separator`, has a `#!` line with an `-l` switch, or
+        violation has no fix when the file's text contains `$\`,
+        `$OUTPUT_RECORD_SEPARATOR`, `$ORS` or `output_record_separator`
+        anywhere, even in a string, regex, heredoc or comment (but not `$$\`,
+        as in `"pid $$\n"`); mentions the globs `*\`, `*ORS` and
+        `*OUTPUT_RECORD_SEPARATOR`, or `$ \` with a space; has a `#!` line
+        with an `-l` switch, or
         has a symbolic `${...}` or `*{...}` that is not one of two shapes
-        known to be safe. One is a scalar variable, with optional
+        taken to be safe. One is a scalar variable, with optional
         subscripts that have no backslash or ORS name in them (`${$ref}`,
-        `${ $self->{x} }`), when strict refs is certainly on, so the
-        variable must hold a reference: a top-level `use strict` (bare or
+        `${ $self->{x} }`), when strict refs appears to be in effect, so the
+        variable should hold a reference: a top-level `use strict` (bare or
         naming `refs`) or `use v5.12` or later comes first, and the file
         has no `no strict` and no `use VERSION` below 5.12. Without that,
         `${$name}` and `$$name` may name `$\`, so the fix is withheld. The
@@ -80,8 +84,13 @@ sub explanation {
         backslash, whose text ends in a literal `::name` other than `ORS`
         or `OUTPUT_RECORD_SEPARATOR` (`*{"${class}::foo"}`). Anything else,
         such as `${"\\"}`, `${ chr(92) }` or `${ "main::" . $name }`, has
-        no fix. Not seen: a `$\` set in another file or module, stash
-        access (`$::{"\\"}`), and a `$\` set in a string `eval`.
+        no fix. Not seen: a `$\` set in another file or module; stash
+        access (`$::{"\\"}`) and glob slots (`*{$glob}{SCALAR}`, with a glob
+        from `Symbol::qualify_to_ref`); method names built at run time
+        (`STDOUT->can("output_" . "record_separator")`, `STDOUT->$m(...)`);
+        strict refs turned off without a `no strict` statement
+        (`BEGIN { strict->unimport('refs') }`, `$^H`, a module's `import`);
+        and a `$\` set in a string `eval`.
 
         Also, `say` passes its newline through `$\`, so a tied handle whose
         `PRINT` ignores `$\` loses the newline. This is a known caveat of
@@ -136,12 +145,15 @@ sub _last_string ($word) {
 # model how perl reads `$`, `@` and `\`, anything unclear counts as no:
 # before the `\n`, a `$\`, `@$`, `@\`, or a `$` or `@` followed by white
 # space (perl reads `"a$ \n"` as `$\` and `n`); an odd run of backslashes
-# just before it; or a `$` or `@` just before it, except `$$` or `$@` after
-# a character that is not `$`, `@` or `\`. Each check is linear.
+# just before it; a `$` and one other non-word character just before it
+# (perl reads `"a$^\n"` as `$^\` and `n`), except `$$` and `$@`; or a `$`
+# or `@` just before it, except `$$` or `$@` after a character that is not
+# `$`, `@` or `\`. Each check is linear.
 sub _ends_in_newline ($string) {
     return 0 unless length $string >= 2 && substr( $string, -2 ) eq '\\n';
     my $body = substr $string, 0, -2;
     return 0 if $body =~ /[\$\@]\s|\$\\|\@[\$\\]/;
+    return 0 if $body =~ /\$[^\w\$\@]\z/;
     my ($slashes) = reverse($body) =~ /\A(\\*)/;
     return 0 if length($slashes) % 2;
     return 1 unless $body =~ /[\$\@]\z/;
@@ -232,15 +244,19 @@ sub _empty_import ($include) {
 }
 
 # Whether the output record separator may be set, so that print and say
-# end their output differently.
+# end their output differently. The raw text is searched first, so that
+# `$\` in code PPI does not tokenise (interpolated `@{[ ]}`, `s///e`,
+# `(?{ })`, heredoc bodies) counts. That also matches `"\$\\"` and the
+# like, which only loses a fix. A `$\` after another `$` is skipped: perl
+# reads `$$\` as `$$` then `\`, as in `"pid $$\n"`.
 sub _sets_ors ($doc) {
+    return 1 if $doc->serialize =~ /(?<!\$)\$\\|\$(?:ORS|OUTPUT_RECORD_SEPARATOR)\b|output_record_separator/;
     my $first     = $doc->first_token;
     my $strict_at = _strict_refs_at($doc);
     return 1 if $first && $first->isa('PPI::Token::Comment') && $first->content =~ /\A#!.*\s-\S*l/;
     return 1 if $doc->find_first(
         sub {
             my $elem = $_[1];
-            return 1 if $elem->isa('PPI::Token::Magic') && $elem->content eq '$\\';
             return 1
                 if $elem->isa('PPI::Token::Symbol')
                 && $elem->content =~ /\A[\$*](?:\w+::)*(?:ORS|OUTPUT_RECORD_SEPARATOR)\z/;
@@ -255,7 +271,7 @@ sub _sets_ors ($doc) {
             }
 
             # `$ \` with a space parses as two casts. A symbolic `${"\\"}` or
-            # `*{"main::ORS"}` counts, as does any name not known to be safe.
+            # `*{"main::ORS"}` counts, as does any name not taken to be safe.
             # Without strict refs, `$$name` or `${$name}` may hold the name.
             if ( $elem->isa('PPI::Token::Cast') && $elem->content =~ /\A[\$*]\z/ ) {
                 my $next   = $elem->snext_sibling;
@@ -265,7 +281,6 @@ sub _sets_ors ($doc) {
                 return _names_ors( $next, $strict ) if $next->isa('PPI::Structure::Block');
                 return 1 unless $strict;
             }
-            return 1 if $elem->isa('PPI::Token::Word') && $elem->content =~ /(?:\A|::|->)output_record_separator\z/;
             return 0;
         }
     );
@@ -273,7 +288,7 @@ sub _sets_ors ($doc) {
 }
 
 # Whether a deref block's name may be the output record separator. Only
-# two shapes are known not to be: under strict refs, a scalar variable with
+# two shapes are taken not to be: under strict refs, a scalar variable with
 # optional subscripts (`${$ref}`, `${ $self->{x} }`), which must then hold
 # a reference; and strings and scalar variables joined with `.` whose text
 # ends in a literal `::name` other than ORS (`*{"${class}::foo"}`).
@@ -287,7 +302,7 @@ sub _names_ors ( $block, $strict ) {
 
 my $STRICT_MIN = version->parse('v5.12.0');
 
-# Where strict refs is certainly on for the rest of the file: the first
+# Where strict refs appears to be on for the rest of the file: the first
 # top-level `use strict` (bare, or naming `refs`) or `use v5.12` or later.
 # Undef if the file has any `no strict`, or a `use VERSION` below 5.12,
 # which may turn implicit strict off.
@@ -441,10 +456,12 @@ C<"a$\n"> and C<"a$ \n"> the C<$\> is a variable followed by an C<n>, and
 dropping the C<\n> would not compile. Rather than model how perl reads
 C<$>, C<@> and C<\>, the rule skips a string that, before its final
 C<\n>, has C<$\>, C<@$>, C<@\>, or a C<$> or C<@> followed by white space;
-one with an odd run of backslashes just before the C<\n>; and one with a
-C<$> or C<@> just before it, except C<$$> or C<$@> after a character other
-than C<$>, C<@> or C<\>. So C<"pid $$\n"> and C<"$@\n"> are reported, but
-C<"a\$\n">, C<"a@\n"> and C<"$$$\n"> are not, though some of them do end
+one with an odd run of backslashes just before the C<\n>; one with a C<$>
+and one other non-word character other than C<$> or C<@> just before it
+(C<"a$^\n"> is C<$^\> and C<n>); and one with a C<$> or C<@> just before
+it, except C<$$> or C<$@> after a character other than C<$>, C<@> or
+C<\>. So C<"pid $$\n"> and C<"$@\n"> are reported, but C<"a\$\n">,
+C<"a@\n">, C<"a$:\n"> and C<"$$$\n"> are not, though some of them do end
 in a newline.
 
 =item *
@@ -462,11 +479,12 @@ enables C<say> that way is not checked.
 C<say> sets C<local $\ = "\n">, so if the program sets C<$\> the output
 changes: C<print "x\n"> prints C<"x\n"> followed by C<$\>, while C<say "x">
 prints C<"x\n">. The violation is still reported, but with no fix, when the
-file mentions C<$\>, C<$OUTPUT_RECORD_SEPARATOR> or C<$ORS> (or the globs
-C<*\>, C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>, and C<$ \> with a
-space), calls C<output_record_separator>, has a C<#!> line with an C<-l>
-switch, or has a symbolic C<${...}> or C<*{...}> that is not one of two
-shapes known to be safe:
+file's text contains C<$\>, C<$OUTPUT_RECORD_SEPARATOR>, C<$ORS> or
+C<output_record_separator> anywhere, even in a string, regex, heredoc or
+comment (but not C<$$\>, as in C<"pid $$\n">); mentions the globs C<*\>,
+C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>, or C<$ \> with a space; has a
+C<#!> line with an C<-l> switch; or has a symbolic C<${...}> or C<*{...}>
+that is not one of two shapes taken to be safe:
 
 =over 4
 
@@ -474,7 +492,7 @@ shapes known to be safe:
 
 a scalar variable, with optional subscripts that have no backslash or ORS
 name in them: C<${$ref}>, C<${ $self-E<gt>{x} }>, but only when strict refs
-is certainly on, so the variable must hold a reference. That means a
+appears to be in effect, so the variable should hold a reference. That means a
 top-level C<use strict> (bare or naming C<refs>) or C<use v5.12> or later
 comes first, and the file has no C<no strict> and no C<use VERSION> below
 5.12. Otherwise C<${$name}> and C<$$name> may name C<$\>, and have no fix;
@@ -491,8 +509,13 @@ joined first, so C<"main::O" . "RS"> names C<ORS>.
 Anything else, such as C<${"\\"}>, C<${ chr(92) }>, a C<qw> or heredoc,
 or C<${ "main::" . $name }>, has no fix.
 
-Not seen: a C<$\> set in another file or module, stash access
-(C<$main::{ORS}>, C<$::{"\\"}>), and a C<$\> set in a string C<eval>.
+Not seen: a C<$\> set in another file or module; stash access
+(C<$main::{ORS}>, C<$::{"\\"}>) and glob slots (C<*{$glob}{SCALAR}>, with a
+glob from C<Symbol::qualify_to_ref>); method names built at run time
+(C<< STDOUT->can("output_" . "record_separator") >>, C<< STDOUT->$m(...) >>);
+strict refs turned off without a C<no strict> statement
+(C<BEGIN { strict-E<gt>unimport('refs') }>, C<$^H>, a module's C<import>);
+and a C<$\> set in a string C<eval>.
 
 =item *
 

@@ -21,6 +21,16 @@ sub lines ($text) {
 # Long runs of `$` and `\` before the `\n` are checked in linear time (a
 # run of 100k `$` followed by `\$\n` once took seconds). The tails are on
 # lines 2 to 6. Only an even run of backslashes before the `\n` is reported.
+# Each takes at most 20 times as long as a run of plain letters of the
+# same length (a quadratic check takes hundreds of times as long).
+sub timed ($run) {
+    my $long  = $run x ( 100_000 / length $run );
+    my @tails = ( '\\n', '$\\n', '\\$\\n', '$$\\n', '\\\\n' );
+    my $start = time;
+    my $lines = lines( "use v5.36;\n" . join q{}, map {qq{print "$long$_";\n}} @tails );
+    return ( $lines, time - $start );
+}
+my ( undef, $plain ) = timed('a');
 my %reported = (
     '$'   => [],
     '\\'  => [2],
@@ -29,12 +39,10 @@ my %reported = (
     'a\\' => [6],
 );
 for my $run ( sort keys %reported ) {
-    my $long  = $run x ( 100_000 / length $run );
-    my @tails = ( '\\n', '$\\n', '\\$\\n', '$$\\n', '\\\\n' );
-    my $text  = "use v5.36;\n" . join q{}, map {qq{print "$long$_";\n}} @tails;
-    my $start = time;
-    is( lines($text), $reported{$run}, "a 100k run of '$run' is reported on the right lines" );
-    ok( time - $start < 5, "a 100k run of '$run' is checked quickly" );
+    my ( $lines, $took ) = timed($run);
+    is( $lines, $reported{$run}, "a 100k run of '$run' is reported on the right lines" );
+    ok( $took < 20 * $plain, "a 100k run of '$run' is checked in linear time" )
+        or diag "took ${took}s, plain letters ${plain}s";
 }
 
 my $dollars = '$' x 100_000;

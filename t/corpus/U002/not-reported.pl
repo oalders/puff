@@ -41,3 +41,8 @@ print "a$\\n";
 print "$\\\\n";
 print "a@$\\n";
 print "b@$\n";
+print "a$^\n";
+print "$^\n";
+print "a$:\n";
+print "a$-\n";
+print "a$(\n";

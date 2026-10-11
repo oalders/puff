@@ -902,12 +902,17 @@ after an earlier `use v5.10` or later, `use feature 'say'`, a `:5.10`+ or
 Modern::Perl, Mojo::Base, Mojolicious::Lite, common::sense), in the same or
 an enclosing block. A file with `no feature 'say'` (or a bundle, `:all`, or
 no arguments) is skipped. `print $x, "\n"`, single-quoted strings, heredocs
-and expressions such as `"a\n" x 3` are not reported. Because `say` sets
-`$\` to `"\n"`, no fix is offered when the file mentions `$\`, `$ORS`,
-`$OUTPUT_RECORD_SEPARATOR` or `output_record_separator`, or its `#!` line
-has `-l`. A symbolic `${...}` or `*{...}` also turns the fix off, unless
-it is a scalar variable with plain subscripts (`${ $self->{x} }`) or a
-string naming a literal `::name` other than ORS (`*{"${class}::foo"}`).
+and expressions such as `"a\n" x 3` are not reported. Nor are strings
+where the `\n` may not be a newline, such as `"a$\n"`, `"a$ \n"` and
+`"a$^\n"` (perl reads `$\` or `$^\` there). Because `say` sets `$\` to
+`"\n"`, no fix is offered when the file's text contains `$\`, `$ORS`,
+`$OUTPUT_RECORD_SEPARATOR` or `output_record_separator` anywhere (even in a
+string or comment), or its `#!` line has `-l`. A symbolic `${...}` or
+`*{...}` also turns the fix off, unless it is a string naming a literal
+`::name` other than ORS (`*{"${class}::foo"}`), or a scalar variable with
+plain subscripts (`${ $self->{x} }`) when strict refs appears to be in
+effect: a top-level `use strict` or `use v5.12` or later comes first, and
+the file has no `no strict`.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
