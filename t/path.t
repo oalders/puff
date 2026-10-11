@@ -45,6 +45,11 @@ subtest 'default-ignorable characters' => sub {
         display_text("\x{3164}\x{34f}\x{fe0f}\x{115f}\x{ffa0}"), '\x{3164}\x{034F}\x{FE0F}\x{115F}\x{FFA0}',
         'Hangul fillers, CGJ and variation selectors escaped'
     );
+
+    # Visible or spacing: a combining mark, non-ASCII spaces, Braille blank.
+    my $kept = "e\x{301}\x{a0}\x{2003}\x{3000}\x{2800}";
+    is( display_text($kept), $kept, 'combining marks, non-ASCII spaces and U+2800 kept' );
+    is( has_unsafe_text($kept), 0, 'and not unsafe' );
 };
 
 subtest 'display_line' => sub {

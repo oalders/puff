@@ -16,7 +16,7 @@ sub report ( $self, $run, $out, $err ) {
     for my $file (@files) {
         push @items, map { $self->violation_data($_) } @{ $file->{violations} };
     }
-    print {$out} JSON::PP->new->canonical->pretty->encode( \@items );
+    print {$out} JSON::PP->new->canonical->pretty->ascii->encode( \@items );
     Puff::Reporter::Text->flush_or_die($out);
     return;
 }
@@ -65,8 +65,9 @@ C<available> says whether a fix is offered for this violation; C<applied>
 is always false, because only violations that remain are listed. A
 C<file> that is not valid UTF-8 has C<\xHH> escapes for its invalid bytes
 (see L<Puff::Path>), so C<file> is a name to show, not always a path that
-can be opened. The output is character data: give it a handle with
-an encoding layer. File errors go to the error handle.
+can be opened. The output is pure ASCII: every non-ASCII character is
+written as a C<\u> escape. Give it a handle with an encoding layer all the
+same. File errors go to the error handle.
 
 C<< Puff::Reporter::JSON->violation_data($violation) >> returns the hash
 above for one violation.

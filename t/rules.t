@@ -126,6 +126,43 @@ like(
     'ALL prefix reserved'
 );
 
+# A rule-paths file that sets up a rule class whose name holds U+200D (a
+# zero-width joiner, which \w matches but perl rejects in a package
+# statement): the "package" line inside the heredoc is what load finds.
+sub zwj_rule_dir ( $name, @codes ) {
+    my $dir = $tmp->child($name);
+    $dir->mkpath;
+    my $i = 0;
+    for my $code (@codes) {
+        my $pkg = "Z::J\x{200D}" . $i++;
+        my $pm  = <<~"PM";
+            use v5.36;
+            use utf8;
+            my \$doc = <<'X';
+            package $pkg
+            X
+            no strict 'refs';
+            \@{"\Q$pkg\E::ISA"} = ('Puff::Rule');
+            *{"\Q$pkg\E::code"} = sub {'$code'};
+            1;
+            PM
+        $dir->child("Z$i.pm")->spew_utf8($pm);
+    }
+    return $dir;
+}
+
+for my $case (
+    [ 'reserved code', ['P001'], qr/\ARule Z::J\\x\{200D\}0 uses code P001, which is reserved/ ],
+    [ 'ALL prefix', ['ALL001'], qr/\ARule Z::J\\x\{200D\}0 uses code ALL001, but the prefix ALL/ ],
+    [ 'duplicate', [qw( Q901 Q901 )], qr/\ARules Z::J\\x\{200D\}0 and Z::J\\x\{200D\}1 both use code Q901\n/ ],
+) {
+    my ( $label, $codes, $want ) = @$case;
+    my $dir   = zwj_rule_dir( "zwj-$label" =~ tr/ /-/r, @$codes );
+    my $error = dies { Puff::Rules->load( rule_paths => ["$dir"] ) };
+    like( $error, $want, "$label: the class name is escaped" );
+    unlike( $error, qr/\x{200D}/, "$label: no raw U+200D" );
+}
+
 my $nocode = $tmp->child('nocode');
 $nocode->mkpath;
 $nocode->child('N.pm')->spew_utf8("package B::NoCode;\nuse parent 'Puff::Rule';\nsub code { undef }\n1;\n");

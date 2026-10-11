@@ -396,6 +396,16 @@ subtest 'check --output-format jsonl: a run that dies before finding files is ju
         [ jsonl($out) ], [ { type => 'done', exit_code => 2, error => 'cannot list files' } ],
         'no start: just done with the error'
     );
+
+    # A path in the error is bytes: decoded, as on STDERR, but not escaped.
+    $code =~ s/cannot list files/cannot list caf\\xc3\\xa9\\e/;
+    ( $out, $err, $exit ) = puff_with( $dir, [ '-e', $code, $PUFF ], 'check', '--output-format', 'jsonl' );
+    is( $exit, 2, 'exit 2' );
+    is( $err, "cannot list caf\x{e9}\\x1B\n", 'STDERR: decoded and escaped' );
+    is(
+        [ jsonl($out) ], [ { type => 'done', exit_code => 2, error => "cannot list caf\x{e9}\e" } ],
+        'done error: decoded, not escaped'
+    );
 };
 
 subtest 'output that cannot be written exits 2' => sub {
@@ -875,11 +885,12 @@ subtest 'control and bidi characters in messages are escaped' => sub {
         JSON::PP->new->utf8->decode($out)->[0]{message}, "literal red\e[31m \x{202E}evil caf\x{e9}",
         'JSON message as is'
     );
+    unlike( $out, qr/[^\x00-\x7F]/, 'JSON output is ASCII' );
 };
 
-# The unlike checks on $err in these subtests rely on puff() decoding STDERR:
-# a raw U+202E is the bytes E2 80 AE, which qr/\x{202E}/ would not match
-# in the undecoded output of puff_raw().
+# The unlike checks on $err in all the subtests below rely on puff()
+# decoding STDERR: a raw U+202E is the bytes E2 80 AE, which qr/\x{202E}/
+# would not match in the undecoded output of puff_raw().
 subtest 'an engine error is escaped' => sub {
     my $dir = hostile_project(qq{my \$x = "die\e[2J\x{202E}";\n});
     my ( undef, $err, $exit ) = puff( $dir, 'check' );
@@ -888,7 +899,7 @@ subtest 'an engine error is escaped' => sub {
     unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
 };
 
-subtest 'an engine error for a file named with U+202E is escaped once' => sub {
+subtest 'an engine error for a file named with U+202E is escaped' => sub {
     my $dir  = hostile_project(qq{1;\n});
     my $name = Encode::encode_utf8("a\x{202E}lp.pl");
     spew_named( $dir, $name, qq{my \$x = "die\e[2J";\n} );
@@ -896,7 +907,7 @@ subtest 'an engine error for a file named with U+202E is escaped once' => sub {
     is( $exit, 2, 'exit 2' );
     like(
         $err, qr{^a\\x\{202E\}lp\.pl: error: rule X900 failed: cannot check die\\x1B\[2J$}m,
-        'name and error each escaped once'
+        'name and error escaped'
     );
     unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
 
@@ -940,6 +951,25 @@ subtest 'argv in usage errors is escaped' => sub {
     ( undef, $err, $exit ) = puff( $dir, 'check', '--select', "\xe2\x80\xaeS" );
     is( $exit, 2, 'unknown selector exits 2' );
     is( $err, "Unknown rule selector: \\x{202E}S\n", 'selector from argv decoded, then escaped' );
+};
+
+subtest 'a newline in argv or a warning cannot forge a line on STDERR' => sub {
+    my $dir = project();
+    my ( undef, $err, $exit ) = puff( $dir, 'check', "--x\na.pl:1:1: S001 forged" );
+    is( $exit, 2, 'unknown option exits 2' );
+    like( $err, qr{^Unknown option: x\n    a\.pl:1:1: S001 forged$}m, 'option: next line indented' );
+    unlike( $err, qr{^a\.pl:}m, 'option: no forged violation line' );
+
+    ( undef, $err, $exit ) = puff( $dir, "zz\na.pl:1:1: S001 forged" );
+    is( $exit, 2, 'unknown command exits 2' );
+    is( $err, "Unrecognized command: zz\n    a.pl:1:1: S001 forged\n", 'command: next line indented' );
+
+    $dir = hostile_project(qq{my \$x = "ok";\n});
+    $dir->child( 'rules', 'Quote.pm' )
+        ->spew_utf8( $QUOTE_RULE =~ s/(?=my \$string)/warn "careful\\na.pl:1:1: S001 forged\\n";\n    /r );
+    ( undef, $err, $exit ) = puff( $dir, 'check', 'hostile.pl' );
+    is( $exit, 1, 'a warning does not fail the run' );
+    is( $err, "careful\n    a.pl:1:1: S001 forged\n", 'warning: shown once, next line indented' );
 };
 
 subtest 'a file name with U+202E is escaped' => sub {

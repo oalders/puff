@@ -98,7 +98,13 @@ sub report_errors ( $class, $files, $err ) {
 # (from perl or PPI) keeps its newlines, but every line after the first is
 # indented, so it cannot pass for a violation line.
 sub error_line ( $class, $name, $error ) {
-    return "$name: error: " . ( display_text($error) =~ s/\n/\n    /gr ) . "\n";
+    return "$name: error: " . $class->indent_lines( display_text($error) ) . "\n";
+}
+
+# $text with every line after the first indented by four spaces. A trailing
+# newline is kept as it is. Puff::CLI uses it for fatal errors and warnings.
+sub indent_lines ( $class, $text ) {
+    return $text =~ s/\n(?!\z)/\n    /gr;
 }
 
 # Flushes $out and dies if writing to it failed (a full disk, a closed
@@ -178,7 +184,9 @@ File errors and skipped fixes go to the error handle;
 C<< Puff::Reporter::Text->report_errors(\@files, $err) >> prints them and is
 shared with L<Puff::Reporter::JSON>, and
 C<< Puff::Reporter::Text->error_line($name, $error) >> returns one such
-escaped error line. So is
+escaped error line, and
+C<< Puff::Reporter::Text->indent_lines($text) >> indents every line of
+C<$text> after the first by four spaces, as C<error_line> does. So is
 C<< Puff::Reporter::Text->flush_or_die($out) >>, which flushes the output
 handle and dies if any write to it failed.
 
