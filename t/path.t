@@ -1,7 +1,7 @@
 use v5.36;
 use Test2::V0;
 
-use Puff::Path qw( display_name );
+use Puff::Path qw( display_lines display_name );
 
 subtest 'display_name' => sub {
     is( display_name('lib/Foo.pm'), 'lib/Foo.pm', 'ASCII unchanged' );
@@ -15,6 +15,15 @@ subtest 'display_name' => sub {
     my $bytes = "caf\xe9.pl";
     display_name($bytes);
     is( $bytes, "caf\xe9.pl", 'argument left alone' );
+};
+
+subtest 'display_lines' => sub {
+    is( display_lines(''), '', 'empty' );
+    is( display_lines("a\n"), "a\n", 'trailing newline kept' );
+    is( display_lines("a\n\nb"), "a\n\nb", 'empty line kept' );
+    is( display_lines("\r"), '\x0D', 'lone CR escaped' );
+    is( display_lines("a\nb\ec\nd"), "a\nb\\x1Bc\nd", 'control character escaped on one line of several' );
+    is( display_lines("caf\xe9\ncaf\xc3\xa9\n"), "caf\\xE9\ncaf\x{e9}\n", 'invalid UTF-8 escaped, valid decoded' );
 };
 
 done_testing;

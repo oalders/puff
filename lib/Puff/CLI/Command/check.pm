@@ -44,7 +44,13 @@ sub execute ( $self, $opt, $args ) {
     my %cli;
     for my $key (qw( select extend_select ignore )) {
         my $given = $opt->$key // next;
-        $cli{$key} = [ grep {length} map { split /\s*,\s*/ } @$given ];
+
+        # As in the config file, an empty entry is an error: it would be a
+        # prefix of every code. `--select ''` and `--select 'B001,,'` both
+        # have one.
+        my @codes = map {s/\A\s+|\s+\z//gr} map { length ? split( /,/, $_, -1 ) : $_ } @$given;
+        $self->usage_error( '--' . ( $key =~ tr/_/-/r ) . ' has an empty rule selector' ) if grep { !/\S/ } @codes;
+        $cli{$key} = \@codes;
     }
     $cli{unsafe_fixes} = $opt->unsafe_fixes if defined $opt->unsafe_fixes;
 

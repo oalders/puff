@@ -86,7 +86,11 @@ rule and applies every fix. A few rules (S018, S019, S020, B007, B008, B009 and 
 their exact code or `ALL`, never by a prefix, so `--select S` or `--select B`
 leaves them off. A `select` or `extend-select` entry that matches no rule is an error
 (`Unknown rule selector: X`, exit `2`), so a typo does not silently turn
-rules off. An `ignore` entry that matches nothing is allowed.
+rules off. An `ignore` entry that matches nothing is allowed. An empty
+entry in any of the three lists (`select = [""]`, `--select ''` or
+`--select 'B001,,'`) is an error too (exit `2`), rather than quietly matching
+every rule. `--select ''` used to select nothing; to select no rules, put
+`select = []` in the config file.
 
 ### Exit codes
 
@@ -601,7 +605,7 @@ declaration visible from the regex is a whole statement `my $x = qr/.../;`
 or `my $x = quotemeta ...;` (nothing else on the right-hand side). The
 nearest declaration is the latest one before the regex in the innermost
 enclosing block that has one; `my`, `our`, `state` (list forms included),
-`for my $v` and sub signature parameters all count, so an inner
+`for my $v`, sub signature parameters and `catch ($e)` variables all count, so an inner
 `my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) = @_` hides an
 outer qr//. A global with no declaration needs a `$x = qr/.../;` statement
 earlier in the same or an enclosing block. The name must also have no other
@@ -764,7 +768,9 @@ statement-level declarations.
 **B007** and **B008** are not selected by default, and selecting `B` does
 not turn them on: name them (`--extend-select B007,B008` or
 `extend-select = ["B007", "B008"]`) or use `ALL`. Both look at `my`, `our`
-and `state` declarations and sub signature parameters, and have no fix.
+and `state` declarations, sub signature parameters and the variable of
+`try { } catch ($e) { }`, and have no fix. A prototype such as `($$)` or
+`($_)` declares nothing.
 `$x`, `@x` and `%x` are different variables, `local` is not a declaration,
 and code in a string `eval` is not seen. Scopes are blocks, the file, and
 each `if`/`while`/`for` statement for the variables declared in its
@@ -1124,6 +1130,18 @@ everyone formats the same way:
     precious lint --all     # check every file
     precious tidy --all     # reformat every file in place
     precious lint --staged  # check only what you are about to commit
+
+If you installed the develop prerequisites into `local/` as above, precious
+needs `local/bin` on `PATH` (for perltidy and perlcritic) and `local/lib/perl5`
+on `PERL5LIB` (for the modules they load). From the repository root:
+
+    export PATH=$PWD/local/bin:$PATH
+    export PERL5LIB=$PWD/local/lib/perl5${PERL5LIB:+:$PERL5LIB}
+    precious lint --all
+
+Keep any existing `PERL5LIB` at the end, as above, rather than overwriting it:
+otherwise modules installed elsewhere (for example in `~/perl5`) become
+invisible.
 
 `t/corpus/` is left alone: its fixtures are compared byte for byte by the
 tests. Run the test suite from the repository root:

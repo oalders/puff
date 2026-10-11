@@ -62,6 +62,43 @@ like( dies { Puff::Config->load( path => 'missing.toml', cli => {} ) }, qr/not f
 $tmp->child('broken.toml')->spew_utf8("select = [\n");
 like( dies { Puff::Config->load( path => 'broken.toml', cli => {} ) }, qr/Invalid config file/, 'invalid toml dies' );
 
+# An empty selector would be a prefix of every code, meaning ALL.
+for my $key (qw( select extend-select ignore )) {
+    $tmp->child('empty.toml')->spew_utf8(qq{$key = ["S", " "]\n});
+    like(
+        dies { Puff::Config->load( path => 'empty.toml', cli => {} ) },
+        qr/\AKey '$key' in config file '.*empty\.toml' has an empty rule selector\n/, "empty $key entry dies"
+    );
+}
+
+# Whitespace around a selector is dropped, as on the command line.
+for my $key (qw( select extend-select ignore )) {
+    $tmp->child('spaced.toml')->spew_utf8(qq{$key = [" B006 ", "\\tS001\\n"]\n});
+    my $method = $key =~ tr/-/_/r;
+    is(
+        Puff::Config->load( path => 'spaced.toml', cli => {} )->$method, [ 'B006', 'S001' ],
+        "$key entries are trimmed"
+    );
+}
+
+# An entry that is not a string is an error, not a warning.
+for my $entry ( 'true', '["B006"]', '{ code = "B006" }' ) {
+    $tmp->child('typed.toml')->spew_utf8(qq{select = [$entry]\n});
+    my $error;
+    is(
+        warnings {
+            $error = dies { Puff::Config->load( path => 'typed.toml', cli => {} ) }
+        },
+        [],
+        "[$entry]: no warning"
+    );
+    like( $error, qr/\AKey 'select' in config file '.*typed\.toml' must be an array of strings\n/, "[$entry] dies" );
+}
+
+# An empty list is not an empty entry: it is how to select no rules.
+$tmp->child('none.toml')->spew_utf8(qq{select = []\n});
+is( Puff::Config->load( path => 'none.toml', cli => {} )->select, [], 'select = [] selects nothing' );
+
 $tmp->child('strbool.toml')->spew_utf8(qq{unsafe-fixes = "false"\n});
 like(
     dies { Puff::Config->load( path => 'strbool.toml', cli => {} ) },
@@ -110,6 +147,19 @@ ok( $c->is_excluded('t/corpus'), 'prefix equals path' );
 ok( !$c->is_excluded('xt/corpus/x.pl'), 'prefix not mid-segment' );
 ok( !$c->is_excluded('t/corpusx/x.pl'), 'prefix at segment boundary' );
 ok( !$c->is_excluded('a/t/corpus/x.pl'), 'prefix anchored at start' );
+
+subtest 'non-ASCII exclude entries are UTF-8 bytes' => sub {
+    my $proj = $tmp->child('utf8');
+    $proj->mkpath;
+    $proj->child('.puff.toml')->spew_utf8(qq{exclude = ["caf\x{e9}", "/r\x{e9}s/top", "na\x{ef}ve/sub"]\n});
+    my $c = Puff::Config->load( path => $proj->child('.puff.toml')->stringify, cli => {} );
+    ok( ( grep { $_ eq "caf\xc3\xa9" } @{ $c->exclude } ), 'entry is encoded to UTF-8 bytes' );
+    ok( $c->is_excluded("a/caf\xc3\xa9/x.pm"), 'segment entry matches a byte-string path' );
+    ok( $c->is_excluded("r\xc3\xa9s/top/x.pm"), 'anchored entry matches from the root' );
+    ok( $c->is_excluded( 'top/x.pm', "r\xc3\xa9s" ), 'anchored entry matches via a byte-string base' );
+    ok( $c->is_excluded("na\xc3\xafve/sub/x.pm"), 'slashed entry matches a byte-string prefix' );
+    ok( !$c->is_excluded("a/caf\xe9/x.pm"), 'a Latin-1 path does not match the UTF-8 entry' );
+};
 
 subtest 'root is the config file directory' => sub {
     my $proj = $tmp->child('proj');
