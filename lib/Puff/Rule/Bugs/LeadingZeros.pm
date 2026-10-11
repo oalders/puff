@@ -40,7 +40,9 @@ sub explanation {
         or 9 in them do not compile and are not fixed.
 
         Option `strict` (default `false`): report leading zeros in
-        permission modes and bit masks too.
+        permission modes and bit masks too. That covers every mode position
+        listed above, `mask` values and `->chmod(...)` included, so a mode
+        that B010 has fixed is reported again under `strict`.
         END
 }
 
