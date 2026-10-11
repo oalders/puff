@@ -4,7 +4,7 @@ use v5.36;
 
 use Module::Pluggable::Object ();
 use Path::Tiny                qw( path );
-use Puff::Path                qw( display_lines display_name );
+use Puff::Path                qw( display_lines display_name display_text );
 
 my $CODE_RE  = qr/\A[A-Z]+[0-9]{3}\z/;
 my $RESERVED = 'P001';
@@ -107,7 +107,8 @@ sub instantiate ( $class, $classes, %args ) {
 
     my @codes = ( $RESERVED, map { $_->code } @$classes );
     for my $selector (@select) {
-        die "Unknown rule selector: $selector\n" unless grep { index( $_, $selector ) == 0 } @codes;
+        die 'Unknown rule selector: ' . display_text($selector) . "\n"
+            unless grep { index( $_, $selector ) == 0 } @codes;
     }
 
     my @rules;
@@ -119,7 +120,7 @@ sub instantiate ( $class, $classes, %args ) {
         my $given = $options->{$code} // {};
         my $known = $rule_class->options;
         for my $name ( sort keys %$given ) {
-            die "Unknown option '$name' for rule $code\n" unless exists $known->{$name};
+            die "Unknown option '" . display_text($name) . "' for rule $code\n" unless exists $known->{$name};
         }
         push @rules, $rule_class->new( options => $given );
     }

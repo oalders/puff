@@ -167,7 +167,11 @@ which ignores it. C<--show-files> prints the
 files that would be checked, one per line, and checks nothing: they are
 plain paths and C<--statistics> does not apply, whatever C<--output-format>
 says. File names that are not valid UTF-8 are shown with C<\xHH>
-escapes for the invalid bytes (see L<Puff::Path>). While checking, a spinner and a C<Checking N/M files> counter are
+escapes for the invalid bytes (see L<Puff::Path>). File names, messages
+and errors in text output are escaped too: control characters as C<\xHH>
+and bidi and other format characters as C<\x{HHHH}>. A C<--diff> is file
+content and is not escaped; a warning on STDERR says when one holds such a
+character (see L<Puff::Reporter::Text>). While checking, a spinner and a C<Checking N/M files> counter are
 shown on STDERR when it is a terminal and the run takes more than half a
 second (never with C<--output-format jsonl>, which streams one JSON object
 per line as each file is checked). See L<Puff::Runner> for exit codes.

@@ -833,4 +833,112 @@ for my $case (@NAME_CASES) {
     };
 }
 
+# A rule-paths rule (X900) whose message quotes each string literal, and
+# whose check dies, quoting the literal, when the literal starts with "die".
+my $QUOTE_RULE = <<'END';
+package Local::Rule::Quote;
+use v5.36;
+use parent 'Puff::Rule';
+sub code       {'X900'}
+sub summary    {'Quotes string literals'}
+sub applies_to {'PPI::Token::Quote'}
+sub check ( $self, $elem, $doc ) {
+    my $string = $elem->string;
+    die "cannot check $string\n" if $string =~ /\Adie/;
+    return $self->violation( $elem, message => "literal $string" );
+}
+1;
+END
+
+# A project using X900, with $source (characters) in hostile.pl.
+sub hostile_project ($source) {
+    my $dir = project();
+    $dir->child( 'rules', 'Quote.pm' )->touchpath->spew_utf8($QUOTE_RULE);
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["rules"]\nselect = ["X900"]\n});
+    $dir->child('hostile.pl')->spew_utf8($source);
+    return $dir;
+}
+
+subtest 'control and bidi characters in messages are escaped' => sub {
+    my $dir = hostile_project(qq{my \$x = "red\e[31m \x{202E}evil caf\x{e9}";\n});
+    my ( $out, undef, $exit ) = puff( $dir, 'check' );
+    is( $exit, 1, 'exit 1' );
+    $out = Encode::decode( 'UTF-8', $out );
+    like(
+        $out, qr{^hostile\.pl:1:9: X900 literal red\\x1B\[31m \\x\{202E\}evil caf\x{e9}$}m,
+        'ESC as \x1B, U+202E as \x{202E}, other non-ASCII as is'
+    );
+    unlike( $out, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
+
+    ( $out, undef, $exit ) = puff_raw( $dir, 'check', '--output-format', 'json' );
+    is(
+        JSON::PP->new->utf8->decode($out)->[0]{message}, "literal red\e[31m \x{202E}evil caf\x{e9}",
+        'JSON message as is'
+    );
+};
+
+subtest 'an engine error is escaped' => sub {
+    my $dir = hostile_project(qq{my \$x = "die\e[2J\x{202E}";\n});
+    my ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'exit 2' );
+    like( $err, qr{^hostile\.pl: error: .*cannot check die\\x1B\[2J\\x\{202E\}}m, 'escaped on STDERR' );
+    unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
+};
+
+subtest 'a file name with U+202E is escaped' => sub {
+    my $dir  = project();
+    my $name = Encode::encode_utf8("a\x{202E}lp.b.pl");
+    spew_named( $dir, $name, corpus('S001/basic.pl')->slurp_raw );
+    my ( $out, undef, $exit ) = puff( $dir, 'check', '--select', 'S001' );
+    is( $exit, 1, 'exit 1' );
+    $out = Encode::decode( 'UTF-8', $out );
+    like( $out, qr{^a\\x\{202E\}lp\.b\.pl:\d+:\d+: S001 }m, 'shown as \x{202E}' );
+    unlike( $out, qr/\x{202E}/, 'no raw U+202E' );
+
+    ( $out, undef, $exit ) = puff_raw( $dir, 'check', '--select', 'S001', '--output-format', 'json' );
+    is( JSON::PP->new->decode($out)->[0]{file}, 'a\x{202E}lp.b.pl', 'JSON file field matches the text output' );
+};
+
+subtest 'control characters in config keys are escaped' => sub {
+    my $dir = project();
+    $dir->child('.puff.toml')->spew_utf8(qq{"x\\u001b[2J\\u202e" = 1\n});
+    my ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'unknown key exits 2' );
+    like( $err, qr{^Unknown key 'x\\x1B\[2J\\x\{202E\}' in config file }m, 'key escaped' );
+    unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{select = ["\\u001b[2J"]\n});
+    ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'unknown selector exits 2' );
+    like( $err, qr{^Unknown rule selector: \\x1B\[2J$}m, 'selector escaped' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{[rules.S001]\n"\\u001b[2J" = 1\n});
+    ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'unknown option exits 2' );
+    like( $err, qr{^Unknown option '\\x1B\[2J' for rule S001$}m, 'option name escaped' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{select = ["S"]\n\x{202E}\n});
+    ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'TOML error exits 2' );
+    like( $err, qr{^Invalid config file '.*'}m, 'TOML error reported' );
+    unlike( $err, qr/\x{202E}/, 'no raw U+202E in the TOML error' );
+};
+
+subtest '--diff keeps control characters but warns' => sub {
+    my $dir = project();
+    $dir->child('rules')->mkpath;
+    $root->child( 't', 'lib-rules', 'NoFixme.pm' )->copy( $dir->child( 'rules', 'NoFixme.pm' ) );
+    $dir->child('.puff.toml')->spew_utf8(qq{rule-paths = ["rules"]\nselect = ["X001"]\n});
+    $dir->child('esc.pl')->spew_utf8(qq{# FIXME \e[31mred \x{202E}evil\n});
+    $dir->child('plain.pl')->spew_utf8(qq{# FIXME plain\n});
+    my ( $out, $err, $exit ) = puff( $dir, 'check', '--diff' );
+    is( $exit, 1, 'exit 1' );
+    like(
+        $out, qr{^\+# TODO \e\[31mred \xE2\x80\xAEevil$}m,
+        'the diff keeps ESC and U+202E byte for byte'
+    );
+    like( $err, qr{^esc\.pl: warning: diff contains control or bidi characters$}m, 'warning for esc.pl' );
+    unlike( $err, qr{plain\.pl: warning}, 'no warning for a plain diff' );
+};
+
 done_testing;

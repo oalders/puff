@@ -3,7 +3,7 @@ package Puff::Runner;
 use v5.36;
 
 use Path::Tiny   qw( path );
-use Puff::Path   qw( display_name );
+use Puff::Path   qw( display_name display_text );
 use Puff::Source ();
 use Text::Diff   qw( diff );
 
@@ -110,8 +110,10 @@ sub _has_perl_shebang ($file) {
 }
 
 # $file is the raw path, used for reading and writing; results carry its
-# display_name. Read and write errors are built from the raw path and $!, so
-# they are decoded the same way.
+# display_name. Every error is escaped here, once, so reporters print it as
+# it is: read and write errors are built from the raw path and $!, so they
+# are decoded the same way; engine errors are characters (a rule's die
+# message can quote the source) and go through display_text.
 sub _process ( $self, $file ) {
     my $name = display_name($file);
     my %out  = ( file => $name, violations => [], fixed_count => 0 );
@@ -124,11 +126,11 @@ sub _process ( $self, $file ) {
 
     my $result = eval { $self->{engine}->process_source( $src, file => $name ) };
     if ( !$result ) {
-        $out{error} = ( $@ || 'engine failed' ) =~ s/\s+\z//r;
+        $out{error} = display_text( ( $@ || 'engine failed' ) =~ s/\s+\z//r );
         return \%out;
     }
     $out{violations}    = $result->{violations};
-    $out{error}         = defined $result->{error} ? $result->{error} =~ s/\s+\z//r : undef;
+    $out{error}         = defined $result->{error} ? display_text( $result->{error} =~ s/\s+\z//r ) : undef;
     $out{fixes_skipped} = $result->{fixes_skipped};
 
     my $new = $result->{new_text};
@@ -212,7 +214,11 @@ File names in the results (each entry's C<file>, each violation's
 C<file>, the diff headers and paths inside error messages) are display
 names from L<Puff::Path/display_name>: character strings for output, with
 C<\xHH> escapes for bytes that are not valid UTF-8 and for control
-characters. They are not paths to open. The files themselves are read and
+characters, and C<\x{HHHH}> for bidi and other format characters. They
+are not paths to open. Each C<error> is escaped the same way as a whole,
+so it can be printed as it is (and must not be escaped again).
+Violation messages and C<diff> bodies are not escaped: the text reporter
+escapes messages, and a diff is file content. The files themselves are read and
 written by their original byte paths, and C<files> returns those raw paths.
 
 The exit code is 2 if any file has an error, else 1 if violations remain or
