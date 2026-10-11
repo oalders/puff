@@ -48,12 +48,15 @@ sub explanation {
         with `\Q` or `\c`, `print $a, "\n"` where the newline is a separate
         argument, a last argument that is an expression (`"a\n" x 3`,
         `$ok ? "y\n" : "n\n"`), `CORE::print`, method calls such as
-        `$fh->print(...)` and `print =>`. Nor is a string whose `\n`
-        follows a single unescaped `$`: in `"a$\n"` the `$\` is the
-        variable, so the string does not end in a newline. The same goes
-        for `"$\$\n"`, which is two `$\` and an `n`. `"a\$\n"`, `"a@\n"`,
-        `"$$\n"` and `"$$$\n"` do end in one, and are reported: perl reads
-        two or more `$` as `$$`, the process ID, dereferenced by the rest.
+        `$fh->print(...)` and `print =>`. Nor is a string where it is not
+        clear that the `\n` is a newline: in `"a$\n"` and `"a$ \n"` the
+        `$\` is the variable, followed by an `n`. So a string is skipped
+        if, before its final `\n`, it has `$\`, `@$`, `@\`, or a `$` or `@`
+        followed by white space; if an odd run of backslashes comes just
+        before the `\n`; or if a `$` or `@` comes just before it, except
+        `$$` or `$@` after a character other than `$`, `@` or `\`. So
+        `"pid $$\n"` and `"$@\n"` are reported, but `"a\$\n"`, `"a@\n"`
+        and `"$$$\n"` are not, though some of them do end in a newline.
         A `qq` whose delimiter is a letter, digit or `_`
         (`qq n a\nn`) is skipped. `use if ..., feature => 'say'` is not
         recognised, so code that enables `say` that way is not checked.
@@ -68,14 +71,17 @@ sub explanation {
         has a symbolic `${...}` or `*{...}` that is not one of two shapes
         known to be safe. One is a scalar variable, with optional
         subscripts that have no backslash or ORS name in them (`${$ref}`,
-        `${ $self->{x} }`, `${ $h{"k$n"} }`). The other is strings and
-        scalar variables joined with `.`, with no backslash, whose text ends
-        in a literal `::name` other than `ORS` or `OUTPUT_RECORD_SEPARATOR`
-        (`*{"${class}::foo"}`). Anything else, such as `${"\\"}`,
-        `${ chr(92) }` or `${ "main::" . $name }`, has no fix. Not seen: a
-        `$\` set in another file or module, a variable holding the name
-        (`${$name}`, `$$name`), stash access (`$::{"\\"}`), and a `$\` set
-        in a string `eval`.
+        `${ $self->{x} }`), when strict refs is certainly on, so the
+        variable must hold a reference: a top-level `use strict` (bare or
+        naming `refs`) or `use v5.12` or later comes first, and the file
+        has no `no strict` and no `use VERSION` below 5.12. Without that,
+        `${$name}` and `$$name` may name `$\`, so the fix is withheld. The
+        other is strings and scalar variables joined with `.`, with no
+        backslash, whose text ends in a literal `::name` other than `ORS`
+        or `OUTPUT_RECORD_SEPARATOR` (`*{"${class}::foo"}`). Anything else,
+        such as `${"\\"}`, `${ chr(92) }` or `${ "main::" . $name }`, has
+        no fix. Not seen: a `$\` set in another file or module, stash
+        access (`$::{"\\"}`), and a `$\` set in a string `eval`.
 
         Also, `say` passes its newline through `$\`, so a tied handle whose
         `PRINT` ignores `$\` loses the newline. This is a known caveat of
@@ -126,16 +132,20 @@ sub _last_string ($word) {
     return $quote;
 }
 
-# Whether a string's source ends in the escape `\n`. It is read from the
-# left as perl does: a backslash escapes the next character, except that a
-# single `$` takes the backslash after it as the variable `$\`, so in
-# `"a$\n"` and `"$\$\n"` the last `\` belongs to `$\`. Two or more `$` are
-# `$$`, the process ID, dereferenced by the rest, so `"$$\n"` ends in a
-# newline. The scan is linear, however long the runs of `$` and `\`.
+# Whether a string's source clearly ends in the escape `\n`. Rather than
+# model how perl reads `$`, `@` and `\`, anything unclear counts as no:
+# before the `\n`, a `$\`, `@$`, `@\`, or a `$` or `@` followed by white
+# space (perl reads `"a$ \n"` as `$\` and `n`); an odd run of backslashes
+# just before it; or a `$` or `@` just before it, except `$$` or `$@` after
+# a character that is not `$`, `@` or `\`. Each check is linear.
 sub _ends_in_newline ($string) {
-    my $last = q{};
-    $last = $1 while $string =~ /\G(\\.|\$\\|\$+|[^\\\$]+)/gcs;
-    return $last eq '\\n' && ( pos($string) // 0 ) == length $string;
+    return 0 unless length $string >= 2 && substr( $string, -2 ) eq '\\n';
+    my $body = substr $string, 0, -2;
+    return 0 if $body =~ /[\$\@]\s|\$\\|\@[\$\\]/;
+    my ($slashes) = reverse($body) =~ /\A(\\*)/;
+    return 0 if length($slashes) % 2;
+    return 1 unless $body =~ /[\$\@]\z/;
+    return $body =~ /(?:\A|[^\$\@\\])\$[\$\@]\z/ ? 1 : 0;
 }
 
 sub _is_filehandle ($elem) {
@@ -224,7 +234,8 @@ sub _empty_import ($include) {
 # Whether the output record separator may be set, so that print and say
 # end their output differently.
 sub _sets_ors ($doc) {
-    my $first = $doc->first_token;
+    my $first     = $doc->first_token;
+    my $strict_at = _strict_refs_at($doc);
     return 1 if $first && $first->isa('PPI::Token::Comment') && $first->content =~ /\A#!.*\s-\S*l/;
     return 1 if $doc->find_first(
         sub {
@@ -245,10 +256,14 @@ sub _sets_ors ($doc) {
 
             # `$ \` with a space parses as two casts. A symbolic `${"\\"}` or
             # `*{"main::ORS"}` counts, as does any name not known to be safe.
+            # Without strict refs, `$$name` or `${$name}` may hold the name.
             if ( $elem->isa('PPI::Token::Cast') && $elem->content =~ /\A[\$*]\z/ ) {
-                my $next = $elem->snext_sibling or return 0;
+                my $next   = $elem->snext_sibling;
+                my $strict = $strict_at && _before( $strict_at, _position($elem) );
+                return 1 unless $next;
                 return 1 if $elem->content eq '$' && $next->isa('PPI::Token::Cast') && $next->content eq '\\';
-                return 1 if $next->isa('PPI::Structure::Block') && _names_ors($next);
+                return _names_ors( $next, $strict ) if $next->isa('PPI::Structure::Block');
+                return 1 unless $strict;
             }
             return 1 if $elem->isa('PPI::Token::Word') && $elem->content =~ /(?:\A|::|->)output_record_separator\z/;
             return 0;
@@ -258,15 +273,53 @@ sub _sets_ors ($doc) {
 }
 
 # Whether a deref block's name may be the output record separator. Only
-# two shapes are known not to be: a scalar variable with optional
-# subscripts (`${$ref}`, `${ $self->{x} }`, `${ $h{"k$n"} }`), and strings
-# and scalar variables joined with `.` whose text ends in a literal
-# `::name` other than ORS (`*{"${class}::foo"}`). Anything else counts.
-sub _names_ors ($block) {
+# two shapes are known not to be: under strict refs, a scalar variable with
+# optional subscripts (`${$ref}`, `${ $self->{x} }`), which must then hold
+# a reference; and strings and scalar variables joined with `.` whose text
+# ends in a literal `::name` other than ORS (`*{"${class}::foo"}`).
+# Anything else counts.
+sub _names_ors ( $block, $strict ) {
     my @parts = _block_parts($block) or return 1;
-    return 0 if _is_variable(@parts);
+    return 0 if $strict && _is_variable(@parts);
     return 0 if _is_named(@parts);
     return 1;
+}
+
+my $STRICT_MIN = version->parse('v5.12.0');
+
+# Where strict refs is certainly on for the rest of the file: the first
+# top-level `use strict` (bare, or naming `refs`) or `use v5.12` or later.
+# Undef if the file has any `no strict`, or a `use VERSION` below 5.12,
+# which may turn implicit strict off.
+sub _strict_refs_at ($doc) {
+    my $at;
+    for my $include ( @{ $doc->find('PPI::Statement::Include') || [] } ) {
+        my $module = $include->module // q{};
+        return if $include->type eq 'no' && $module eq 'strict';
+        next unless $include->type eq 'use';
+        my $on;
+        if ( my $v = $include->version ) {
+            my $parsed = eval { version->parse($v) } or return;
+            return if $parsed < $STRICT_MIN;
+            $on = 1;
+        }
+        elsif ( $module eq 'strict' ) {
+            my @names = _strings($include);
+            $on = !@names || grep { $_ eq 'refs' } @names;
+            $on = 0 if !@names && _has_args($include);
+        }
+        next unless $on && refaddr( $include->parent ) == refaddr($doc);
+        $at //= _position($include);
+    }
+    return $at;
+}
+
+# Whether a use/no statement has anything after the module name.
+sub _has_args ($include) {
+    my @parts = $include->schildren;
+    splice @parts, 0, 2;
+    pop @parts if @parts && $parts[-1]->isa('PPI::Token::Structure') && $parts[-1]->content eq ';';
+    return scalar @parts;
 }
 
 # The significant parts of a block holding a single statement.
@@ -383,13 +436,16 @@ C<CORE::print>, method calls such as C<< $fh->print >>, and C<< print => >>.
 
 =item *
 
-A string whose final C<\n> follows a single unescaped C<$> is not
-reported. In C<"a$\n"> the C<$\> is a variable followed by an C<n>, not a
-C<$> and a newline, and dropping the C<\n> would not compile. C<"$\$\n">
-is two C<$\> and an C<n>, and is not reported either. C<"a\$\n">
-has an escaped dollar and is reported, as is C<"a@\n">. So are C<"$$\n">
-and C<"$$$$\n">: perl reads two or more C<$> as C<$$>, the process ID,
-dereferenced by the rest, and the C<\n> is a newline.
+A string is not reported unless its final C<\n> is clearly a newline. In
+C<"a$\n"> and C<"a$ \n"> the C<$\> is a variable followed by an C<n>, and
+dropping the C<\n> would not compile. Rather than model how perl reads
+C<$>, C<@> and C<\>, the rule skips a string that, before its final
+C<\n>, has C<$\>, C<@$>, C<@\>, or a C<$> or C<@> followed by white space;
+one with an odd run of backslashes just before the C<\n>; and one with a
+C<$> or C<@> just before it, except C<$$> or C<$@> after a character other
+than C<$>, C<@> or C<\>. So C<"pid $$\n"> and C<"$@\n"> are reported, but
+C<"a\$\n">, C<"a@\n"> and C<"$$$\n"> are not, though some of them do end
+in a newline.
 
 =item *
 
@@ -417,7 +473,11 @@ shapes known to be safe:
 =item *
 
 a scalar variable, with optional subscripts that have no backslash or ORS
-name in them: C<${$ref}>, C<${ $self-E<gt>{x} }>, C<${ $h{"k$n"} }>;
+name in them: C<${$ref}>, C<${ $self-E<gt>{x} }>, but only when strict refs
+is certainly on, so the variable must hold a reference. That means a
+top-level C<use strict> (bare or naming C<refs>) or C<use v5.12> or later
+comes first, and the file has no C<no strict> and no C<use VERSION> below
+5.12. Otherwise C<${$name}> and C<$$name> may name C<$\>, and have no fix;
 
 =item *
 
@@ -431,9 +491,8 @@ joined first, so C<"main::O" . "RS"> names C<ORS>.
 Anything else, such as C<${"\\"}>, C<${ chr(92) }>, a C<qw> or heredoc,
 or C<${ "main::" . $name }>, has no fix.
 
-Not seen: a C<$\> set in another file or module, a variable holding the
-name (C<${$name}>, C<$$name>), stash access (C<$main::{ORS}>,
-C<$::{"\\"}>), and a C<$\> set in a string C<eval>.
+Not seen: a C<$\> set in another file or module, stash access
+(C<$main::{ORS}>, C<$::{"\\"}>), and a C<$\> set in a string C<eval>.
 
 =item *
 

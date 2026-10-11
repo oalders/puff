@@ -20,12 +20,13 @@ sub lines ($text) {
 
 # Long runs of `$` and `\` before the `\n` are checked in linear time (a
 # run of 100k `$` followed by `\$\n` once took seconds). The tails are on
-# lines 2 to 6.
+# lines 2 to 6. Only an even run of backslashes before the `\n` is reported.
 my %reported = (
-    '$'   => [ 2, 3, 4, 5 ],
-    '\\'  => [ 2, 4, 5 ],
-    '$\\' => [ 2, 4, 5 ],
-    '\\$' => [ 2, 4, 5 ],
+    '$'   => [],
+    '\\'  => [2],
+    '$\\' => [],
+    '\\$' => [],
+    'a\\' => [6],
 );
 for my $run ( sort keys %reported ) {
     my $long  = $run x ( 100_000 / length $run );
@@ -38,7 +39,7 @@ for my $run ( sort keys %reported ) {
 
 my $dollars = '$' x 100_000;
 my $escaped = '\\$' x 50_000;
-is( lines(qq{use v5.36;\nprint "$dollars\\\$\\n";\n}), [2], 'a long run of $, then \\$\\n, is reported' );
+is( lines(qq{use v5.36;\nprint "${dollars}a\$\$\\n";\n}), [2], 'a long run of $, then a$$\\n, is reported' );
 is( lines(qq{use v5.36;\nprint "$escaped\$\\n";\n}), [], 'a long run of \\$, then $\\n, is not' );
 
 done_testing;
