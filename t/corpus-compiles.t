@@ -30,6 +30,7 @@ my %SKIP = (
     'M002/not-reported.pl'     => 'calls has after `use Moose ()`, which imports nothing',
     'M002/reported.pl'         => 'needs Moo::Role',
     'M003/not-reported.pl'     => 'needs Moo::Role',
+    'M003/reported.pl'         => 'needs Class::MOP: Moo is loaded after Moose',
     'M005/not-reported.pl'     => 'needs namespace::clean',
     'S001/already-paren-qw.pl' => 'needs Math::Random::Secure',
     'S001/already-paren.pl'    => 'needs Math::Random::Secure',
