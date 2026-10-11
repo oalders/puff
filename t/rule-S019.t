@@ -125,6 +125,27 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
     cmp_ok( $calls{location}, '<', 10 * 50, 'locations: linear in the fixes' );
 }
 
+# Each bare chomp walked its arguments to the end of the statement, so a
+# statement with many of them was quadratic: 1,500 took 9 seconds. Sibling
+# lookups are counted, as timings would be flaky.
+{
+    no warnings 'redefine';
+    my $calls = 0;
+    my $orig  = PPI::Element->can('snext_sibling');
+    local *PPI::Element::snext_sibling = sub { $calls++; goto &$orig };
+    my $n = 1_000;
+    for my $list ( 'chomp, ' x $n, join( q{}, map {"a$_ => chomp, "} 1 .. $n ), 'chomp $y, ' . 'chomp, ' x $n ) {
+        my $text    = "my \$x = shift;\n/\$x/;\nmy \@a = ($list);\n";
+        my $doc     = PPI::Document->new( \$text );
+        my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
+        $calls = 0;
+        is( scalar( () = $class->new->check( $regex, $doc ) ), 1, 'many bare chomps: $x is reported' );
+        cmp_ok( $calls, '<', 20 * $n, 'sibling lookups: linear in the chomps' );
+    }
+}
+is( violations("my \$x = qr/a/;\nmy \@a = (chomp, \$x);\n/\$x/;\n"), [], 'a bare chomp does not change the next item' );
+is( scalar @{ violations("my \$x = qr/a/;\nchomp \$y, \$x;\n/\$x/;\n") }, 1, 'chomp changes all its arguments' );
+
 # Long or hostile regexes are scanned in linear time. Each took over 8
 # seconds before; the bounds are over 10 times the time taken now.
 {

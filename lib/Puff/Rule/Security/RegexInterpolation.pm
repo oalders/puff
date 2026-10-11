@@ -55,11 +55,13 @@ sub explanation {
           my $v` loop variables and sub signature parameters. So an inner
           `my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) =
           @_` hides an outer `my $x = qr/.../`. For a global with no
-          declaration, a qualifying assignment `$x = qr/.../;` in an
+          declaration, a qualifying assignment `$x = qr/.../;` (or
+          `local $x = qr/.../;`) in an
           earlier statement of the same or an enclosing block (or the
           file) is needed instead. Either way the file must write the name
           nowhere else: any other assignment (`=`, `.=`, `||=`, `//=` and
-          the like, in any scope), `local $x`, a `foreach` loop over it or
+          the like, in any scope), `local $x` other than a qualifying
+          `local $x = qr/.../;`, a `foreach` loop over it or
           over a list holding it, a reference `\$x`, `$x++` or `--$x`,
           `chomp`, `chop`, `open`, `opendir`, `read`, `recv` or `sysread`
           changing it (as a direct argument of the builtin, not of a method
@@ -81,7 +83,9 @@ sub explanation {
         - arrays (`@x`, `@{ ... }`), and a scalar in the code of
           `@{[ ... ]}` that is inside the argument of `quotemeta` or a
           `\Q...\E` there. In `@{[ $y . quotemeta $x ]}`, `$y` is
-          reported.
+          reported. The code is scanned as text, not parsed: a bracket,
+          `quotemeta` or `\Q` inside a string literal in it is taken as
+          code, so `@{[ '\Q' . $x ]}` hides `$x`.
 
         A pattern held in a variable and matched directly (`$s =~ $x`) or
         a string passed to `split` is not reported.
@@ -607,30 +611,36 @@ sub _is_write ( $first, $last ) {
 # %CHANGES_ARGS called as a function, not a method: its direct arguments
 # among the leading ones it changes, as in `chomp $x`, `chomp($x, $y)`,
 # `open my $fh` or `read $fh, $x, 10`. The arguments are walked forwards
-# once, stopping at a list operator such as another builtin, which takes
-# the rest of the list itself, so the cost is linear in the document. A
-# scalar inside a nested call (`chomp(foo $x)`) is not a direct argument.
+# lazily, stopping at the end of the list or at a list operator such as
+# another of these builtins, which takes the rest of the list itself, so
+# the cost is linear in the document even for `(chomp, chomp, ...)`. A
+# comma right after the builtin means it has no arguments. A scalar inside
+# a nested call (`chomp(foo $x)`) is not a direct argument.
 sub _builtin_args ($word) {
     my $changes = $CHANGES_ARGS{ $word->content } or return;
     return if _is_token( $word->sprevious_sibling, 'Operator', '->' );
-    my @args = $word->snext_sibling;
-    if ( $args[0] && $args[0]->isa('PPI::Structure::List') ) {
-        @args = $args[0]->schildren;
-        @args = $args[0]->schildren if @args == 1 && $args[0]->isa('PPI::Statement');
+    my $comma = qr/\A(?:,|=>)\z/;
+    my $el    = $word->snext_sibling;
+    my ( $inline, @args ) = (1);
+    if ( $el && $el->isa('PPI::Structure::List') ) {
+        @args   = $el->schildren;
+        @args   = $args[0]->schildren if @args == 1 && $args[0]->isa('PPI::Statement');
+        $el     = shift @args;
+        $inline = 0;
     }
-    else {
-        push @args, $args[-1]->snext_sibling while $args[-1];
-        pop @args;
+    elsif ( _is_token( $el, 'Operator', $comma ) ) {
+        return;
     }
     my ( $index, $start, @changed ) = ( 0, 1 );
-    for my $el (@args) {
-        if ( _is_token( $el, 'Operator', qr/\A(?:,|=>)\z/ ) ) {
+    while ($el) {
+        if ( _is_token( $el, 'Operator', $comma ) ) {
             last if ++$index >= $changes;
             $start = 1;
             next;
         }
         last if $el->isa('PPI::Token::Structure') || _is_token( $el, 'Operator', qr/\A(?:or|and|xor|not)\z/ );
         if ( $el->isa('PPI::Token::Word') ) {
+            last if $CHANGES_ARGS{ $el->content };
             next if $start && $el->content =~ /\A(?:my|our|state|local)\z/;
             my $next = $el->snext_sibling;
 
@@ -642,6 +652,9 @@ sub _builtin_args ($word) {
         }
         push @changed, $el if $start && _scalar($el);
         $start = 0;
+    }
+    continue {
+        $el = $inline ? $el->snext_sibling : shift @args;
     }
     return @changed;
 }
@@ -726,12 +739,14 @@ C<our> and C<state> (list forms included), a C<for my $v> loop variable
 (owned by its loop) and a sub signature parameter (owned by the sub's body)
 all count. An inner C<my $x = shift>, C<for my $x (...)>, C<sub f ($x)> or
 C<my ($x) = @_> therefore hides an outer C<my $x = qr/.../>. A global with
-no declaration needs a qualifying C<$x = qr/.../;> statement before the
+no declaration needs a qualifying C<$x = qr/.../;> (or
+C<local $x = qr/.../;>) statement before the
 regex in the same or an enclosing block (or the file).
 
 In both cases the name must have no other write anywhere in the file: any
 assignment operator after it (C<=>, C<.=>, C<||=>, C<//=> and so on, alone
-or in a list on the left), C<local $x>, a C<foreach> loop variable of that
+or in a list on the left), C<local $x> other than a qualifying C<local $x = qr/.../;>, a
+C<foreach> loop variable of that
 name or a C<foreach> list holding it, a reference C<\$x>, C<$x++>,
 C<$x-->, C<++$x> or C<--$x>, C<chomp> or C<chop> of it, C<$x> as the
 handle of C<open> or C<opendir> or the buffer of C<read>, C<recv> or
@@ -758,7 +773,9 @@ scalar in the code of C<@{[ ... ]}> that is inside the argument of
 C<quotemeta> (only the variable right after C<quotemeta> without
 parentheses) or inside a C<\Q...\E> there. The other scalars in
 C<@{[ ... ]}>, such as C<$y> in C<@{[ $y . quotemeta $x ]}>, are reported,
-with no fix, as the code is Perl rather than pattern text.
+with no fix, as the code is Perl rather than pattern text. The code is
+scanned as text, not parsed: a bracket, C<quotemeta> or C<\Q> inside a
+string literal in it is taken as code, so C<@{[ '\Q' . $x ]}> hides C<$x>.
 
 =back
 
