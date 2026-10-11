@@ -38,3 +38,5 @@ system "ls 2>&1 | wc"; # expect: S018
 system "ls\n 2>&1"; # expect: S018
 system "ls 2>&1x"; # expect: S018
 system "ls>2>&1"; # expect: S018
+system "ls 2>&1"; # expect: S018
+system "ls 2>&1 "; # expect: S018

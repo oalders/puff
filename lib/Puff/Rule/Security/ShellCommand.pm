@@ -73,7 +73,9 @@ sub check ( $self, $elem, $doc ) {
     if ( $name eq 'open' && is_builtin_call($elem) ) {
         my $args = call_args($elem);
         return unless @$args == 3 && @{ $args->[1] } == 1 && is_constant_string( $args->[1][0] );
-        return unless $args->[1][0]->string =~ /\A\s*(?:-\||\|-)\s*\z/;
+
+        # /a: perl takes only ASCII whitespace around an open mode
+        return unless $args->[1][0]->string =~ /\A\s*(?:-\||\|-)\s*\z/a;
         return unless _is_shell_string( $args->[2] );
         return $self->violation(
             $elem,

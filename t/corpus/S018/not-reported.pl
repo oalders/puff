@@ -55,3 +55,7 @@ system("ls \c[");
 system("ls \N{SEMICOLON} date");
 system("ls \Q;\E");
 $out = `ls \x7c wc`;
+system("exec make");
+system(" exec make");
+system(". env.sh");
+system("é=1 ls");

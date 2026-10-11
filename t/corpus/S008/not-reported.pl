@@ -16,3 +16,4 @@ open( $fh, '-|', 'git log' ) or die;
 $obj->system($cmd);
 $cmd{system} = 1;
 sub exec { 1 }
+open( $fh, " -|", $cmd ) or die;

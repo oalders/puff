@@ -139,15 +139,16 @@ sub _unescape ($text) {
 }
 
 # A short description of why Perl runs this command through /bin/sh, or
-# undef when it runs the program directly.
+# undef when it runs the program directly. The /a matches doio.c, whose
+# isSPACE and isWORDCHAR are ASCII only: perl and sh do not split on U+00A0.
 sub _shell_syntax ($string) {
-    ( my $cmd = $string )            =~ s/\A\s+//;
-    return '. command' if $cmd       =~ /\A\.\s/;
-    return 'exec command' if $cmd    =~ /\Aexec\s/;
-    return 'VAR= assignment' if $cmd =~ /\A\w*=/;
+    ( my $cmd = $string )            =~ s/\A\s+//a;
+    return '. command' if $cmd       =~ /\A\.\s/a;
+    return 'exec command' if $cmd    =~ /\Aexec\s/a;
+    return 'VAR= assignment' if $cmd =~ /\A\w*=/a;
 
     $cmd =~ s/\n\z//;
-    $cmd =~ s/(?<=\s)2>&1\s*\z//;    # Perl does the dup2 itself
+    $cmd =~ s/(?<=\s)2>&1\s*\z//a;    # Perl does the dup2 itself
     my %seen;
     my @meta = grep { !$seen{$_}++ } $cmd =~ /($PERL_SHELL_META)/g;
     return unless @meta;
