@@ -60,17 +60,23 @@ sub explanation {
           earlier statement of the same or an enclosing block (or the
           file) is needed instead. Either way the file must write the name
           nowhere else: any other assignment (`=`, `.=`, `||=`, `//=` and
-          the like, in any scope), `local $x` other than a qualifying
+          the like, in any scope, also in a nested list such as `($z,
+          ($x)) = ...`), `local $x` other than a qualifying
           `local $x = qr/.../;`, a `foreach` loop over it or
-          over a list holding it, a reference `\$x`, `$x++` or `--$x`,
-          `chomp`, `chop`, `open`, `opendir`, `read`, `recv` or `sysread`
-          changing it (as a direct argument of the builtin, not of a method
-          or a nested call), or `$x =~ s///` or `tr///` (also `($x) =~
-          s///`) means it is reported. A write to `$Pkg::x`,
+          over a list holding it (nested lists included), a reference
+          `\$x`, `$x++` or `--$x`, `chomp`, `chop`, `open`, `opendir`,
+          `read`, `recv`, `sysread` or `tie` changing it, or a 4-argument
+          `substr` (also as `CORE::chomp` and the like; any scalar in the
+          argument counts, as in `chomp($c ? $a : $x)`, `chomp(($x))` or
+          `chomp +($x)`, but not one in a method or a nested call, or
+          after an assignment operator, as in `chomp(my $y = $x)`), or
+          `$x =~ s///` or `tr///` (also `($x) =~ s///`) means it is
+          reported. A write to `$Pkg::x`,
           `$::x`, `${Pkg::x}` or `$Pkg'x` counts as a write to `$x`, and a
           write to `$x` counts for `$Pkg::x`. Writes through `@_`, the `$_`
-          of `map` or `grep`, a glob or a symbolic name (`${'main::x'}`,
-          `$::{x}`) are not seen. An assignment
+          of `map` or `grep`, a glob, a symbolic name (`${'main::x'}`,
+          `$::{x}`), a string `eval` or a regex code block (`(?{ ... })`,
+          `(??{ ... })`) are not seen. An assignment
           inside a condition (`if (my $x = qr/a/)`) is not seen, which errs
           towards reporting, and `$x = $opt{x} // qr/.../` is reported;
         - a plain scalar with an all-caps name (`$WS`, `$CRLF`,
@@ -191,7 +197,7 @@ sub _findings ( $elem, $doc ) {
     # The line and column of offset $at in the token, moved forward from one
     # variable to the next so that the token is scanned once.
     my ( $line, $column, $at ) = ( @$loc[ 0, 1 ], 0 );
-    my @found;
+    my ( %context, @found );
     for my $var ( _variables( $pattern, $mod{x} ) ) {
         next if $var->{short} =~ $REGEX_NAME;
 
@@ -199,7 +205,7 @@ sub _findings ( $elem, $doc ) {
         # them to be skipped, and a capture is usually a substring of the
         # string being matched.
         if ( defined $var->{name} && !$var->{subscripted} && !$var->{deref} ) {
-            next if $var->{short} =~ $CONSTANT_NAME || _holds_pattern( $elem, $doc, $var->{name} );
+            next if $var->{short} =~ $CONSTANT_NAME || _holds_pattern( $elem, $doc, $var->{name}, \%context );
         }
         my $offset = $section->{position} + $var->{start};
         my $skip   = substr $content, $at, $offset - $at;
@@ -430,17 +436,25 @@ my ( $cached_doc, $cached );
 # $name visible from $elem must be a qualifying `my $x = qr/.../;`. With no
 # visible declaration (a global), a qualifying assignment must be visible
 # instead: a statement before $elem in the same block, or in a block or
-# document enclosing it.
-sub _holds_pattern ( $elem, $doc, $name ) {
+# document enclosing it. $context caches, for $elem, its location and the
+# chain of elements enclosing it, so they are found once per regex rather
+# than once per variable.
+sub _holds_pattern ( $elem, $doc, $name, $context ) {
     my $data = _analysis($doc);
     return 0 if $data->{writes}{$name} || ( $name =~ /::(\w+)\z/ && $data->{writes}{$1} );
-    my $loc = $elem->location;
-    my @parents;
-    for ( my $p = $elem->parent ; $p ; $p = $p->parent ) { push @parents, $p }
-    my %enclosing = map { refaddr($_) => 1 } @parents;
+    unless ( $context->{parents} ) {
+        my @parents;
+        for ( my $p = $elem->parent ; $p ; $p = $p->parent ) { push @parents, $p }
+        %$context = (
+            loc       => $elem->location,
+            parents   => \@parents,
+            enclosing => { map { refaddr($_) => 1 } @parents },
+        );
+    }
+    my ( $loc, $parents, $enclosing ) = @$context{qw( loc parents enclosing )};
 
     if ( my $scopes = $data->{declarations}{"\$$name"} ) {
-        for my $p (@parents) {
+        for my $p (@$parents) {
             my $decls = $scopes->{ refaddr $p } or next;
 
             # The latest declaration before $elem, skipping one whose
@@ -448,7 +462,7 @@ sub _holds_pattern ( $elem, $doc, $name ) {
             # earlier $x. Only the statement holding $elem is skipped over.
             for ( my $i = _count_before( $decls, $loc ) - 1 ; $i >= 0 ; $i-- ) {
                 my $decl = $decls->[$i];
-                next if $decl->{statement} && $enclosing{ refaddr $decl->{statement} };
+                next if $decl->{statement} && $enclosing->{ refaddr $decl->{statement} };
                 return $data->{qualifying}{ refaddr $decl->{elem} } ? 1 : 0;
             }
         }
@@ -459,10 +473,10 @@ sub _holds_pattern ( $elem, $doc, $name ) {
     # siblings (they are keyed by their parent), so if the earliest holds
     # $elem, the others come after $elem.
     my $assigned = $data->{assigned}{$name} or return 0;
-    for my $p (@parents) {
+    for my $p (@$parents) {
         my $stmts = $assigned->{ refaddr $p } or next;
         my $first = $stmts->[0];
-        return 1 if !$enclosing{ refaddr $first->{elem} } && _before( $first->{at}, $loc );
+        return 1 if !$enclosing->{ refaddr $first->{elem} } && _before( $first->{at}, $loc );
     }
     return 0;
 }
@@ -500,7 +514,7 @@ sub _analysis ($doc) {
     $cached_doc = $doc;
     weaken($cached_doc);
     my %data = map { $_ => {} } qw( declarations assigned qualifying writes );
-    my %changed;
+    my ( %changed, %outer );
     for my $token ( $doc->tokens ) {
         for my $decl ( declarations($token) ) {
             push @{ $data{declarations}{ $decl->{symbol} }{ refaddr $decl->{scope} } },
@@ -512,7 +526,7 @@ sub _analysis ($doc) {
             push @{ $data{assigned}{$name}{ refaddr $stmt->parent } }, { elem => $stmt, at => $stmt->location };
             $data{qualifying}{ refaddr $token } = 1;
         }
-        elsif ( $changed{ refaddr $token } || _is_write( $token, $last ) ) {
+        elsif ( $changed{ refaddr $token } || _is_write( $token, $last, \%outer ) ) {
             $data{writes}{$name}++;
             $data{writes}{$1}++ if $name =~ /::(\w+)\z/;
         }
@@ -566,25 +580,38 @@ my $ASSIGN = qr{\A(?:\*\*|\|\||//|&&|<<|>>|[-+*/.x%&|^])?=\z};
 
 # Builtins that change their arguments, with how many leading arguments
 # they change: chomp and chop all, read the buffer after the handle (the
-# handle is counted too, which errs towards reporting).
-my %CHANGES_ARGS = ( chomp => ~0, chop => ~0, open => 1, opendir => 1, read => 2, recv => 2, sysread => 2 );
+# handle is counted too, which errs towards reporting), substr its first
+# argument when it has a replacement (see %MIN_ARGS). A `CORE::` prefix is
+# allowed.
+my %CHANGES_ARGS = (
+    chomp   => ~0,
+    chop    => ~0,
+    open    => 1,
+    opendir => 1,
+    read    => 2,
+    recv    => 2,
+    substr  => 1,
+    sysread => 2,
+    tie     => 1,
+);
+
+# Builtins that change their arguments only when given this many.
+my %MIN_ARGS = ( substr => 4 );
 
 # Whether the scalar from $first to $last (`$x`, or `${x}`) is written:
 # assigned with any assignment operator (alone or as an element of a list
-# on the left), incremented or decremented, localized, aliased by foreach,
-# referenced with `\`, or changed by s/// or tr/// (without /r), alone or
-# in parentheses. A builtin in %CHANGES_ARGS is handled by _builtin_args.
-sub _is_write ( $first, $last ) {
+# on the left, nested lists included), incremented or decremented,
+# localized, aliased by foreach, referenced with `\`, or changed by s/// or
+# tr/// (without /r), alone or in parentheses. A builtin in %CHANGES_ARGS is
+# handled by _builtin_args. $outer caches _outer_list.
+sub _is_write ( $first, $last, $outer ) {
     my $step = qr/\A(?:\+\+|--)\z/;
     return 1
         if _is_token( $first->sprevious_sibling, 'Operator', $step )
         || _is_token( $last->snext_sibling, 'Operator', $step );
-    my $target = $first;
-    my $prev   = $first->sprevious_sibling;
-    my $list   = $first->parent->parent;
-    if ( $list && $list->isa('PPI::Structure::List') && ( !$prev || _is_token( $prev, 'Operator', ',' ) ) ) {
-        $target = $list;                        # ($x, $y) = ..., local ($x), for ($x), \($x)
-        $prev   = $target->sprevious_sibling;
+    my $target = _outer_list( $first, $outer );
+    my $prev   = $target->sprevious_sibling;
+    if ( $target != $first ) {    # ($x, $y) = ..., local ($x), for ($x), \($x), (($x)) = ...
 
         # for my $v ($x)
         $prev = $prev->sprevious_sibling if $prev && $prev->isa('PPI::Token::Symbol');
@@ -607,56 +634,119 @@ sub _is_write ( $first, $last ) {
     return 0;
 }
 
+# The outermost list that $elem is an element of, through nested lists:
+# `($z, ($x))` for `$x`. $elem itself when it is not a list element. The
+# result for each list climbed is cached in $memo, so a list is climbed
+# once however many elements it holds.
+sub _outer_list ( $elem, $memo ) {
+    my ( $el, @climbed ) = ($elem);
+    while (1) {
+        if ( my $cached = $memo->{ refaddr $el } ) { $el = $cached; last }
+        my $prev = $el->sprevious_sibling;
+        last if $prev && !_is_token( $prev, 'Operator', ',' );
+        my $list = $el->parent && $el->parent->parent;
+        last unless $list && $list->isa('PPI::Structure::List');
+        push @climbed, $list;
+        $el = $list;
+    }
+    $memo->{ refaddr $_ } = $el for @climbed;
+    return $el;
+}
+
+# The elements of a list in parentheses: those of its one statement.
+sub _list_elements ($list) {
+    my @els = $list->schildren;
+    return @els == 1 && $els[0]->isa('PPI::Statement') ? $els[0]->schildren : @els;
+}
+
 # The scalars (their first token) that $word changes when it is a builtin in
-# %CHANGES_ARGS called as a function, not a method: its direct arguments
-# among the leading ones it changes, as in `chomp $x`, `chomp($x, $y)`,
-# `open my $fh` or `read $fh, $x, 10`. The arguments are walked forwards
-# lazily, stopping at the end of the list or at a list operator such as
-# another of these builtins, which takes the rest of the list itself, so
-# the cost is linear in the document even for `(chomp, chomp, ...)`. A
-# comma right after the builtin means it has no arguments. A scalar inside
-# a nested call (`chomp(foo $x)`) is not a direct argument.
+# %CHANGES_ARGS called as a function, not a method: every scalar in the
+# leading arguments it changes, as in `chomp $x`, `chomp($x, $y)`, `chomp($c
+# ? $a : $x)`, `open my $fh` or `read $fh, $x, 10`, up to an assignment
+# operator in the argument (`chomp(my $y = $x)` changes `$y`). A list in
+# parentheses in such an argument (`chomp(($x))`, `chomp +($x)`) is walked
+# too, unless it holds the arguments of a call. The arguments are walked
+# forwards lazily, stopping at the end of the list or at a list operator
+# such as another of these builtins, which takes the rest of the list (or of
+# the nested list) itself, so the cost is linear in the document even for
+# `(chomp, chomp, ...)`. A comma right after the builtin means it has no
+# arguments. A scalar inside a nested call (`chomp(foo $x)`) is not changed.
 sub _builtin_args ($word) {
-    my $changes = $CHANGES_ARGS{ $word->content } or return;
+    my $name    = $word->content =~ s/\ACORE:://r;
+    my $changes = $CHANGES_ARGS{$name} or return;
     return if _is_token( $word->sprevious_sibling, 'Operator', '->' );
     my $comma = qr/\A(?:,|=>)\z/;
     my $el    = $word->snext_sibling;
-    my ( $inline, @args ) = (1);
+
+    # The lists being walked, innermost last, and in the inline form the
+    # last sibling of $word walked. $top is the number of lists that are
+    # not nested.
+    my ( $cursor, $top, @lists ) = ( undef, 1 );
     if ( $el && $el->isa('PPI::Structure::List') ) {
-        @args   = $el->schildren;
-        @args   = $args[0]->schildren if @args == 1 && $args[0]->isa('PPI::Statement');
-        $el     = shift @args;
-        $inline = 0;
+        @lists = ( [ _list_elements($el) ] );
     }
     elsif ( _is_token( $el, 'Operator', $comma ) ) {
         return;
     }
-    my ( $index, $start, @changed ) = ( 0, 1 );
-    while ($el) {
+    else {
+        ( $cursor, $top ) = ( $word, 0 );
+    }
+    my $next = sub {
+        while (@lists) {
+            return shift @{ $lists[-1] } if @{ $lists[-1] };
+            pop @lists;
+        }
+        return $cursor &&= $cursor->snext_sibling;
+    };
+
+    # $index counts the commas, $args the arguments started; $in is false
+    # after an assignment operator in the argument.
+    my $need = $MIN_ARGS{$name} // 0;
+    my ( $index, $args, $in, $prev, @changed ) = ( 0, 0, 1 );
+    while ( $el = $next->() ) {
+        my $start = !$prev || _is_token( $prev, 'Operator', $comma );
+        $prev = $el;
         if ( _is_token( $el, 'Operator', $comma ) ) {
-            last if ++$index >= $changes;
-            $start = 1;
+            last if ++$index >= $changes && $args >= $need;
+            $in = 1;
             next;
         }
-        last if $el->isa('PPI::Token::Structure') || _is_token( $el, 'Operator', qr/\A(?:or|and|xor|not)\z/ );
-        if ( $el->isa('PPI::Token::Word') ) {
-            last if $CHANGES_ARGS{ $el->content };
-            next if $start && $el->content =~ /\A(?:my|our|state|local)\z/;
-            my $next = $el->snext_sibling;
+        $args++ if $start;
+        my $end_list = $el->isa('PPI::Token::Structure') || _is_token( $el, 'Operator', qr/\A(?:or|and|xor|not)\z/ );
+        if ( !$end_list && $el->isa('PPI::Token::Word') ) {
+            $end_list = $CHANGES_ARGS{ $el->content =~ s/\ACORE:://r };
+            next if !$end_list && $start && $el->content =~ /\A(?:my|our|state|local)\z/;
 
             # A bareword handle (`read FH, $x`) or a call in parentheses is
             # one argument; any other word takes the rest of the list.
-            last
-                unless $next
-                && ( _is_token( $next, 'Operator', qr/\A(?:,|=>)\z/ ) || $next->isa('PPI::Structure::List') );
+            my $after = $el->snext_sibling;
+            $end_list
+                ||= !( $after && ( _is_token( $after, 'Operator', $comma ) || $after->isa('PPI::Structure::List') ) );
         }
-        push @changed, $el if $start && _scalar($el);
-        $start = 0;
+        if ($end_list) {
+            last unless @lists > $top;
+            pop @lists;    # the rest of a nested list
+            next;
+        }
+        next unless $index < $changes && $in;
+        if ( _is_token( $el, 'Operator', $ASSIGN ) ) {
+            $in = 0;
+        }
+        elsif ( $el->isa('PPI::Structure::List') ) {
+
+            # Not the arguments of a call: `foo(...)`, `$f->(...)`, `&f(...)`.
+            my $before = $el->sprevious_sibling;
+            push @lists, [ _list_elements($el) ]
+                unless $before
+                && ( $before->isa('PPI::Token::Word')
+                || $before->isa('PPI::Token::Symbol')
+                || _is_token( $before, 'Operator', '->' ) );
+        }
+        elsif ( _scalar($el) ) {
+            push @changed, $el;
+        }
     }
-    continue {
-        $el = $inline ? $el->snext_sibling : shift @args;
-    }
-    return @changed;
+    return $args >= $need ? @changed : ();
 }
 
 # Whether $elem is a PPI::Token::$type whose content is $content, or matches
@@ -745,21 +835,28 @@ regex in the same or an enclosing block (or the file).
 
 In both cases the name must have no other write anywhere in the file: any
 assignment operator after it (C<=>, C<.=>, C<||=>, C<//=> and so on, alone
-or in a list on the left), C<local $x> other than a qualifying C<local $x = qr/.../;>, a
+or in a list on the left, nested lists such as C<($z, ($x)) = ...>
+included), C<local $x> other than a qualifying C<local $x = qr/.../;>, a
 C<foreach> loop variable of that
-name or a C<foreach> list holding it, a reference C<\$x>, C<$x++>,
-C<$x-->, C<++$x> or C<--$x>, C<chomp> or C<chop> of it, C<$x> as the
-handle of C<open> or C<opendir> or the buffer of C<read>, C<recv> or
-C<sysread> (as a direct argument of the builtin: C<< $o->open($x) >> and
-C<chomp(foo $x)> do not count), or C<$x =~ s///>, C<($x) =~ s///> or
-C<tr///> (without C</r>).
+name or a C<foreach> list holding it (nested lists included), a reference
+C<\$x>, C<$x++>, C<$x-->, C<++$x> or C<--$x>, C<chomp> or C<chop> of it,
+C<$x> as the handle of C<open> or C<opendir>, the buffer of C<read>,
+C<recv> or C<sysread>, the variable of C<tie> or the first argument of a
+4-argument C<substr> (also called as C<CORE::chomp> and the like). Any
+scalar in such an argument counts, as in C<chomp($c ? $a : $x)>,
+C<chomp(($x))> or C<chomp +($x)>, except one in a method or a nested call
+(C<< $o->open($x) >>, C<chomp(foo $x)>) or after an assignment operator
+(C<chomp(my $y = $x)>). C<$x =~ s///>, C<($x) =~ s///> and C<tr///>
+(without C</r>) count too.
 This is by name, not by scope, so a same-named variable written in another
 sub (or package) also counts. A write to a package-qualified name
 (C<$main::x>, C<$::x>, C<${main::x}>, C<$main'x>) counts for the last
 component of the name, and a write to C<$x> counts for a qualified
 C<$main::x>. Writes the rule does not recognise are missed: an alias
 through C<@_> in a sub call, the C<$_> of C<map> or C<grep>, a glob
-assignment, or a symbolic name (C<${'main::x'}>, C<$::{x}>). An assignment inside a condition
+assignment, a symbolic name (C<${'main::x'}>, C<$::{x}>), a string C<eval>
+(C<eval '$x = $in'>), or a regex code block (C<(?{ $x = $in })>,
+C<(??{ ... })>), which the scan of the pattern skips. An assignment inside a condition
 (C<if (my $x = qr/a/)>) is not seen as qualifying, which errs towards
 reporting. C<$x = $opt{x} // qr/,/>, C<$x ||= qr/,/> and
 C<join '|', map {quotemeta} @w> are reported;

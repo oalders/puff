@@ -127,24 +127,56 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
 
 # Each bare chomp walked its arguments to the end of the statement, so a
 # statement with many of them was quadratic: 1,500 took 9 seconds. Sibling
-# lookups are counted, as timings would be flaky.
+# lookups are counted, as timings would be flaky. Each case takes about
+# 1,010 lookups for 1,000 chomps (the quadratic walk took about 2 million),
+# so the bound is 4 times that.
 {
     no warnings 'redefine';
     my $calls = 0;
     my $orig  = PPI::Element->can('snext_sibling');
     local *PPI::Element::snext_sibling = sub { $calls++; goto &$orig };
-    my $n = 1_000;
-    for my $list ( 'chomp, ' x $n, join( q{}, map {"a$_ => chomp, "} 1 .. $n ), 'chomp $y, ' . 'chomp, ' x $n ) {
-        my $text    = "my \$x = shift;\n/\$x/;\nmy \@a = ($list);\n";
+    my $n     = 1_000;
+    my %lists = (
+        'bare chomps'           => 'chomp, ' x $n,
+        'chomps after keys'     => join( q{}, map {"a$_ => chomp, "} 1 .. $n ),
+        'chomps after chomp $y' => 'chomp $y, ' . 'chomp, ' x $n,
+    );
+    for my $label ( sort keys %lists ) {
+        my $text    = "my \$x = shift;\n/\$x/;\nmy \@a = ($lists{$label});\n";
         my $doc     = PPI::Document->new( \$text );
         my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
         $calls = 0;
-        is( scalar( () = $class->new->check( $regex, $doc ) ), 1, 'many bare chomps: $x is reported' );
-        cmp_ok( $calls, '<', 20 * $n, 'sibling lookups: linear in the chomps' );
+        is( scalar( () = $class->new->check( $regex, $doc ) ), 1, "$label: \$x is reported" );
+        cmp_ok( $calls, '<', 4 * $n, "$label: sibling lookups are linear in the chomps" );
     }
 }
 is( violations("my \$x = qr/a/;\nmy \@a = (chomp, \$x);\n/\$x/;\n"), [], 'a bare chomp does not change the next item' );
 is( scalar @{ violations("my \$x = qr/a/;\nchomp \$y, \$x;\n/\$x/;\n") }, 1, 'chomp changes all its arguments' );
+is(
+    scalar @{ violations( "my \$x = qr/a/;\nmy \@a = (" . ( 'chomp, ' x 1_000 ) . "chomp \$x);\n/\$x/;\n" ) }, 1,
+    'a write after many bare chomps is seen'
+);
+is(
+    violations("my \$x = qr/a/;\nchomp \$y, open my \$fh, \$x;\n/\$x/;\n"), [],
+    'another builtin takes the rest of the list: open does not change its second argument'
+);
+
+# The chain of elements enclosing a regex was built again for each of its
+# variables. Parent lookups are counted: 200 variables at a depth of 100
+# took 40,600; now the chain is built once, in about 200.
+{
+    no warnings 'redefine';
+    my $calls = 0;
+    my $orig  = PPI::Element->can('parent');
+    local *PPI::Element::parent = sub { $calls++; goto &$orig };
+    my $text    = "our \$x = qr/a/;\n" . ( "{\n" x 100 ) . '/' . ( '$x' x 200 ) . "/;\n" . ( "}\n" x 100 );
+    my $doc     = PPI::Document->new( \$text );
+    my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
+    is( [ $class->new->check( $regex, $doc ) ], [], 'a nested qr// variable is not reported' );
+    $calls = 0;
+    $class->new->check( $regex, $doc );
+    cmp_ok( $calls, '<', 4 * 100, 'parent lookups: the chain is built once per regex' );
+}
 
 # Long or hostile regexes are scanned in linear time. Each took over 8
 # seconds before; the bounds are over 10 times the time taken now.
