@@ -78,8 +78,8 @@ sub explanation {
           `chomp +($x)` or `chomp(substr($x, 0, 1))`, but not one in a
           method or a call (`chomp(foo $x)`, `chomp(foo($x))`), or after
           an assignment operator (`chomp(my $y = $x)`). A scalar passed
-          through a named unary operator is taken as written too, by
-          design (`chomp(length $x)`, `chomp(lc $x)`, `chomp(ref $x)`).
+          through a named unary operator is taken as written too, but
+          perl does not compile `chomp(length $x)` or `chomp(lc $x)`.
           A sub named after a builtin (`sub undef ($x) { }`) is walked
           like a call, but its signature and body are not arguments, so
           nothing in them counts. A write to `$Pkg::x`, `$::x`,
@@ -1000,9 +1000,8 @@ C<chomp($c ? $a : $x)>, C<chomp(($x))>, C<chomp +($x)> or
 C<chomp(substr($x, 0, 1))>, except one in a method or a call
 (C<< $o->open($x) >>, C<chomp(foo $x)>, C<chomp(foo($x))>) or after an
 assignment operator (C<chomp(my $y = $x)>). A scalar passed through a
-named unary operator is taken as written too, by design
-(C<chomp(length $x)>, C<chomp(lc $x)>, C<chomp(ref $x)>), which errs
-towards reporting. A sub named after a builtin (C<sub undef ($x) { }>) is
+named unary operator is taken as written too, but perl does not compile
+C<chomp(length $x)> or C<chomp(lc $x)>. A sub named after a builtin (C<sub undef ($x) { }>) is
 walked like a call, but its signature and body are not arguments, so
 nothing in them counts.
 This is by name, not by scope, so a same-named variable written in another
