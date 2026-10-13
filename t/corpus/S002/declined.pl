@@ -5,6 +5,7 @@ my ( $mode, $f, $h, $v, $w, $e, @a );
 open(P, "ls |"); # expect: S002
 open(P, "| cat"); # expect: S002
 open(D, ">&STDOUT"); # expect: S002
+open(X, "&0"); # expect: S002
 open(X, "-"); # expect: S002
 open(X, "$mode$f"); # expect: S002
 open(X, ">" . $f); # expect: S002
