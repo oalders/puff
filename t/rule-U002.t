@@ -1,7 +1,8 @@
 use v5.36;
 use Test2::V0;
 
-use Time::HiRes qw( time );
+use Scalar::Util qw( weaken );
+use Time::HiRes  qw( time );
 
 use PPI          ();
 use Puff::Engine ();
@@ -91,12 +92,15 @@ is( fixable(qq{use v5.36;\n# CORS, ORS_X\nprint "x\\n";\n}), [1], 'ORS inside a 
 
 # Each print looks up only the uses in its own blocks, not every use in
 # the file: 2000 subs, each with a `use` and a `print`, took 21s. Calls
-# to the uses' `type` are counted, as timings would be flaky.
+# to the uses' `type`, and builds of the index of uses by block, are
+# counted, as timings would be flaky.
 {
     no warnings 'redefine';
-    my $calls = 0;
-    my $orig  = PPI::Statement::Include->can('type');
-    local *PPI::Statement::Include::type = sub { $calls++; goto &$orig };
+    my ( $calls, $builds ) = ( 0, 0 );
+    my $orig   = PPI::Statement::Include->can('type');
+    my $blocks = Puff::Rule::Upgrade::PrintToSay->can('_blocks');
+    local *PPI::Statement::Include::type            = sub { $calls++;  goto &$orig };
+    local *Puff::Rule::Upgrade::PrintToSay::_blocks = sub { $builds++; goto &$blocks };
     my $n    = 200;
     my $text = "use v5.36;\n" . join q{}, map {qq{sub f$_ {\n    use Carp;\n    print "x\\n";\n}\n}} 1 .. $n;
     my $doc  = PPI::Document->new( \$text );
@@ -107,6 +111,41 @@ is( fixable(qq{use v5.36;\n# CORS, ORS_X\nprint "x\\n";\n}), [1], 'ORS inside a 
     my @found = map { $rule->check( $_, $doc ) } @prints;
     is( scalar @found, $n, 'every print in a sub is reported' );
     cmp_ok( $calls, '<', 5 * $n, 'types: a few per use, not one per use per print' );
+    is( $builds, 1, 'the index of uses is built once per document' );
+}
+
+# Within one block, a binary search finds the last use before each print:
+# the uses compared are counted, at most about two per halving.
+{
+    no warnings 'redefine';
+    my $calls  = 0;
+    my $before = Puff::Rule::Upgrade::PrintToSay->can('_before');
+    local *Puff::Rule::Upgrade::PrintToSay::_before = sub { $calls++; goto &$before };
+    my $n    = 200;
+    my $text = "use v5.36;\n" . qq{use feature 'say';\nprint "x\\n";\n} x $n;
+    my $doc  = PPI::Document->new( \$text );
+    $doc->index_locations;
+    my @prints = grep { $_->content eq 'print' } @{ $doc->find('PPI::Token::Word') };
+    my $rule   = $class->new;
+    $rule->check( $prints[0], $doc );
+    $calls = 0;
+    my @found = map { $rule->check( $_, $doc ) } @prints;
+    is( scalar @found, $n, 'every print in one block is reported' );
+    cmp_ok( $calls, '<', 2 * $n * log($n) / log(2), 'uses compared: about log n per print, not n' );
+}
+
+# The cache does not keep a document alive once the caller drops it.
+{
+    my $text = qq{use v5.36;\nprint "x\\n";\n};
+    my $doc  = PPI::Document->new( \$text );
+    $doc->index_locations;
+    my ($print) = grep { $_->content eq 'print' } @{ $doc->find('PPI::Token::Word') };
+    ok( scalar $class->new->check( $print, $doc ), 'the print is reported' );
+    my $weak = $doc;
+    weaken $weak;
+    undef $print;
+    undef $doc;
+    ok( !defined $weak, 'the cache does not keep the document alive' );
 }
 
 # The analysis is cached per document, and a new document gets its own:

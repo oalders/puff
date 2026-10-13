@@ -67,9 +67,11 @@ END
 my @pairs = grep { $fixed[$_] ne $lines[$_] } 0 .. $#lines;
 
 # Every fix offered is checked against perl below, so new fixes need no
-# count to be noticed. What is pinned is that fixes are not withheld:
-# strings with no `$`, `@` or `\` are always fixed, as are these, which
-# end in a variable, `$$`, `$@` or an even run of backslashes.
+# count to be noticed. What is pinned is that fixes are not withheld: the
+# number fixed may grow but not shrink, strings with no `$`, `@` or `\`
+# are always fixed, and so are these, which end in a variable, `$$`, `$@`
+# or an even run of backslashes.
+cmp_ok( scalar @pairs, '>=', 16_554, 'no fix that was offered is withheld' );
 my @plain = grep { $bodies[$_] !~ /[\$\@\\]/ } 0 .. $#bodies;
 is( [ grep { $fixed[$_] eq $lines[$_] } @plain ], [], 'every string with no $, @ or \\ is fixed' );
 my %is_fixed = map { $bodies[$_] => $fixed[$_] ne $lines[$_] } 0 .. $#bodies;

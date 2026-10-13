@@ -217,7 +217,8 @@ sub _use_effect ($include) {
 # before the print wins. Each block's statements are in document order, so
 # a binary search finds the last one before the print, and a print costs
 # its depth times the log of the number of statements, not the number of
-# statements.
+# statements. The innermost block with one wins: a use in an enclosing
+# block comes before the block that holds the print, or holds it.
 sub _say_enabled ( $self, $word, $doc ) {
     my $analysis = _analysis($doc);
     return 0 if $analysis->{disabled};
@@ -225,7 +226,6 @@ sub _say_enabled ( $self, $word, $doc ) {
     my @modules = sort @{ $self->option('modules') };
     my $blocks  = $analysis->{blocks}{ join "\0", @modules } //= _blocks( $analysis->{uses}, @modules );
     my $here    = _position($word);
-    my $last;
     for ( my $p = $word->parent ; $p ; $p = $p->parent ) {
         my $uses = $blocks->{ refaddr($p) } or next;
         my ( $lo, $hi ) = ( 0, scalar @$uses );
@@ -234,11 +234,9 @@ sub _say_enabled ( $self, $word, $doc ) {
             if   ( _before( $uses->[$mid], $here ) ) { $lo = $mid + 1 }
             else                                     { $hi = $mid }
         }
-        next unless $lo;
-        my $use = $uses->[ $lo - 1 ];
-        $last = $use if !$last || _before( $last, $use );
+        return $uses->[ $lo - 1 ][2] if $lo;
     }
-    return $last ? $last->[2] : 0;
+    return 0;
 }
 
 # The uses that affect `say`, given the `modules` option, by parent block.
@@ -554,9 +552,10 @@ file's text contains C<$\> (but not C<$$\>, as in C<"pid $$\n">), C<$ \>
 or C<${\}> with any white space or comments, the word C<ORS> or
 C<OUTPUT_RECORD_SEPARATOR> in any spelling (C<$ORS>, C<$::ORS>, C<${ORS}>,
 C<*ORS>), C<output_record_separator>, or C<no strict> (with any white space
-or comments between), anywhere, even in a string, regex, heredoc or comment; mentions the glob C<*\>; has a C<#!> line
-with an C<-l> switch; or has a symbolic C<${...}> or C<*{...}> that is not
-one of two shapes taken to be safe:
+or comments between), anywhere, even in a string, regex, heredoc or
+comment; mentions the glob C<*\>; has a C<#!> line with an C<-l> switch;
+or has a symbolic C<${...}> or C<*{...}> that is not one of two shapes
+taken to be safe:
 
 =over 4
 
