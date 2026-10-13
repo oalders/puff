@@ -30,13 +30,18 @@ is(
 );
 is(
     [ map { $_->message } @{ violations( "umask 22;\n", 'B010' ) } ],
-    ['umask mode 22 is decimal (octal 026); write 022'],
+    ['umask mask 22 is decimal (octal 026); write 022'],
     'two-digit umask message'
 );
 is(
     [ map { $_->message } @{ violations( "\$p->mkdir( { mode => 711 } );\n", 'B010' ) } ],
     ['->mkdir mode 711 is decimal (octal 01307); write 0711'],
     'method option message'
+);
+is(
+    [ map { $_->message } @{ violations( "\$p->chmod(644);\n", 'B010' ) } ],
+    ['->chmod mode 644 is decimal (octal 01204); write 0644'],
+    'method chmod message says mode, not mask'
 );
 is( $class{B010}->fix_safety, 'unsafe', 'fix is unsafe' );
 

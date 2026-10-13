@@ -278,7 +278,8 @@ C<umask>. A literal whose decimal value is a common mode or umask (the
 decimal of 0777, 0755, 0644, 022 and so on, listed in
 C<@Puff::PPIUtil::REAL_DECIMAL_MODES>) is taken as deliberate and is not
 returned: C<mkdir $d, 511> sets 0777 on purpose. B003 skips the mode
-positions, B010 reports the decimal ones, and S009 checks both their real
-value and the octal reading they were probably meant as, so the three agree.
+positions (unless its C<strict> option is on), B010 reports the decimal ones,
+and S009 checks both their real value and the octal reading they were
+probably meant as, so the three agree.
 
 =cut
