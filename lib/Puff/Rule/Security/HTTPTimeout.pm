@@ -31,11 +31,17 @@ my %MOJO = (
 # count as setting one, the timeout setter methods the client has (those in
 # `needs` also count as setting one), what happens without a timeout, and
 # what `undef` means as a constructor value and as a setter argument (no
-# entry: undef is not checked).
+# entry: undef is not checked), and what 0 does when that is not simply no
+# timeout.
 my %CLIENT = (
-    'LWP::UserAgent'  => \%LWP,
-    'WWW::Mechanize'  => \%LWP,
-    'HTTP::Tiny'      => { %LWP, default => 'the 60s default', undef_new => 'leaves the 60s default' },
+    'LWP::UserAgent' => \%LWP,
+    'WWW::Mechanize' => \%LWP,
+    'HTTP::Tiny'     => {
+        %LWP,
+        default   => 'the 60s default',
+        undef_new => 'leaves the 60s default',
+        zero      => 'polls instead of waiting, so a read or write fails unless the socket is already ready',
+    },
     'Furl'            => \%FURL,
     'Furl::HTTP'      => \%FURL,
     'Mojo::UserAgent' => \%MOJO,
@@ -43,11 +49,15 @@ my %CLIENT = (
 
 my %DECLARATOR = map { $_ => 1 } qw( my our state );
 my %DIE        = map { $_ => 1 } qw( die croak confess );
+my %LOOP       = map { $_ => 1 } qw( for foreach );
+my %THEN       = map { $_ => 1 } ( ',', '&&', 'and' );
+my %MODIFIER   = map { $_ => 1 } qw( if unless for foreach while until );
+my $ASSIGN     = qr{\A(?:\*\*|<<|>>|&&|\|\||//|[-+*/%x.]|[&|^]\.?)?=\z};
 my $INF        = 9**9**9;
 
 sub code            {'S020'}
 sub summary         {'HTTP client created without a timeout'}
-sub applies_to      {'PPI::Token::Word'}
+sub applies_to      { [ 'PPI::Token::Word', 'PPI::Token::Quote' ] }
 sub cwe             {400}
 sub explicit_select {1}
 sub options         { { 'max-timeout' => 60 } }
@@ -61,7 +71,8 @@ sub explanation {
 
         The rule reports a call to `new` on LWP::UserAgent,
         WWW::Mechanize, HTTP::Tiny, Furl, Furl::HTTP or Mojo::UserAgent
-        (`Class->new(...)`, `Class->new({ ... })` or `new Class(...)`):
+        (`Class->new(...)`, `Class->new({ ... })`, `new Class(...)`,
+        `'Class'->new(...)` or `Class::->new(...)`):
 
         - with no timeout. For Mojo::UserAgent that means neither
           `request_timeout` nor `inactivity_timeout` (either one is
@@ -71,8 +82,9 @@ sub explanation {
           (Furl's is 10s, HTTP::Tiny's 60s), so the limit is written down
           where it is used;
         - with a literal timeout of 0, which turns the timeout off in
-          LWP::UserAgent and Mojo::UserAgent, and in HTTP::Tiny leaves the
-          connect unbounded, or a negative one;
+          LWP::UserAgent and Mojo::UserAgent, and in HTTP::Tiny polls
+          instead of waiting, so a read or write fails unless the socket
+          is already ready, or a negative one;
         - with a literal timeout longer than `max-timeout` seconds
           (default 60). For Mojo::UserAgent all three keys are checked;
         - with `timeout => undef` for LWP::UserAgent, WWW::Mechanize or
@@ -86,18 +98,31 @@ sub explanation {
 
         A missing timeout is not reported when a timeout setter is chained
         onto the constructor (`Mojo::UserAgent->new->request_timeout(10)`)
-        or called by a later statement in the same block that is exactly
-        `$ua->timeout(10);`. The setters are `timeout` for LWP::UserAgent,
-        WWW::Mechanize and HTTP::Tiny, and `request_timeout` or
+        or called by a later statement in the same block that starts
+        with a setter chain on the client's variable: `$ua->timeout(10);`,
+        optionally followed by `, ...`, `&& ...` or `and ...` (not `|| ...`,
+        `or ...` or `? ... : ...`). The setters are `timeout` for
+        LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, and `request_timeout` or
         `inactivity_timeout` for Mojo::UserAgent (`connect_timeout` is
         checked but not enough); Furl has none. The client must be
         assigned to a plain scalar by the whole statement:
-        `my $ua = Class->new(...);` (or `our`, `state`, `$ua = ...`),
-        optionally followed by `or die ...` or `|| die ...`, or as
-        `my $ua = $arg // Class->new;` (or `||`). A setter in a nested
-        block, sub or condition, one with a statement modifier
-        (`... if $x;`), and one after the variable is redeclared or
-        assigned again does not count.
+        `my $ua = Class->new(...);` (or `our`, `state`, `$ua = ...`,
+        `my ($ua) = ...`), optionally followed by `or die ...` or
+        `|| die ...`, or as `my $ua = $arg // Class->new;` (or `||`).
+
+        A setter does not count when it is in a nested block, sub or
+        condition, has a statement modifier (`... if $x;`, also after
+        `, ...`), is on another variable that holds the same client
+        (`my $d = $ua; $d->timeout(10);`), or comes after the variable is
+        redeclared (`my`, `our`, `state`, `local`, or a `for` loop
+        variable) or assigned again (with `=`, `||=`, `//=` or any other
+        assignment operator, even later in the same statement). A
+        redeclaration or assignment is seen anywhere in a statement of
+        the same block, argument lists and conditions included (`foo($ua = Other->new);`,
+        `while (my $ua = ...)`), but not inside a nested block
+        (`if ($x) { $ua = Other->new }`), where the client may stay the
+        same on some paths, nor in `foreach my ($k, $v) (...)`.
+        `local $ua->{timeout} = 5;` does not redeclare `$ua`.
 
         Every setter value is checked like a constructor value, even when
         the constructor already sets a good timeout, and is reported at
@@ -105,9 +130,8 @@ sub explanation {
         LWP::UserAgent, WWW::Mechanize and HTTP::Tiny, where it turns the
         timeout off.
 
-        Subclasses, wrapper functions, class names in a variable and
-        quoted class names (`'LWP::UserAgent'->new`,
-        `LWP::UserAgent::->new`) are not checked.
+        Subclasses, wrapper functions and class names in a variable are
+        not checked.
 
         Change the longest acceptable timeout with:
 
@@ -128,10 +152,10 @@ sub new ( $class, %args ) {
 }
 
 sub check ( $self, $elem, $doc ) {
-    my $client = $CLIENT{ $elem->content } or return;
+    my $name   = _class_name($elem) // return;
+    my $client = $CLIENT{$name} or return;
     my $args   = _constructor_args($elem) // return;
     my $pairs  = _pairs($args);
-    my $name   = $elem->content;
 
     my %given;
     for my $pair ( @{ $pairs // [] } ) {
@@ -190,7 +214,7 @@ sub _problem ( $self, $client, $value, $undef ) {
     }
     return unless defined $n;
     return ( $shown, 'is not a usable timeout' ) if $n != $n || $n < 0;
-    return ( $shown, 'means no usable timeout' ) if $n == 0;
+    return ( $shown, $client->{zero} // 'means no usable timeout' ) if $n == 0;
     my $max = $self->option('max-timeout');
     return ( $shown, "is longer than max-timeout (${max}s)" ) if $n > $max;
     return;
@@ -198,6 +222,14 @@ sub _problem ( $self, $client, $value, $undef ) {
 
 sub _is_number ($elem) {
     return $elem->isa('PPI::Token::Number') && !$elem->isa('PPI::Token::Number::Version') && $elem->can('literal');
+}
+
+# The class name a bareword (`Class`, `Class::`) or a constant string
+# (`'Class'`) gives, or undef.
+sub _class_name ($elem) {
+    return $elem->content =~ s/::\z//r if $elem->isa('PPI::Token::Word');
+    return unless is_constant_string($elem) && _is_op( $elem->snext_sibling, '->' );
+    return $elem->string;
 }
 
 # The argument list of the constructor call on the class name $word, as a
@@ -306,11 +338,11 @@ sub _variable_setters ( $word, $doc ) {
     my $stmt   = $word->parent;
     my $index  = _index( $stmt->parent, $doc );
     my $at     = $index->{position}{ refaddr $stmt } // return;
+    my $slot   = $index->{slot}{$symbol}{$at}        // return;
+    my $uses   = $index->{uses}{$symbol};
     my @setters;
-    for my $entry ( @{ $index->{uses}{$symbol} // [] } ) {
-        my ( $position, $setters ) = @$entry;
-        next if $position <= $at;
-        last unless $setters;
+    for my $i ( $slot + 1 .. $#$uses ) {
+        my $setters = $uses->[$i][1] or last;
         push @setters, @$setters;
     }
     return @setters;
@@ -319,6 +351,7 @@ sub _variable_setters ( $word, $doc ) {
 # The symbol of the plain scalar that the statement around the constructor
 # on $word assigns it to, or undef. The statement must be
 # `[my|our|state] $var = [$term // ]Class->new(...)[->setter(...)]`, with
+# `($var)` for `$var`,
 # `//` or `||` before the constructor, and optionally `or die ...` or
 # `|| die ...` after it.
 sub _assigned_symbol ($word) {
@@ -343,14 +376,23 @@ sub _assigned_symbol ($word) {
         $op = $term->sprevious_sibling;
     }
     return unless _is_op( $op, '=' );
-    my $var = $op->sprevious_sibling;
-    return unless _is_scalar($var);
-    my $first = $var->sprevious_sibling;
+    my $target = $op->sprevious_sibling;
+    my $var    = _sole_scalar($target) // return;
+    my $first  = $target->sprevious_sibling;
     if ($first) {
         return unless $first->isa('PPI::Token::Word') && $DECLARATOR{ $first->content };
         return if $first->sprevious_sibling;
     }
     return $var->symbol;
+}
+
+# $elem when it is a plain scalar, the scalar when $elem is `($scalar)`,
+# or undef.
+sub _sole_scalar ($elem) {
+    return $elem if _is_scalar($elem);
+    return unless $elem && $elem->isa('PPI::Structure::List');
+    my @children = map { $_->schildren } $elem->schildren;
+    return @children == 1 && _is_scalar( $children[0] ) ? $children[0] : undef;
 }
 
 sub _is_scalar ($elem) {
@@ -361,12 +403,17 @@ sub _is_end ($elem) {
     return $elem->isa('PPI::Token::Structure') && $elem->content eq ';' && !$elem->snext_sibling;
 }
 
-# For the statement list $parent: the position of each statement in it, and
-# for each scalar name the statements that use it, in order, as
+# For the statement list $parent: the position of each statement in it; for
+# each scalar name the statements that use it, in order, as
 # [ position, setters ] (setters undef for a statement that declares or
-# assigns the name). Built once per statement list and document, so a file
-# with many clients is scanned once. The weakened reference goes undef when
-# the document is freed, so a re-parsed document never sees another's index.
+# assigns the name); and for each name and position where it is declared or
+# assigned, that entry's slot in the list, so the setters after a client
+# are found without rescanning the list. Built once per statement list and
+# document, so a file with many clients is scanned once. The weakened
+# reference goes undef when the document is freed, so a re-parsed document
+# never sees another's index. The index assumes the engine never changes a
+# document between checks: a rule that edited the tree in place would leave
+# it describing statements that are gone.
 my ( $cached_doc, %cached );
 
 sub _index ( $parent, $doc ) {
@@ -379,31 +426,111 @@ sub _index ( $parent, $doc ) {
 }
 
 sub _build_index ($parent) {
-    my ( %position, %uses );
+    my ( %position, %uses, %slot );
     my $i = 0;
     for my $stmt ( $parent->schildren ) {
         $position{ refaddr $stmt } = ++$i;
-        if ( $stmt->isa('PPI::Statement::Variable') ) {
-            push @{ $uses{$_} }, [ $i, undef ] for $stmt->variables;
-            next;
+        my @assigned = _assigned_names($stmt);
+        my ( $symbol, $setters ) = _setter_statement($stmt);
+
+        # A setter does not count when its own statement assigns the name
+        # again: `$ua->timeout(10), $ua = Other->new;`.
+        if ( $setters && !grep { $_ eq $symbol } @assigned ) {
+            push @{ $uses{$symbol} }, [ $i, $setters ];
         }
-        next unless ref $stmt eq 'PPI::Statement';
-        my $var = $stmt->schild(0);
-        next unless _is_scalar($var);
-        my $symbol = $var->symbol;
-        if ( _is_op( $var->snext_sibling, '=' ) ) {
+        for my $symbol (@assigned) {
             push @{ $uses{$symbol} }, [ $i, undef ];
-            next;
+            $slot{$symbol}{$i} = $#{ $uses{$symbol} };
         }
-        my ( $setters, $after ) = _chain($var);
-        next unless @$setters && ( !$after || _is_end($after) );
-        push @{ $uses{$symbol} }, [ $i, $setters ];
     }
-    return { position => \%position, uses => \%uses };
+    return { position => \%position, uses => \%uses, slot => \%slot };
 }
 
-sub _is_op ( $elem, $op ) {
-    return $elem && $elem->isa('PPI::Token::Operator') && $elem->content eq $op;
+# ( symbol, setters ) when $stmt starts with a setter chain on a plain
+# scalar, alone or followed by `, ...`, `&& ...` or `and ...` with no
+# statement modifier later on; otherwise the empty list.
+sub _setter_statement ($stmt) {
+    return unless ref $stmt eq 'PPI::Statement';
+    my $var = $stmt->schild(0);
+    return unless _is_scalar($var);
+    my ( $setters, $after ) = _chain($var);
+    return unless @$setters;
+    if ( $after && !_is_end($after) ) {
+        return unless $after->isa('PPI::Token::Operator') && $THEN{ $after->content };
+        for ( my $el = $after ; $el ; $el = $el->snext_sibling ) {
+            return if $el->isa('PPI::Token::Word') && $MODIFIER{ $el->content };
+        }
+    }
+    return ( $var->symbol, $setters );
+}
+
+# The names of the scalars that $stmt declares (`my`, `our`, `state`,
+# `local`, a `for` loop variable) or assigns with an assignment operator,
+# anywhere in its own expression: argument lists and conditions included,
+# nested blocks not. One pass over the statement. Only a bare scalar counts,
+# so `local $ua->{timeout} = 5;` and `($h{$k}, $b) = ...` leave `$ua` and
+# `$k` alone.
+sub _assigned_names ($stmt) {
+    my %names;
+
+    # PPI's variables() also returns `$ua` for `local $ua->{timeout}`, so
+    # `local` is left to the word check below.
+    if ( $stmt->isa('PPI::Statement::Variable') && $stmt->type ne 'local' ) {
+        $names{$_} = 1 for $stmt->variables;
+    }
+    if ( my $var = _loop_variable($stmt) ) {
+        $names{ $var->symbol } = 1;
+    }
+    my @todo = $stmt->schildren;
+    while ( my $el = shift @todo ) {
+        if ( $el->isa('PPI::Node') ) {
+            push @todo, $el->schildren unless $el->isa('PPI::Structure::Block');
+            next unless $el->isa('PPI::Structure::List') && _is_assign( $el->snext_sibling );
+            $names{$_} = 1 for _named_scalars($el);
+            next;
+        }
+        if ( $el->isa('PPI::Token::Word') && ( $DECLARATOR{ $el->content } || $el->content eq 'local' ) ) {
+            $names{$_} = 1 for _named_scalars( $el->snext_sibling );
+            next;
+        }
+        $names{ $el->symbol } = 1 if _is_scalar($el) && _is_assign( $el->snext_sibling );
+    }
+    return keys %names;
+}
+
+# The names of $elem when it is a bare scalar, or of the bare scalars at
+# the top level of the list $elem (nested lists included, subscripts not).
+sub _named_scalars ($elem) {
+    return $elem->symbol if _is_bare_scalar($elem);
+    return unless $elem && $elem->isa('PPI::Structure::List');
+    return map { _named_scalars($_) } map { $_->schildren } $elem->schildren;
+}
+
+# A scalar not followed by `->` or a subscript.
+sub _is_bare_scalar ($elem) {
+    return unless _is_scalar($elem);
+    my $next = $elem->snext_sibling;
+    return !( $next && ( $next->isa('PPI::Structure::Subscript') || _is_op( $next, '->' ) ) );
+}
+
+# The scalar a `for`/`foreach` loop statement sets, or undef.
+sub _loop_variable ($stmt) {
+    return unless $stmt->isa('PPI::Statement::Compound');
+    my $word = $stmt->schild(0);
+    return unless $word->isa('PPI::Token::Word') && $LOOP{ $word->content };
+    my $var = $word->snext_sibling;
+    $var = $var->snext_sibling if $var && $var->isa('PPI::Token::Word') && $DECLARATOR{ $var->content };
+    return _is_scalar($var) ? $var : undef;
+}
+
+sub _is_assign ($elem) {
+    return $elem && $elem->isa('PPI::Token::Operator') && $elem->content =~ $ASSIGN;
+}
+
+sub _is_op ( $elem, @ops ) {
+    return unless $elem && $elem->isa('PPI::Token::Operator');
+    my $content = $elem->content;
+    return !!grep { $_ eq $content } @ops;
 }
 
 1;
@@ -442,7 +569,9 @@ C<inactivity_timeout> is enough; C<connect_timeout> only bounds the
 connect, so on its own it does not count, but a literal value for it is
 still checked. Arguments may be a list (C<< ->new(timeout => 10) >>), a
 hash reference (C<< ->new({ timeout => 10 }) >>, as Mojo::UserAgent
-accepts) or the indirect form C<new LWP::UserAgent(timeout => 10)>. When a
+accepts) or the indirect form C<new LWP::UserAgent(timeout => 10)>. The
+class name may also be quoted (C<< 'LWP::UserAgent'->new >>) or end in
+C<::> (C<< LWP::UserAgent::->new >>). When a
 key is given more than once the last one wins, as in Perl.
 
 =head2 Values
@@ -452,8 +581,8 @@ key is given more than once the last one wins, as in Perl.
 =item *
 
 A literal C<0> is reported for every client: it turns the timeout off in
-LWP::UserAgent and Mojo::UserAgent, and in HTTP::Tiny it leaves the
-connect without a limit while reads stop waiting at once.
+LWP::UserAgent and Mojo::UserAgent. In HTTP::Tiny it polls instead of
+waiting, so a read or write fails unless the socket is already ready.
 
 =item *
 
@@ -485,8 +614,12 @@ C<< timeout => 2 * $n >>) is not checked.
 A missing timeout is not reported when a timeout setter is chained onto the
 constructor (C<< Mojo::UserAgent->new->request_timeout(10) >>), or called
 on the variable the client is assigned to by a later statement in the same
-block (or at the same file level) that is nothing but a setter chain on
-that variable: C<< $ua->timeout(10); >>. The setters are:
+block (or at the same file level) that starts with a setter chain on that
+variable: C<< $ua->timeout(10); >>, or the same followed by C<, ...>,
+C<&& ...> or C<and ...>, as in C<< $ua->timeout(10), $ua->get($url); >>,
+with no statement modifier anywhere in the statement. A setter followed
+by C<|| ...>, C<or ...> or C<? ... : ...> does not count, which may report a client that
+has a timeout. The setters are:
 
 =over
 
@@ -502,13 +635,29 @@ constructor.
 
 The client must be assigned to a plain scalar by the whole statement:
 C<my $ua = Class-E<gt>new(...);>, with C<our>, C<state> or no declarator,
-optionally followed by C<or die ...> or C<|| die ...> (C<croak> and
-C<confess> too), or as C<< my $ua = $arg // Class->new; >> (or C<||>).
+or C<< my ($ua) = Class->new(...); >>, optionally followed by
+C<or die ...> or C<|| die ...> (C<croak> and C<confess> too), or as
+C<< my $ua = $arg // Class->new; >> (or C<||>).
 
 These do not count: a setter in a nested block, sub, loop or condition
 (C<< if ($x) { $ua->timeout(10) } >>); one with a statement modifier
 (C<< $ua->timeout(10) if $x; >>); one before the constructor; one after the
-same name is declared or assigned again; and a call without arguments.
+same name is declared again (with C<my>, C<our>, C<state>, C<local> or as a
+C<for> loop variable) or assigned again (with C<=>, C<||=>, C<//=> or any
+other assignment operator, even later in the setter's own statement); one
+on another variable holding the same client
+(C<< my $d = $ua; $d->timeout(10); >>); and a call without arguments.
+
+A redeclaration or assignment is seen anywhere in a statement of the same
+block, including argument lists and conditions:
+C<< foo($ua = Other->new); >>, C<< if (($ua = Other->new)) { ... } >>,
+C<< while (my $ua = ...) { ... } >> and C<< for (my $ua = 0; ...) >> all end
+the earlier client's setters (the last two conservatively, since their
+C<$ua> is a new variable that ends with the loop). One inside a nested
+block (C<< if ($x) { $ua = Other->new } >>) is not seen, since the client
+may be the same one on some paths, and neither is
+C<< foreach my ($k, $v) (...) >>. Only the variable itself counts:
+C<< local $ua->{timeout} = 5; >> does not redeclare C<$ua>.
 
 Every setter value is checked like a constructor value, even when the
 constructor already sets a good timeout
@@ -529,13 +678,12 @@ Setter values are still checked.
 =item *
 
 Subclasses other than those listed, wrapper functions that build a client,
-class names held in a variable, and quoted class names
-(C<< 'LWP::UserAgent'->new >>, C<< LWP::UserAgent::->new >>).
+and class names held in a variable.
 
 =item *
 
 A client assigned anywhere else (C<< $self->{ua} = ... >>,
-C<< my ($ua) = ... >>) or used without being stored
+C<< my ( $ua, $x ) = ... >>) or used without being stored
 (C<< LWP::UserAgent->new->get($url) >>) needs its timeout in the
 constructor or in a chained setter.
 

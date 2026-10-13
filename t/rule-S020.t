@@ -38,7 +38,11 @@ is(
                 . ' (request_timeout defaults to no limit); set one of at most 60s (CWE-400)',
             0
         ],
-        [ 3, 9, 'HTTP::Tiny timeout => 0 means no usable timeout (CWE-400)', 0 ],
+        [
+            3, 9,
+            'HTTP::Tiny timeout => 0 polls instead of waiting, so a read or write fails unless the socket is already ready (CWE-400)',
+            0
+        ],
         [ 4, 9, 'Furl timeout => 61 is longer than max-timeout (60s) (CWE-400)', 0 ],
         [ 5, 9, 'LWP::UserAgent ->timeout(90) is longer than max-timeout (60s) (CWE-400)', 0 ],
     ],
@@ -97,6 +101,36 @@ is(
     is( violations($text), [], 'many clients with setters' );
     is( $builds, 2, 'one index per statement list' );
     cmp_ok( time - $start, '<', 10, 'many clients are checked quickly' );
+}
+
+# Each client looks only at the uses of its name that follow it, so many
+# clients reusing one name stay linear. The use lists are tied to count
+# the entries read.
+{
+
+    package CountFetch {
+        use parent -norequire, 'Tie::StdArray';
+        our $fetches = 0;
+        sub FETCH { $fetches++; return $_[0]->SUPER::FETCH( $_[1] ) }
+    }
+    require Tie::Array;
+    my $clients = 2000;
+    my $text    = join q{}, map {"my \$ua = LWP::UserAgent->new;\n\$ua->timeout(5);\n"} 1 .. $clients;
+    my $orig    = \&Puff::Rule::Security::HTTPTimeout::_build_index;
+    no warnings 'redefine';
+    local *Puff::Rule::Security::HTTPTimeout::_build_index = sub {
+        my $index = $orig->(@_);
+        for my $uses ( values %{ $index->{uses} } ) {
+            my @copy = @$uses;
+            tie @$uses, 'CountFetch';
+            @$uses = @copy;
+        }
+        return $index;
+    };
+    local $CountFetch::fetches = 0;
+    is( violations($text), [], 'many clients reusing one name' );
+    cmp_ok( $CountFetch::fetches, '>', 0, 'the use lists were tied and read' );
+    cmp_ok( $CountFetch::fetches, '<', 5 * $clients, 'the uses of a name are not rescanned per client' );
 }
 
 is( $class->fix_safety, 'none', 'no fix' );
