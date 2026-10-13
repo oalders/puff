@@ -38,3 +38,10 @@ system "ls 2>&1 | wc"; # expect: S018
 system "ls\n 2>&1"; # expect: S018
 system "ls 2>&1x"; # expect: S018
 system "ls>2>&1"; # expect: S018
+system "ls 2>&1"; # NBSP before 2>&1 # expect: S018
+system "ls 2>&1 "; # NBSP after 2>&1 # expect: S018
+system("ls \é; date"); # \ before U+00E9 (é) # expect: S018
+system "0X=1 ls"; # expect: S018
+system "_X=1 ls"; # expect: S018
+system "X0=1 ls"; # expect: S018
+system "=1 ls"; # expect: S018

@@ -32,7 +32,8 @@ sub explanation {
         newline before the end, a first word of `.` or `exec`, or a leading
         `VAR=value` assignment. A trailing `2>&1` after whitespace (and
         before nothing but whitespace) does not count: Perl redirects stderr
-        itself and runs the program directly. The shell then parses quoting, globs,
+        itself and runs the program directly. Only ASCII whitespace counts
+        here, as in Perl. The shell then parses quoting, globs,
         variables, pipes and redirects, which is where injection and
         surprises come from (CWE-78).
 
@@ -74,7 +75,9 @@ sub check ( $self, $elem, $doc ) {
     if ( $elem->isa('PPI::Token::QuoteLike') ) {
         my ( $body, $interpolates ) = command_body($elem);
         return if !defined $body || $interpolates;    # S008 reports the ones that interpolate
-        $body = _unescape($body) // return unless $elem->content =~ /\Aqx\s*'/;
+
+        # /a: perl takes a non-ASCII space after qx as the delimiter, not as space
+        $body = _unescape($body) // return unless $elem->content =~ /\Aqx\s*'/a;
         my $syntax = _shell_syntax($body) // return;
         return $self->violation( $elem, message => _message( 'Command', $syntax, $CAPTURE ) );
     }
@@ -132,22 +135,23 @@ sub _string_value ($token) {
 # decoding it, so the string is not analysed.
 sub _unescape ($text) {
     state %ESCAPE = ( n => "\n", t => "\t", r => "\r", f => "\f", a => "\a", e => "\e" );
-    return if grep { /\w/ && !exists $ESCAPE{$_} } $text =~ /\\(.)/gs;
+    return if grep { /\w/a && !exists $ESCAPE{$_} } $text =~ /\\(.)/gs;    # perl drops a \ before a non-ASCII letter
 
     $text =~ s{\\(.)}{$ESCAPE{$1} // $1}gse;
     return $text;
 }
 
 # A short description of why Perl runs this command through /bin/sh, or
-# undef when it runs the program directly.
+# undef when it runs the program directly. The /a matches doio.c, whose
+# isSPACE and isWORDCHAR are ASCII only: perl and sh do not split on U+00A0.
 sub _shell_syntax ($string) {
-    ( my $cmd = $string )            =~ s/\A\s+//;
-    return '. command' if $cmd       =~ /\A\.\s/;
-    return 'exec command' if $cmd    =~ /\Aexec\s/;
-    return 'VAR= assignment' if $cmd =~ /\A\w*=/;
+    ( my $cmd = $string )            =~ s/\A\s+//a;
+    return '. command' if $cmd       =~ /\A\.\s/a;
+    return 'exec command' if $cmd    =~ /\Aexec\s/a;
+    return 'VAR= assignment' if $cmd =~ /\A\w*=/a;
 
     $cmd =~ s/\n\z//;
-    $cmd =~ s/(?<=\s)2>&1\s*\z//;    # Perl does the dup2 itself
+    $cmd =~ s/(?<=\s)2>&1\s*\z//a;    # Perl does the dup2 itself
     my %seen;
     my @meta = grep { !$seen{$_}++ } $cmd =~ /($PERL_SHELL_META)/g;
     return unless @meta;
@@ -168,9 +172,10 @@ Reports C<system>, C<exec>, C<readpipe>, backticks and C<qx> given one
 constant command string that Perl runs through /bin/sh: it has shell
 metacharacters (as listed in F<doio.c>), a newline before the end, a first
 word of C<.> or C<exec>, or a leading C<VAR=value> assignment. A trailing
-C<2E<gt>&1> after whitespace, followed by nothing but whitespace, is not
-shell syntax: F<doio.c> handles it with C<dup2> and runs the program
-directly, so C<system 'ls -l 2E<gt>&1'> is not reported. There is no fix.
+C<2E<gt>&1> after whitespace (ASCII only, as in Perl), followed by nothing
+but whitespace, is not shell syntax: F<doio.c> handles it with C<dup2>
+and runs the program directly, so C<system 'ls -l 2E<gt>&1'> is not
+reported. There is no fix.
 
 A double-quoted string is analysed only when its escapes are C<\n>, C<\t>,
 C<\r>, C<\f>, C<\a>, C<\e> or a backslashed non-word character. Any other
