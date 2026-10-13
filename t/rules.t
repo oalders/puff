@@ -196,9 +196,10 @@ for my $case ( [ 'use utf8', "use utf8;\n" ], [ 'bytes', q{} ] ) {
     is( $w, [ $pragma ? 'caf\xE9' . "\n" : "caf\x{e9}\n" ], "$label: warning read as bytes" );
 }
 
-# Every call site that names a package or code uses the same helper, so a
-# Latin-1 package name (use utf8) and code reach the reserved, ALL and
-# duplicate-code messages as characters too.
+# Every call site that names a package or code uses the same helper. A code
+# that reaches the reserved, ALL and duplicate-code messages has already
+# matched [A-Z]+[0-9]{3}, so it is ASCII there; only the package name is
+# Latin-1 (use utf8). The invalid-code case has a Latin-1 code as well.
 for my $case (
     [ 'reserved code', ['P001'], qr/\ARule B::Caf\x{e9}0 uses code P001, which is reserved/ ],
     [ 'ALL prefix', ['ALL001'], qr/\ARule B::Caf\x{e9}0 uses code ALL001, but the prefix ALL/ ],
@@ -219,18 +220,18 @@ for my $case (
     like( dies { Puff::Rules->load( rule_paths => ["$dir"] ) }, $want, "$label: Latin-1 package name shown as it is" );
 }
 
-# C1 controls, a bidi override and a zero-width space in a code from a "use
-# utf8" rule are escaped; only the Latin-1 letter is shown as it is.
+# C1 controls, a bidi override, a zero-width space and a newline in a code from
+# a "use utf8" rule are escaped; only the Latin-1 letter is shown as it is.
 {
     my $dir = $tmp->child('utf8-invisible');
     $dir->mkpath;
     $dir->child('I.pm')
         ->spew_utf8( "use utf8;\npackage B::Invisible;\nuse parent 'Puff::Rule';\n"
-            . "sub code {\"X\\x{85}\\x{9b}\\x{202E}\\x{200B}\\x{e9}\"}\n1;\n" );
+            . "sub code {\"X\\x{85}\\x{9b}\\x{202E}\\x{200B}\\x{0A}\\x{e9}\"}\n1;\n" );
     is(
         dies { Puff::Rules->load( rule_paths => ["$dir"] ) },
-        "Rule B::Invisible has invalid code 'X\\x85\\x9B\\x{202E}\\x{200B}\x{e9}' (expected letters followed by three digits)\n",
-        'use utf8: C1, bidi and zero-width characters in a code are escaped'
+        "Rule B::Invisible has invalid code 'X\\x85\\x9B\\x{202E}\\x{200B}\\x0A\x{e9}' (expected letters followed by three digits)\n",
+        'use utf8: C1, bidi, zero-width and newline characters in a code are escaped'
     );
 }
 
