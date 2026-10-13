@@ -174,6 +174,28 @@ my $warned = warnings {
 };
 is( $warned, [], 'no uninitialized warning' );
 
+# A Latin-1 character in a code from a "use utf8" rule is characters, not
+# UTF-8 bytes: it is shown as it is, not as \xE9. Without "use utf8" the same
+# code is UTF-8 bytes, decoded like a path. A warning is always read as
+# bytes, like a file name it may quote.
+for my $case ( [ 'use utf8', "use utf8;\n" ], [ 'bytes', q{} ] ) {
+    my ( $label, $pragma ) = @$case;
+    my $dir = $tmp->child( 'latin1-' . ( $label =~ tr/ /-/r ) );
+    $dir->mkpath;
+    $dir->child('L.pm')
+        ->spew_utf8( "package B::Latin;\n${pragma}use parent 'Puff::Rule';\n"
+            . "warn qq{caf\x{e9}\\n};\nsub code {'\x{e9}01'}\n1;\n" );
+    my $error;
+    my $w = warnings {
+        $error = dies { Puff::Rules->load( rule_paths => ["$dir"] ) }
+    };
+    is(
+        $error, "Rule B::Latin has invalid code '\x{e9}01' (expected letters followed by three digits)\n",
+        "$label: code shown as it is"
+    );
+    is( $w, [ $pragma ? 'caf\xE9' . "\n" : "caf\x{e9}\n" ], "$label: warning read as bytes" );
+}
+
 # Module::Pluggable discovery
 my $lib = $tmp->child('lib');
 $lib->child(qw( Puff Rule Fake ))->mkpath;

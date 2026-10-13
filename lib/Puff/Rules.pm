@@ -4,7 +4,7 @@ use v5.36;
 
 use Module::Pluggable::Object ();
 use Path::Tiny                qw( path );
-use Puff::Path                qw( display_lines display_name display_text );
+use Puff::Path                qw( display_line display_lines display_name display_text );
 
 my $CODE_RE  = qr/\A[A-Z]+[0-9]{3}\z/;
 my $RESERVED = 'P001';
@@ -57,24 +57,31 @@ sub load ( $class, %args ) {
         next if $candidate eq 'Puff::Rule' || !$candidate->isa('Puff::Rule');
         my $code = $candidate->code;
         die "Rule "
-            . display_name($candidate)
+            . _shown($candidate)
             . " has invalid code '"
-            . ( defined $code ? display_name("$code") : 'undef' )
+            . ( defined $code ? _shown("$code") : 'undef' )
             . "' (expected letters followed by three digits)\n"
             unless defined $code && $code =~ $CODE_RE;
-        my ( $shown, $shown_code ) = map { display_name("$_") } $candidate, $code;
+        my ( $shown, $shown_code ) = map { _shown("$_") } $candidate, $code;
         die "Rule $shown uses code $shown_code, which is reserved for the puff engine\n"
             if $code eq $RESERVED;
         die "Rule $shown uses code $shown_code, but the prefix ALL is reserved for selecting every rule\n"
             if index( $code, 'ALL' ) == 0;
         if ( my $other = $by_code{$code} ) {
-            die 'Rules ' . display_name($other) . " and $shown both use code $shown_code\n";
+            die 'Rules ' . _shown($other) . " and $shown both use code $shown_code\n";
         }
         $by_code{$code} = $candidate;
         push @classes, $candidate;
     }
     my @sorted = sort { $a->code cmp $b->code } @classes;
     return @sorted;
+}
+
+# A package name or rule code from a rule's source, on one line. Bytes (a
+# file without "use utf8") are decoded as UTF-8, like a path; characters are
+# only escaped, so a Latin-1 character such as \x{e9} is shown as it is.
+sub _shown ($text) {
+    return utf8::is_utf8($text) ? display_line($text) : display_name($text);
 }
 
 # Runs $code with any warning shown through display_lines, passed on to the
@@ -177,7 +184,12 @@ An C<ignore> entry that matches nothing is allowed.
 
 C<load> also dies if a C<Puff::Rule::*> module on C<@INC> fails to compile.
 Load errors, and warnings raised while rules load, have their file names
-and control characters escaped as L<Puff::Path> C<display_lines> does.
+and control characters escaped as L<Puff::Path> C<display_lines> does. Such
+text is read as UTF-8 bytes even when perl marks it as characters, since
+perl's messages quote file names as bytes, so a Latin-1 character such as
+C<E<eacute>> from a rule with C<use utf8> is shown as C<\xE9>, as it would be
+in a file name. A package name or rule code in an error is shown as it is
+when perl marks it as characters, and decoded as UTF-8 otherwise.
 Warnings go to any C<__WARN__> handler already in place.
 
 =cut
