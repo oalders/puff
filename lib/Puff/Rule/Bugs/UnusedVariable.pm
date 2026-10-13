@@ -49,8 +49,8 @@ sub explanation {
         temporary directory or a lock. An unused `my $x = EXPR;` is not
         fixed either, since EXPR may matter. Nor is a declaration whose
         removal would leave a bare block (`{ ... }`), or the block of `map`,
-        `grep` or `sort`, empty, starting with `;`, or starting with
-        something like `a => 1,`, because perl reads such a block as a
+        `grep` or `sort`, empty, starting with `;` or an inner block, or
+        starting with something like `a => 1,`, because perl reads such a block as a
         hash. The fix is unsafe because the rule cannot see uses that only
         exist at runtime, such as code in a single-quoted string passed to
         `eval`, and because deleting the last statement of a sub, `do` or
@@ -192,7 +192,9 @@ sub _deletable ( $self, $stmt ) {
 # hash, so `{ } my $x = 1;` does not compile. Perl is fine with `{ ; }`, but
 # PPI reads a block that starts with `;` as a hash, and with it the code that
 # follows. The `;` is no statement to `schildren`, so a block with nothing
-# else left falls out of the loop.
+# else left falls out of the loop. A block left starting with an inner block,
+# as in `map { { a => 1 } } @a`, can make perl read the inner block as a
+# hash, so that counts as not kept.
 sub _keeps_block ( $self, $block, $statement ) {
     my $seen = 0;
     for my $child ( $block->schildren ) {
@@ -200,6 +202,7 @@ sub _keeps_block ( $self, $block, $statement ) {
         next if $self->_deletable($child);
         return 1 unless $seen;
         my ( $first, $next ) = $child->schildren;
+        return 0 if $first->isa('PPI::Structure::Block') || $first->isa('PPI::Structure::Constructor');
         return 1 unless $next && $next->isa('PPI::Token::Operator') && $next->content =~ /\A(?:,|=>)\z/;
         return !grep { $first->isa("PPI::Token::$_") } qw( Word Quote QuoteLike Number );
     }
@@ -216,9 +219,14 @@ sub _bare ($block) {
 
 # True when $block is the block of `map`, `grep` or `sort`, which perl also
 # reads as a hash when it is empty or starts like one, so `map { } @a` does
-# not compile.
+# not compile. In `map( { ... } @a )` the block opens a statement inside the
+# parens, and the word comes before the parens.
 sub _list_block ($block) {
     my $prev = $block->sprevious_sibling;
+    if ( !$prev ) {
+        my $list = $block->parent->parent;
+        $prev = $list->sprevious_sibling if $list && $list->isa('PPI::Structure::List');
+    }
     return $prev && $prev->isa('PPI::Token::Word') && $prev->content =~ /\A(?:CORE::)?(?:map|grep|sort)\z/;
 }
 
@@ -358,7 +366,7 @@ declaration in the same scope, counting interpolation into strings, regexes
 and heredocs. The unsafe fix replaces an unused list member with C<undef>, or
 deletes a declaration without an assignment, unless that would leave a bare
 block, or the block of C<map>, C<grep> or C<sort>, empty, starting with
-C<;>, or starting like a hash (C<< { a => 1, ... } >>). Deleting the last
+C<;> or an inner block, or starting like a hash (C<< { a => 1, ... } >>). Deleting the last
 statement of a sub, C<do> or C<eval> block changes what that block returns.
 
 Based on L<Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter>,
