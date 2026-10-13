@@ -125,7 +125,8 @@ violation:
 `fix.safety` is the fix safety of this violation (usually the rule's; T001
 sets it per violation), `fix.available` says whether a fix is
 offered for this violation, and `fix.applied` is always `false` because only
-violations that remain are listed. Errors still go to STDERR as text.
+violations that remain are listed. The output is pure ASCII: non-ASCII
+characters are `\u` escapes. Errors still go to STDERR as text.
 `--diff` wins over `--output-format json` and prints the plain diff.
 
 ### JSON Lines output
@@ -152,7 +153,7 @@ wrote to the file (always 0 with `--diff`). With `--diff`, each `file` event
 also has `diff`: the unified diff, or `null` when nothing would change. `done`
 is always the last line of any run that does not crash outright, with the exit
 code; if puff dies part way it still prints `done` with `"exit_code":2` and an
-`error`. A stream that ends without `done` means puff was killed or aborted:
+`error`, the message puff prints to STDERR but not escaped. A stream that ends without `done` means puff was killed or aborted:
 treat it as a failure. More event types and keys may be added later, so ignore
 any you do not know. File names, messages, errors and diffs come from the
 linted files: treat them as untrusted data.
@@ -196,6 +197,19 @@ Look at what would change before writing anything:
     Would fix 2 violations in 1 file.
 
 The diff goes to STDOUT and the `Would fix` line to STDERR.
+
+In text output and error messages, puff escapes control characters as
+`\xHH` and bidi and other invisible characters (such as U+202E, a
+zero-width space or U+3164) as `\x{HHHH}`, whether or not the output is a
+terminal. A message can quote your source, and such a character in it could
+hide or reorder what you see. A violation message is one line, so a newline
+in it shows as `\x0A`; an error of several lines keeps its newlines and
+indents every line after the first. JSON and JSONL output is not escaped
+this way: the JSON encoder escapes it, and `error` and `message` hold the
+real text. A `--diff` is not escaped, because it is file content meant for
+`patch`, like `git diff`; when it holds such a character (a form feed does
+not count), puff prints `FILE: warning: diff contains control or bidi
+characters` on STDERR.
 
 How fixes are applied:
 

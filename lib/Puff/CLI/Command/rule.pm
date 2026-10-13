@@ -4,6 +4,8 @@ use v5.36;
 
 use Puff::CLI -command;
 
+use Puff::Path qw( display_name );
+
 sub abstract   {'explain one rule'}
 sub usage_desc {'%c rule %o CODE'}
 sub opt_spec   { Puff::CLI->config_opt_spec }
@@ -17,7 +19,7 @@ sub execute ( $self, $opt, $args ) {
     my ($code) = @$args;
     my ( undef, $classes ) = Puff::CLI->load_config($opt);
     my ($info) = grep { $_->{code} eq $code } Puff::CLI->rule_info($classes);
-    die "Unknown rule $code\n" unless $info;
+    die 'Unknown rule ' . display_name($code) . "\n" unless $info;
 
     print "$info->{code}: $info->{summary}\n";
     print "Fix safety: $info->{fix_safety}\n";

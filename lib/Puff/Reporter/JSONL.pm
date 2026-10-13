@@ -3,6 +3,7 @@ package Puff::Reporter::JSONL;
 use v5.36;
 
 use JSON::PP             ();
+use Puff::Path           qw( decode_text );
 use Puff::Reporter::JSON ();
 use Puff::Reporter::Text ();
 
@@ -39,9 +40,12 @@ sub report ( $self, $run, $out, $err ) {
 }
 
 # Prints a final done event for a run that died: the exit code puff will
-# return and the error, so the stream still ends with done.
+# return and the error, so the stream still ends with done. The error is
+# decoded as Puff::Path::display_error decodes it, but not escaped.
 sub abort ( $self, $exit_code, $error ) {
-    $self->_emit( $self->{out}, { type => 'done', exit_code => $exit_code + 0, error => "$error" =~ s/\s+\z//r } );
+    $error = "$error" =~ s/\s+\z//r;
+    $error = decode_text($error) unless utf8::is_utf8($error);
+    $self->_emit( $self->{out}, { type => 'done', exit_code => $exit_code + 0, error => $error } );
     return;
 }
 
@@ -115,9 +119,10 @@ key: the unified diff for the file, or null when nothing would change.
 Printed last: C<done> is always the last line of any run that does not
 crash outright.
 C<exit_code> is the exit code puff returns. If the run dies part way
-(C<abort>), C<done> also has C<error>, the message puff prints to STDERR,
-and C<exit_code> is 2. A stream that ends without C<done> means puff was
-killed or aborted before it could print one: treat it as a failure.
+(C<abort>), C<done> also has C<error>, the message puff prints to STDERR
+but not escaped: a path in it is decoded as UTF-8, with C<\xHH> for
+invalid bytes. C<exit_code> is 2. A stream that ends without C<done> means
+puff was killed or aborted before it could print one: treat it as a failure.
 
 =back
 

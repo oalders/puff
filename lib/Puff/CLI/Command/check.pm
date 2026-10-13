@@ -5,7 +5,7 @@ use v5.36;
 use Puff::CLI -command;
 
 use Puff::Engine          ();
-use Puff::Path            qw( display_name );
+use Puff::Path            qw( decode_text display_name );
 use Puff::Reporter::JSON  ();
 use Puff::Reporter::JSONL ();
 use Puff::Reporter::Text  ();
@@ -48,7 +48,8 @@ sub execute ( $self, $opt, $args ) {
         # As in the config file, an empty entry is an error: it would be a
         # prefix of every code. `--select ''` and `--select 'B001,,'` both
         # have one.
-        my @codes = map {s/\A\s+|\s+\z//gr} map { length ? split( /,/, $_, -1 ) : $_ } @$given;
+        # @ARGV is bytes; selectors from the config file are characters.
+        my @codes = map {s/\A\s+|\s+\z//gr} map { length ? split( /,/, $_, -1 ) : $_ } map { decode_text($_) } @$given;
         $self->usage_error( '--' . ( $key =~ tr/_/-/r ) . ' has an empty rule selector' ) if grep { !/\S/ } @codes;
         $cli{$key} = \@codes;
     }
@@ -104,7 +105,7 @@ sub _show_files ( $runner, $args ) {
     my @files = $runner->files(@$args);
     for my $file (@files) {
         if ( ref $file ) {
-            print STDERR display_name( $file->{file} ), ": error: $file->{error}\n";
+            print STDERR Puff::Reporter::Text->error_line( display_name( $file->{file} ), $file->{error} );
             $Puff::CLI::EXIT_CODE = 2;
         }
         else {
@@ -167,7 +168,12 @@ which ignores it. C<--show-files> prints the
 files that would be checked, one per line, and checks nothing: they are
 plain paths and C<--statistics> does not apply, whatever C<--output-format>
 says. File names that are not valid UTF-8 are shown with C<\xHH>
-escapes for the invalid bytes (see L<Puff::Path>). While checking, a spinner and a C<Checking N/M files> counter are
+escapes for the invalid bytes (see L<Puff::Path>). File names, messages
+and errors in text output are escaped too: control characters as C<\xHH>
+and bidi and other invisible characters as C<\x{HHHH}>; JSON and JSONL
+leave that to the JSON encoder. A C<--diff> is file
+content and is not escaped; a warning on STDERR says when one holds such a
+character (see L<Puff::Reporter::Text>). While checking, a spinner and a C<Checking N/M files> counter are
 shown on STDERR when it is a terminal and the run takes more than half a
 second (never with C<--output-format jsonl>, which streams one JSON object
 per line as each file is checked). See L<Puff::Runner> for exit codes.
