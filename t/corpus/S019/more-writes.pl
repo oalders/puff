@@ -151,19 +151,24 @@ socket( $b13, 1, 1, 0 ) if 0;
 print "1\n" if $str =~ /$b1$b2$b3$b4$b5$b6$b7$b8$b9$b10$b11$b12$b13/; # expect: S019 S019 S019 S019 S019 S019 S019 S019 S019 S019 S019 S019 S019
 
 # The right-hand side of an assignment in the argument, the arguments of a
-# nested call or a method, and a 3-argument CORE::substr are not changed.
+# nested call or a method, and a 3-argument CORE::substr are not changed,
+# also in a conditional after the assignment or the call.
 our $u1 = qr/a/;
 our $u2 = qr/a/;
 our $u3 = qr/a/;
 our $u4 = qr/a/;
 our $u5 = qr/a/;
+our $u12 = qr/a/;
+our $u13 = qr/a/;
 my $o = 'main';
 chomp( my $copy = $u1 );
 chomp( ( foo $u2 ) ) if 0;    # parse only: foo is defined below
 my $piece = CORE::substr( $u3, 0, 1 );
 $o->tie($u4) if 0;
 chomp $o->foo($u5) if 0;
-print "1\n" if $str =~ /$u1$u2$u3$u4$u5/;
+chomp( $z = $c ? $y : $u12 );
+chomp( foo $c ? $y : $u13 ) if 0;
+print "1\n" if $str =~ /$u1$u2$u3$u4$u5$u12$u13/;
 
 # A conditional that is not the whole element is not assigned to, and
 # `=~` binds tighter than `?:`, so only the last branch is bound.

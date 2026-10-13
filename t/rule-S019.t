@@ -128,7 +128,7 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
 # Each bare chomp walked its arguments to the end of the statement, so a
 # statement with many of them was quadratic: 1,500 took 9 seconds. Sibling
 # lookups are counted, as timings would be flaky. The bound of each case is
-# 3 to 4 times the lookups it takes (2,020 for the bare chomps, 5,026 for
+# 3 to 4.5 times the lookups it takes (2,020 for the bare chomps, 5,026 for
 # the chomps after `chomp $y` and the nested lists after it, 12,121 for the
 # wide list nested deep, 3,921 for the deep one, 927 after a chomp, 22,030
 # for the conditional and 47,020 for the conditionals in assignments); the

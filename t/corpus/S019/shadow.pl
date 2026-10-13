@@ -39,7 +39,8 @@ my $delim = qr/,/;
 sub splits { return $str =~ /$delim/ }
 
 # Not seen: a foreach over several variables at a time declares nothing the
-# rule knows of, so the outer qr// is taken for the loop variable.
+# rule knows of, so the outer qr// is taken for the loop variable. There is
+# no report here by design: this is a false negative.
 my $pair = qr/p/;
 {
     no warnings 'experimental::for_list';

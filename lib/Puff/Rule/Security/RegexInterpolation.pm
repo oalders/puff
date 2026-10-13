@@ -56,31 +56,35 @@ sub explanation {
           `my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) =
           @_` hides an outer `my $x = qr/.../`, but `for my ($k, $x)
           (...)`, over several variables at a time, does not. For a
-          global with no declaration, a qualifying assignment `$x = qr/.../;` (or
-          `local $x = qr/.../;`) in an
-          earlier statement of the same or an enclosing block (or the
-          file) is needed instead. Either way the file must write the name
-          nowhere else: any other assignment (`=`, `.=`, `||=`, `//=`,
-          `&.=` and the like, in any scope, also in a nested list such as
-          `($z, ($x)) = ...` or a conditional such as `($c ? $a : $x) =
-          ...` or `$c ? $x : $a = ...`), `local $x` other than a
-          qualifying `local $x = qr/.../;`, a `foreach` loop over it or
-          over a list holding it, a
-          reference `\$x`, `$x++` or `--$x` (also `($x)++`), `$x =~ s///`
-          or `tr///` (also `($x) =~ s///`), or a builtin changing it means
-          it is reported. The builtins are `chomp`, `chop`, `undef`, `tie`, `open`,
-          `opendir`, `sysopen`, `pipe`, `socket`, `socketpair`, `accept`,
-          `read`, `recv`, `sysread`, `fcntl`, `ioctl`, `shmread`,
-          `msgrcv`, `utf8::encode`, `utf8::decode`, a 4-argument `substr`
-          and a 4-argument `select`, also as `CORE::chomp` and the like.
-          Arguments are counted by their commas, and every scalar in an
-          argument the builtin changes is taken as written, as in
-          `chomp($c ? $a : $x)`,
-          `chomp(($x))`, `chomp +($x)` or `chomp(substr($x, 0, 1))`, but
-          not one in a method or a call (`chomp(foo $x)`,
-          `chomp(foo($x))`), or after an assignment operator
-          (`chomp(my $y = $x)`). A write to `$Pkg::x`, `$::x`, `${Pkg::x}` or `$Pkg'x` counts as a
-          write to `$x`, and a write to `$x` counts for `$Pkg::x`. Writes
+          global with no declaration, a qualifying assignment `$x =
+          qr/.../;` (or `local $x = qr/.../;`) in an earlier statement
+          of the same or an enclosing block (or the file) is needed
+          instead. Either way the file must write the name nowhere else:
+          any other assignment (`=`, `.=`, `||=`, `//=`, `&.=` and the
+          like, in any scope, also in a nested list such as `($z, ($x))
+          = ...` or a conditional such as `($c ? $a : $x) = ...` or `$c ?
+          $x : $a = ...`), `local $x` other than a qualifying `local $x =
+          qr/.../;`, a `foreach` loop over it or over a list holding it,
+          a reference `\$x`, `$x++` or `--$x` (also `($x)++`), `$x =~
+          s///` or `tr///` (also `($x) =~ s///`), or a builtin changing
+          it means it is reported. The builtins are `chomp`, `chop`,
+          `undef`, `tie`, `open`, `opendir`, `sysopen`, `pipe`, `socket`,
+          `socketpair`, `accept`, `read`, `recv`, `sysread`, `fcntl`,
+          `ioctl`, `shmread`, `msgrcv`, `utf8::encode`, `utf8::decode`, a
+          4-argument `substr` and a 4-argument `select`, also as
+          `CORE::chomp` and the like. Arguments are counted by their
+          commas, and every scalar in an argument the builtin changes is
+          taken as written, as in `chomp($c ? $a : $x)`, `chomp(($x))`,
+          `chomp +($x)` or `chomp(substr($x, 0, 1))`, but not one in a
+          method or a call (`chomp(foo $x)`, `chomp(foo($x))`), or after
+          an assignment operator (`chomp(my $y = $x)`). A scalar passed
+          through a named unary operator is taken as written too, by
+          design (`chomp(length $x)`, `chomp(lc $x)`, `chomp(ref $x)`).
+          A sub named after a builtin (`sub undef ($x) { }`) is walked
+          like a call, but its signature and body are not arguments, so
+          nothing in them counts. A write to `$Pkg::x`, `$::x`,
+          `${Pkg::x}` or `$Pkg'x` counts as a write to `$x`, and a write
+          to `$x` counts for `$Pkg::x`. Writes
           through `@_`, the `$_` of `map` or `grep`, the aliases of `sort`
           (`for (sort $x)`), a `foreach` over several variables at a time
           (`for my ($p, $q) ($x, $y)`), a glob, a symbolic name
@@ -995,7 +999,12 @@ written, as in
 C<chomp($c ? $a : $x)>, C<chomp(($x))>, C<chomp +($x)> or
 C<chomp(substr($x, 0, 1))>, except one in a method or a call
 (C<< $o->open($x) >>, C<chomp(foo $x)>, C<chomp(foo($x))>) or after an
-assignment operator (C<chomp(my $y = $x)>).
+assignment operator (C<chomp(my $y = $x)>). A scalar passed through a
+named unary operator is taken as written too, by design
+(C<chomp(length $x)>, C<chomp(lc $x)>, C<chomp(ref $x)>), which errs
+towards reporting. A sub named after a builtin (C<sub undef ($x) { }>) is
+walked like a call, but its signature and body are not arguments, so
+nothing in them counts.
 This is by name, not by scope, so a same-named variable written in another
 sub (or package) also counts. A write to a package-qualified name
 (C<$main::x>, C<$::x>, C<${main::x}>, C<$main'x>) counts for the last
