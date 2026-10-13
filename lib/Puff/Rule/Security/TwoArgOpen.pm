@@ -59,8 +59,9 @@ sub explanation {
           three-argument open);
         - starts or ends with `|` when there is no mode prefix (a command in
           two-argument open, a plain file name after the rewrite).
-        The mode-prefix case changes too: with an empty `$e`, `"<$e-\tz"`
-        used to read STDIN, and the rewrite opens a file named `-<TAB>z`.
+        A literal mode prefix does not help when an empty value comes before
+        the rest of the name: with an empty `$e`, `"<$e-\tz"` used to read
+        STDIN, and the rewrite opens a file named `-<TAB>z`.
 
         Two-argument open strips only ASCII whitespace. A non-ASCII space such
         as U+00A0 or U+2028 at either end of the filename is part of the
@@ -181,8 +182,8 @@ including after C<E<gt>E<gt>>, in two-argument open; a file named C<-> in
 three-argument open), or is a dup such as C<&0> or C<&STDOUT> (a literal file
 name in three-argument open), or starts or ends with C<|> when there is no
 mode prefix (a command in two-argument open, a plain file name after the
-rewrite). The mode-prefix case changes too: with an empty C<$e>,
-C<"E<lt>$e-\tz"> used to read STDIN, and the rewrite opens a file named
-C<-E<lt>TABE<gt>z>.
+rewrite). A literal mode prefix does not help when an empty value comes
+before the rest of the name: with an empty C<$e>, C<"E<lt>$e-\tz"> used
+to read STDIN, and the rewrite opens a file named C<-E<lt>TABE<gt>z>.
 
 =cut
