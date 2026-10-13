@@ -37,3 +37,11 @@ if ( ( my $c = qr/c/ ) ) { print "1\n" if $str =~ /$c/ } # expect: S019
 # A file-scope qr// used in a sub that does not redeclare it is skipped.
 my $delim = qr/,/;
 sub splits { return $str =~ /$delim/ }
+
+# Not seen: a foreach over several variables at a time declares nothing the
+# rule knows of, so the outer qr// is taken for the loop variable.
+my $pair = qr/p/;
+{
+    no warnings 'experimental::for_list';
+    for my ( $k, $pair ) (@in) { print "1\n" if $str =~ /$pair/ }
+}

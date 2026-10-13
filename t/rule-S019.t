@@ -128,12 +128,13 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
 # Each bare chomp walked its arguments to the end of the statement, so a
 # statement with many of them was quadratic: 1,500 took 9 seconds. Sibling
 # lookups are counted, as timings would be flaky. The bound of each case is
-# about 4 times the lookups it takes (2,020 for the bare chomps, 5,026 for
-# the chomps after `chomp $y` and the wide nested list, 3,321 for the deep
-# one, 927 after a chomp, 22,030 for the conditional and 47,020 for the
-# conditionals in assignments); the quadratic walk took about 2 million, and
-# climbing each element of the deep list to its outermost list without a
-# cache takes 48,470.
+# 3 to 4 times the lookups it takes (2,020 for the bare chomps, 5,026 for
+# the chomps after `chomp $y` and the nested lists after it, 12,121 for the
+# wide list nested deep, 3,921 for the deep one, 927 after a chomp, 22,030
+# for the conditional and 47,020 for the conditionals in assignments); the
+# quadratic walk took about 2 million, and climbing each element of the
+# deep lists to its outermost list without a cache takes 49,070 and
+# 113,020.
 {
     no warnings 'redefine';
     my $calls = 0;
@@ -142,14 +143,15 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
     local *PPI::Element::sprevious_sibling = sub { $calls++; goto &$prev };
     my ( $n, $d ) = ( 1_000, 300 );
     my %lists = (
-        'bare chomps'           => [ 'chomp, ' x $n, 8_000 ],
-        'chomps after keys'     => [ join( q{}, map {"a$_ => chomp, "} 1 .. $n ), 8_000 ],
-        'chomps after chomp $y' => [ 'chomp $y, ' . 'chomp, ' x $n, 20_000 ],
-        'wide nested list'      => [ 'chomp $y, ' . '($y), ' x $n, 20_000 ],
-        'deep nested list'      => [ '($y, ' x $d . ')' x $d, 12_000 ],
-        'deep list after chomp' => [ 'chomp $y, ' . '($y, ' x $d . ')' x $d, 4_000 ],
-        'long conditional'      => [ '$c ? $y : ' x $n . '$y = 1', 90_000 ],
-        'conditionals copied'   => [ 'my $t = $c ? $y : $z, ' x $n, 190_000 ],
+        'bare chomps'                 => [ 'chomp, ' x $n, 8_000 ],
+        'chomps after keys'           => [ join( q{}, map {"a$_ => chomp, "} 1 .. $n ), 8_000 ],
+        'chomps after chomp $y'       => [ 'chomp $y, ' . 'chomp, ' x $n, 20_000 ],
+        'nested lists after chomp $y' => [ 'chomp $y, ' . '($y), ' x $n, 20_000 ],
+        'wide list nested deep'       => [ '(' x 100 . '$y, ' x $n . ')' x 100, 40_000 ],
+        'deep nested list'            => [ '($y, ' x $d . ')' x $d, 12_000 ],
+        'deep list after chomp'       => [ 'chomp $y, ' . '($y, ' x $d . ')' x $d, 4_000 ],
+        'long conditional'            => [ '$c ? $y : ' x $n . '$y = 1', 90_000 ],
+        'conditionals copied'         => [ 'my $t = $c ? $y : $z, ' x $n, 190_000 ],
     );
     for my $label ( sort keys %lists ) {
         my ( $list, $bound ) = @{ $lists{$label} };
@@ -171,7 +173,7 @@ is(
     violations("my \$x = qr/a/;\nchomp \$y, open my \$fh, \$x;\n/\$x/;\n"), [],
     'another builtin takes the rest of the list: open does not change its second argument'
 );
-is( violations("my \$x = qr/a/;\nchomp \$y if \$x;\n/\$x/;\n"), [], 'a statement modifier ends the arguments' );
+is( violations("my \$x = qr/a/;\nchomp \$y if !\$x;\n/\$x/;\n"), [], 'a statement modifier ends the arguments' );
 
 # Perl 5.40's ^^=, which PPI splits in two. The corpus files compile on
 # older perls, so it is tested here.
@@ -181,7 +183,9 @@ is( scalar @{ violations("my \$x = qr/a/;\n\$x ^^= \$y;\n/\$x/;\n") }, 1, '^^= i
 # variables, and then walked for each. Parent lookups are counted: 200
 # variables at a depth of 100 took 40,600; now the chain is built once, in
 # about 200. refaddr calls count the walks: about 41,400 before, about 400
-# now that each name is looked up once per regex.
+# now that each name is looked up once per regex. With 200 names, each
+# looked up once, building the chain for each name took 20,000 parent
+# lookups.
 {
     no warnings 'redefine';
     my ( $calls, $refs ) = ( 0, 0 );
@@ -189,14 +193,28 @@ is( scalar @{ violations("my \$x = qr/a/;\n\$x ^^= \$y;\n/\$x/;\n") }, 1, '^^= i
     local *PPI::Element::parent = sub { $calls++; goto &$orig };
     my $refaddr = $class->can('refaddr');
     local *Puff::Rule::Security::RegexInterpolation::refaddr = sub { $refs++; goto &$refaddr };
-    my $text    = "our \$x = qr/a/;\n" . ( "{\n" x 100 ) . '/' . ( '$x' x 200 ) . "/;\n" . ( "}\n" x 100 );
-    my $doc     = PPI::Document->new( \$text );
-    my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
-    is( [ $class->new->check( $regex, $doc ) ], [], 'a nested qr// variable is not reported' );
-    ( $calls, $refs ) = ( 0, 0 );
-    $class->new->check( $regex, $doc );
+    my $nested = sub ( $before, $inside, $pattern ) {
+        my $text    = $before . ( "{\n" x 100 ) . $inside . "/$pattern/;\n" . ( "}\n" x 100 );
+        my $doc     = PPI::Document->new( \$text );
+        my ($regex) = @{ $doc->find('PPI::Token::Regexp::Match') };
+        my $found   = () = $class->new->check( $regex, $doc );
+        ( $calls, $refs ) = ( 0, 0 );
+        $class->new->check( $regex, $doc );
+        return $found;
+    };
+
+    is( $nested->( "our \$x = qr/a/;\n", q{}, '$x' x 200 ), 0, 'a nested qr// variable is not reported' );
     cmp_ok( $calls, '<', 6 * 100, 'parent lookups: the chain is built once per regex' );
     cmp_ok( $refs, '<', 2_000, 'the chain is walked once per name and regex' );
+
+    is( $nested->( "our \$x = qr/a/;\n", "\$x = shift;\n", '$x' x 200 ), 200, 'written at that depth, it is reported' );
+
+    my @names = map {"\$x$_"} 1 .. 200;
+    is(
+        $nested->( join( q{}, map {"our $_ = qr/a/;\n"} @names ), q{}, join( q{}, @names ) ),
+        0, '200 nested qr// variables are not reported'
+    );
+    cmp_ok( $calls, '<', 6 * 100, 'parent lookups: the chain is built once for all the names' );
 }
 
 # Long or hostile regexes are scanned in linear time. Each took over 8

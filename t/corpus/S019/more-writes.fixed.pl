@@ -182,6 +182,41 @@ $c ? $u10 : $y =~ s/a/b/;
 $c ? $u11 : $c ? $y = 1 : $z;
 print "1\n" if $str =~ /$u6$u7$u8$u9$u10$u11/;
 
+# An assignment after a comma, `=>`, `or`, `and` or a statement modifier
+# is not to the conditional before it, and a scalar that ends a middle
+# branch without being all of it is not assigned to.
+our $a1 = qr/a/;
+our $a2 = qr/a/;
+our $a3 = qr/a/;
+our $a4 = qr/a/;
+our $a5 = qr/a/;
+our $a6 = qr/a/;
+our $a7 = qr/a/;
+our $a8 = qr/a/;
+$c ? $a1 : $y, $z = 1;
+$c ? $a2 : $y => $z = 1;
+$c ? $a3 : $y or $z = 1;
+$c ? $a4 : $y and $z = 1;
+$c ? $a5 : $y if $z = 1;
+$c ? $a6 : $y for $z = 1;
+$c ? vec $str, 1, $a7 : $z = 1;
+my $u = undef || $a8;
+print "1\n" if $str =~ /$a1$a2$a3$a4$a5$a6$a7$a8/;
+
+# A conditional after a comma that ends an assignment, or one with a
+# branch in parentheses, can still be assigned to. `?:` ends an assignment
+# in its middle branch, so in an argument of chomp the last branch is
+# still changed. A declaration in an argument is changed.
+our $l1 = qr/a/;
+our $l2 = qr/a/;
+our $l3 = qr/a/;
+our $l4 = qr/a/;
+( my $cp4 = $in, $c ? $l1 : $y ) = @ARGV;
+$c ? ($l2) : ($y) = (1);
+chomp( $c ? $y = 1 : $l3 );
+sub opens { open( my $l4, '<', $0 ) or die; return }
+print "1\n" if $str =~ /\Q$l1\E\Q$l2\E\Q$l3\E\Q$l4\E/; # expect: S019 S019 S019 S019
+
 sub TIESCALAR { return bless {}, shift }
 sub FETCH     { return 'a' }
 sub foo       { return @_ }

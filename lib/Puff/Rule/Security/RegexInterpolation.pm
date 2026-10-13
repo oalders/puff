@@ -54,8 +54,9 @@ sub explanation {
           and counts `my`, `our` and `state` (list forms included), `for
           my $v` loop variables and sub signature parameters. So an inner
           `my $x = shift`, `for my $x (...)`, `sub f ($x)` or `my ($x) =
-          @_` hides an outer `my $x = qr/.../`. For a global with no
-          declaration, a qualifying assignment `$x = qr/.../;` (or
+          @_` hides an outer `my $x = qr/.../`, but `for my ($k, $x)
+          (...)`, over several variables at a time, does not. For a
+          global with no declaration, a qualifying assignment `$x = qr/.../;` (or
           `local $x = qr/.../;`) in an
           earlier statement of the same or an enclosing block (or the
           file) is needed instead. Either way the file must write the name
@@ -72,8 +73,9 @@ sub explanation {
           `read`, `recv`, `sysread`, `fcntl`, `ioctl`, `shmread`,
           `msgrcv`, `utf8::encode`, `utf8::decode`, a 4-argument `substr`
           and a 4-argument `select`, also as `CORE::chomp` and the like.
-          Arguments are counted by their commas. Any scalar in an argument
-          that is changed counts, as in `chomp($c ? $a : $x)`,
+          Arguments are counted by their commas, and every scalar in an
+          argument the builtin changes is taken as written, as in
+          `chomp($c ? $a : $x)`,
           `chomp(($x))`, `chomp +($x)` or `chomp(substr($x, 0, 1))`, but
           not one in a method or a call (`chomp(foo $x)`,
           `chomp(foo($x))`), or after an assignment operator
@@ -84,9 +86,12 @@ sub explanation {
           (`for my ($p, $q) ($x, $y)`), a glob, a symbolic name
           (`${'main::x'}`, `$::{x}`), a postfix dereference (`$x->$*++`),
           an lvalue sub, a string `eval`, a regex code block (`(?{ ...
-          })`, `(??{ ... })`) or a `substr` whose arguments come from an
-          array (`substr($x, @args)`) are not seen. An assignment
-          inside a condition (`if (my $x = qr/a/)`) is not seen, which errs
+          })`, `(??{ ... })`), the replacement of `s///e`, the code of
+          `"@{[ ... ]}"` or `"${\ ... }"`, `Encode::from_to`,
+          `Encode::decode` or `encode` with a CHECK argument,
+          `Encode::_utf8_on` or `_utf8_off`, or a call through `&`
+          (`&CORE::chomp($x)`, `&utf8::decode($x)`) are not seen. An
+          assignment inside a condition (`if (my $x = qr/a/)`) is not seen, which errs
           towards reporting, and `$x = $opt{x} // qr/.../` is reported;
         - a plain scalar with an all-caps name (`$WS`, `$CRLF`,
           `$Foo::CRLF`), taken to be a constant. `$Input` is reported;
@@ -739,15 +744,13 @@ sub _conditionals ( $parent, $cache ) {
             }
             elsif ( _is_token( $el, 'Operator', '?' ) ) {
                 shift @assigned;
-                @assigned = (0) unless @assigned;
             }
             elsif ( _is_token( $el, 'Operator', $ASSIGN ) ) {
                 $assigned[0] = 1;
             }
             elsif (_is_token( $el, 'Operator', $comma )
                 || _is_token( $el, 'Operator', $END_WORD )
-                || _is_token( $el, 'Word', $END_WORD )
-                || $el->isa('PPI::Token::Structure') ) {
+                || _is_token( $el, 'Word', $END_WORD ) ) {
                 @assigned = (0);
             }
         }
@@ -777,7 +780,9 @@ sub _list_elements ($list) {
 # of the list, at `or`, a statement modifier or another of these builtins
 # without parentheses, which takes the rest of the list (or of the nested
 # list) itself, so the cost is linear in the document even for `(chomp,
-# chomp, ...)`. A comma right after the builtin means it has no arguments.
+# chomp, ...)`. An operator right after the builtin, other than a unary
+# `+` (`chomp +($x)`), means it has no arguments: `(chomp, $x)` or
+# `undef || $x`.
 sub _builtin_args ($word) {
     my $name    = $word->content =~ s/\ACORE:://r;
     my $changes = $CHANGES_ARGS{$name} or return;
@@ -792,7 +797,7 @@ sub _builtin_args ($word) {
     if ( $el && $el->isa('PPI::Structure::List') ) {
         @lists = ( { els => [ _list_elements($el) ] } );
     }
-    elsif ( _is_token( $el, 'Operator', $comma ) ) {
+    elsif ( $el && $el->isa('PPI::Token::Operator') && $el->content ne '+' ) {
         return;
     }
     else {
@@ -801,9 +806,11 @@ sub _builtin_args ($word) {
 
     # $index counts the commas, $args the arguments started; $in is false
     # after an assignment operator or a call in the argument, and $prev is
-    # the element walked before, in the same list.
+    # the element walked before, in the same list. @cond holds $in at each
+    # `?` until its `:`, which binds tighter than assignment and ends one in
+    # a middle branch: `chomp($c ? $y = 1 : $x)` changes `$x`.
     my $need = $MIN_ARGS{$name} // 0;
-    my ( $index, $args, $in, $prev, @changed ) = ( 0, 0, 1 );
+    my ( $index, $args, $in, $prev, @cond, @changed ) = ( 0, 0, 1 );
     my $pop  = sub { ( $prev, $in ) = @{ pop @lists }{qw( prev in )} };
     my $next = sub {
         while (@lists) {
@@ -846,6 +853,14 @@ sub _builtin_args ($word) {
         if ($end_list) {
             last unless $nested;
             $pop->();    # the rest of a nested list
+            next;
+        }
+        if ( _is_token( $el, 'Operator', '?' ) ) {
+            push @cond, $in;
+            next;
+        }
+        if ( _is_token( $el, 'Operator', ':' ) ) {
+            $in = pop @cond if @cond;
             next;
         }
         next unless $index < $changes && $in;
@@ -951,7 +966,9 @@ outwards for the latest declaration of the name before the regex; C<my>,
 C<our> and C<state> (list forms included), a C<for my $v> loop variable
 (owned by its loop) and a sub signature parameter (owned by the sub's body)
 all count. An inner C<my $x = shift>, C<for my $x (...)>, C<sub f ($x)> or
-C<my ($x) = @_> therefore hides an outer C<my $x = qr/.../>. A global with
+C<my ($x) = @_> therefore hides an outer C<my $x = qr/.../>, but a
+C<for my ($k, $x) (...)> loop over several variables at a time does not,
+as it is not seen as a declaration. A global with
 no declaration needs a qualifying C<$x = qr/.../;> (or
 C<local $x = qr/.../;>) statement before the
 regex in the same or an enclosing block (or the file).
@@ -968,11 +985,13 @@ C<$x =~ s///>, C<($x) =~ s///> or C<tr///> (without C</r>), or a builtin
 that changes it: C<chomp>, C<chop>, C<undef> or C<tie> of it, C<$x> as the
 handle of C<open>, C<opendir>, C<sysopen>, C<pipe>, C<socket>,
 C<socketpair> or C<accept>, the buffer of C<read>, C<recv>, C<sysread>,
-C<shmread> or C<msgrcv>, the third argument of C<fcntl> or C<ioctl>, the
+C<shmread> or C<msgrcv> or the third argument of C<fcntl> or C<ioctl>
+(the arguments before these count too, which errs towards reporting), the
 argument of C<utf8::encode> or C<utf8::decode>, the first argument of a
 4-argument C<substr> or a bit vector of a 4-argument C<select> (also
 called as C<CORE::chomp> and the like). Arguments are counted by their
-commas. Any scalar in such an argument counts, as in
+commas, and every scalar in an argument the builtin changes is taken as
+written, as in
 C<chomp($c ? $a : $x)>, C<chomp(($x))>, C<chomp +($x)> or
 C<chomp(substr($x, 0, 1))>, except one in a method or a call
 (C<< $o->open($x) >>, C<chomp(foo $x)>, C<chomp(foo($x))>) or after an
@@ -988,7 +1007,11 @@ time (C<for my ($p, $q) ($x, $y)>), a glob assignment, a symbolic name
 (C<${'main::x'}>, C<$::{x}>), a postfix dereference (C<< $x->$*++ >>), an
 lvalue sub, a string C<eval> (C<eval '$x = $in'>), a regex code block
 (C<(?{ $x = $in })>, C<(??{ ... })>), which the scan of the pattern skips,
-or a C<substr> whose arguments come from an array (C<substr($x, @args)>).
+the replacement of C<s///e> (C<s/a/$x = 1/e>), the code of
+C<"@{[ $x = 1 ]}"> or C<"${\ ($x = 1)}">, C<Encode::from_to>,
+C<Encode::decode> or C<Encode::encode> with a CHECK argument,
+C<Encode::_utf8_on> or C<Encode::_utf8_off>, or a call through C<&>
+(C<&CORE::chomp($x)>, C<&utf8::decode($x)>).
 An assignment inside a condition
 (C<if (my $x = qr/a/)>) is not seen as qualifying, which errs towards
 reporting. C<$x = $opt{x} // qr/,/>, C<$x ||= qr/,/> and
