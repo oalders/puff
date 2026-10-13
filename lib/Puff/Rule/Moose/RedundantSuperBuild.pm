@@ -37,13 +37,13 @@ sub explanation {
         is on it. A trailing comment stays where it was. When the call's
         value is used, as in `return $self->SUPER::BUILD(@_)`, or the call
         is inside a `map`, `grep`, `sort`, `do` or `eval` block, there is no
-        fix. There is none either when removing the calls would leave a bare
-        block (`{ ... }`) empty, starting with `;`, or starting with something
-        like `a => 1,`, because perl reads such a block as a hash. It is unsafe because a
-        parent that is not a Moose, Mouse or Moo class may rely on the call,
-        because any arguments the call changed are no longer passed, and
-        because when the call is the last statement of the method, the
-        method returns something else.
+        fix. There is none either when removing the calls would leave a
+        bare block (`{ ... }`) empty, starting with `;`, or starting with
+        something like `a => 1,`, because perl reads such a block as a hash.
+        It is unsafe because a parent that is not a Moose, Mouse or Moo
+        class may rely on the call, because any arguments the call changed
+        are no longer passed, and because when the call is the last
+        statement of the method, the method returns something else.
         END
 }
 
@@ -201,11 +201,10 @@ twice.
 The unsafe fix removes the call when it is a statement of its own, with its
 line when nothing else is on it. A trailing comment stays where it was. A
 call whose value is used, that is inside a C<map>, C<grep>, C<sort>,
-C<do> or C<eval> block, or whose removal would leave a bare block empty, starting
-with C<;>, or starting like a hash (C<< { a => 1, ... } >>), is reported
-with no fix.
-When the call is the last statement of the method, the fix changes what
-the method returns.
+C<do> or C<eval> block, or whose removal would leave a bare block empty,
+starting with C<;>, or starting like a hash (C<< { a => 1, ... } >>), is
+reported with no fix. When the call is the last statement of the method,
+the fix changes what the method returns.
 
 Not selected by default; select it with C<M> or C<M004>.
 
