@@ -45,25 +45,41 @@ subtest 'overlapping replaces' => sub {
 };
 
 subtest 'insert vs replace' => sub {
-    my %expect = ( 3 => 'defer', 2 => 'ok', 5 => 'ok' );
+    my %expect = ( 2 => 'ab+Rfghij', 3 => undef, 5 => 'abR+fghij' );
     for my $x ( sort keys %expect ) {
         my ( $new, undef, $def ) = Puff::Edits::apply(
             $t,
             [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( $x, 'i', [ $x, $x, '+' ] ) ]
         );
-        if ( $expect{$x} eq 'defer' ) {
+        if ( defined $expect{$x} ) {
+            is ids($def), [], "insert at $x accepted";
+            is $new, $expect{$x}, "insert at $x placed";
+        }
+        else {
             is ids($def), ['i'], "insert at $x deferred";
             is $new, 'abRfghij', 'text';
         }
-        else {
-            is ids($def), [], "insert at $x accepted";
-            like $new, qr/\+/, 'inserted';
-        }
     }
-    my ($new) = Puff::Edits::apply( $t, [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( 2, 'i', [ 2, 2, '+' ] ) ] );
-    is $new, 'ab+Rfghij', 'insert at start goes before replacement';
-    ($new) = Puff::Edits::apply( $t, [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( 5, 'i', [ 5, 5, '+' ] ) ] );
-    is $new, 'abR+fghij', 'insert at end goes after replacement';
+};
+
+subtest 'replace after an insert' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [ fix( 3, 'i', [ 3, 3, '+' ] ), fix( 4, 'r', [ 2, 5, 'R' ] ) ]
+    );
+    is $new, 'abc+defghij', 'insert inside the range wins';
+    is ids($acc), ['i'], 'insert accepted';
+    is ids($def), ['r'], 'replacement deferred';
+
+    for my $case ( [ 2, 'ab+Rfghij' ], [ 5, 'abR+fghij' ] ) {
+        my ( $x, $want ) = @$case;
+        ( $new, $acc, $def ) = Puff::Edits::apply(
+            $t,
+            [ fix( 1, 'i', [ $x, $x, '+' ] ), fix( 6, 'r', [ 2, 5, 'R' ] ) ]
+        );
+        is $new, $want, "insert at $x, then replacement";
+        is $def, [], "insert at $x: none deferred";
+    }
 };
 
 subtest 'identical edits are dropped' => sub {
@@ -138,6 +154,19 @@ subtest 'a deferred fix leaves no edits behind' => sub {
     is ids($acc), [ 'r', 'c' ], 'accepted';
     is ids($def), ['d'], 'deferred';
 
+    # The deferred fix adds a replacement before it conflicts.
+    ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [
+            fix( 6, 'r', [ 7, 9, 'R' ] ),
+            fix( 7, 'd', [ 2, 4, 'X' ], [ 8, 8, 'I' ] ),
+            fix( 8, 'c', [ 3, 5, 'C' ] ),
+        ]
+    );
+    is $new, 'abcCfgRj', 'later fix overlapping the deferred replacement applied';
+    is ids($acc), [ 'r', 'c' ], 'accepted';
+    is ids($def), ['d'], 'deferred';
+
     ( $new, $acc, $def ) = Puff::Edits::apply(
         $t,
         [ fix( 2, 'a', [ 2, 4, 'X' ] ), fix( 2, 'b', [ 2, 4, 'X' ], [ 6, 7, 'Y' ] ) ]
@@ -196,21 +225,29 @@ FIX: for my $fix (@sorted) {
     return ( $text, \@accepted, \@deferred );
 }
 
-# puff: ignore-file S001 - rand only builds test input
-subtest 'matches the reference on random fixes' => sub {
+# A fixed linear congruential generator, so every run sees the same input
+# and a failing round can be replayed.
+my $lcg = 12345;
+
+sub roll ($n) {
+    $lcg = ( $lcg * 1103515245 + 12345 ) % 2**31;
+    return ( $lcg >> 16 ) % $n;
+}
+
+subtest 'matches the reference on generated fixes' => sub {
     my $len = length $t;
     my $mismatch;
     for my $round ( 1 .. 2000 ) {
         my @fixes;
-        for my $id ( 1 .. 1 + int rand 6 ) {
+        for my $id ( 1 .. 1 + roll(6) ) {
             my @edits;
-            for ( 1 .. 1 + int rand 3 ) {
-                my $start = int rand( $len + 1 );
-                my $end   = rand() < 0.4 ? $start : $start + int rand( $len - $start + 1 );
-                push @edits, [ $start, $end, ( 'A', 'B', '' )[ rand 3 ] ];
+            for ( 1 .. 1 + roll(3) ) {
+                my $start = roll( $len + 1 );
+                my $end   = roll(10) < 4 ? $start : $start + roll( $len - $start + 1 );
+                push @edits, [ $start, $end, ( 'A', 'B', '' )[ roll(3) ] ];
             }
             my $f = fix( $edits[0][0], $id, @edits );
-            $f->{key}[2] = int rand 3;
+            $f->{key}[2] = roll(3);
             push @fixes, $f;
         }
         my @got  = Puff::Edits::apply( $t, \@fixes );
@@ -243,27 +280,41 @@ package Counted {
     sub new ( $class, $n ) { return bless \$n, $class }
 }
 
-subtest 'comparisons grow about linearly with the number of edits' => sub {
+# Each pair of edits is accepted. Each fix after it adds an insertion and a
+# replacement, then conflicts and is rolled back. Binary search keeps the
+# count near n log n; checking every accepted edit would be quadratic.
+subtest 'comparisons grow as n log n, with many fixes deferred' => sub {
     my $n    = 2000;
     my $text = 'x' x ( 2 * $n );
+    my $at   = sub ($x) { Counted->new($x) };
     my @fixes;
     for my $i ( 0 .. $n - 1 ) {
-        my $at = 2 * $i;
+        my $x = 2 * $i;
         push @fixes,
             {
-            id    => $i,
-            key   => [ $at, 'X001', 1 ],
+            id    => "a$i",
+            key   => [ $x, 'X001', 1 ],
             edits => [
-                { start => Counted->new($at), end => Counted->new($at), text       => '+' },
-                { start => Counted->new($at), end => Counted->new( $at + 1 ), text => 'y' },
+                { start => $at->($x), end => $at->($x), text       => '+' },
+                { start => $at->($x), end => $at->( $x + 1 ), text => 'y' },
+            ],
+            },
+            {
+            id    => "d$i",
+            key   => [ $x, 'X002', 1 ],
+            edits => [
+                { start => $at->( $x + 1 ), end => $at->( $x + 1 ), text => '-' },
+                { start => $at->( $x + 1 ), end => $at->( $x + 2 ), text => 'q' },
+                { start => $at->($x), end       => $at->( $x + 1 ), text => 'z' },
             ],
             };
     }
     local $Counted::count = 0;
-    my ( $new, $acc ) = Puff::Edits::apply( $text, \@fixes );
-    is scalar @$acc, $n, 'all accepted';
+    my ( $new, $acc, $def ) = Puff::Edits::apply( $text, \@fixes );
+    is scalar @$acc, $n, 'first fix of each pair accepted';
+    is scalar @$def, $n, 'second fix of each pair deferred';
     is $new, '+yx' x $n, 'text';
-    cmp_ok $Counted::count, '<', 100 * $n, "comparisons: $Counted::count";
+    cmp_ok $Counted::count, '<', 20 * $n * log($n) / log(2), "comparisons: $Counted::count";
 };
 
 done_testing;
