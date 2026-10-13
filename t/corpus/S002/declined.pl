@@ -41,4 +41,5 @@ open(FH, "<-$v"); # expect: S002
 open(FH, ">-$w"); # expect: S002
 open(FH, "-$e"); # expect: S002
 open(FH, "-@a"); # expect: S002
+open(FH, "<-@a"); # expect: S002
 open(FH, "x\r"); # expect: S002

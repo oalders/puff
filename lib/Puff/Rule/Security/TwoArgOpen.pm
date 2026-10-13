@@ -48,6 +48,10 @@ sub explanation {
         with whitespace, `:` or NUL). Declined calls are reported as not
         fixable.
 
+        The fix takes an interpolated value as it is. A value that would
+        change the mode or the filename, such as `-` in `"<$file"` or an
+        empty `$prefix` in `"<$prefix-\tz"`, is not guarded against.
+
         Two-argument open strips only ASCII whitespace. A non-ASCII space such
         as U+00A0 or U+2028 at either end of the filename is part of the
         name, so the fix keeps it there.
@@ -110,8 +114,9 @@ sub _replacement ($arg) {
     return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/;
 
     # "-" alone, or followed by NUL, opens STDIN. A backslash after the "-"
-    # might start an escape for NUL, and a variable after it might be empty
-    # or start with NUL.
+    # is declined in both quote styles: in a "..." string it might start an
+    # escape for NUL. In a "..." string, a variable after the "-" might be
+    # empty or start with NUL.
     return if $s =~ /\A\s*-(?:\z|\0|\\)/a;
     return if $double && $s =~ /\A\s*-?[\$\@]/a;
 
@@ -124,8 +129,9 @@ sub _replacement ($arg) {
         return if $file eq '' || $file =~ /\A&/;
 
         # After a mode, "-" alone or followed by ASCII whitespace, ":" or NUL
-        # opens STDIN or STDOUT. A backslash after the "-" might start an
-        # escape for one of those, and a variable after it might be empty or
+        # opens STDIN or STDOUT. A backslash after the "-" is declined in both
+        # quote styles: in a "..." string it might start an escape for one of
+        # those. In a "..." string, a variable after the "-" might be empty or
         # start with one.
         return if $file =~ /\A-(?:\z|[\s:\0\\])/a;
         return if $double && $file =~ /\A-[\$\@]/;
@@ -156,5 +162,9 @@ including pipes, C<&> duplication, C<-> (alone, or followed by whitespace,
 C<:> or NUL, which perl also treats as STDIN or STDOUT, or by a variable in
 a C<"..."> string), other quote styles and expressions, is reported with
 C<fixable> 0.
+
+The fix takes an interpolated value as it is. A value that would change the
+mode or the filename, such as C<-> in C<"E<lt>$file"> or an empty C<$prefix>
+in C<"E<lt>$prefix-\tz">, is not guarded against.
 
 =cut
