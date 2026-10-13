@@ -70,7 +70,8 @@ my @pairs = grep { $fixed[$_] ne $lines[$_] } 0 .. $#lines;
 # count to be noticed. What is pinned is that fixes are not withheld: the
 # number fixed may grow but not shrink, strings with no `$`, `@` or `\`
 # are always fixed, and so are these, which end in a variable, `$$`, `$@`
-# or an even run of backslashes.
+# or an even run of backslashes. The floor is the number fixed when it was
+# set; raise it if the alphabet above grows.
 cmp_ok( scalar @pairs, '>=', 16_554, 'no fix that was offered is withheld' );
 my @plain = grep { $bodies[$_] !~ /[\$\@\\]/ } 0 .. $#bodies;
 is( [ grep { $fixed[$_] eq $lines[$_] } @plain ], [], 'every string with no $, @ or \\ is fixed' );
