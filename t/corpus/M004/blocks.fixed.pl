@@ -26,6 +26,8 @@ sub BUILD {
     }
     { $self->SUPER::BUILD(@_); bare => 1, $self->{bare} = 1; } # expect: M004
     { $self->SUPER::BUILD(@_); "bare", $self->{bare} = 1; } # expect: M004
+    { $self->SUPER::BUILD(@_); 1, 2; } # expect: M004
+    { $self->foo; } # expect: M004
     {
         # expect: M004
         # expect: M004

@@ -38,8 +38,8 @@ sub explanation {
         value is used, as in `return $self->SUPER::BUILD(@_)`, or the call
         is inside a `map`, `grep`, `sort`, `do` or `eval` block, there is no
         fix. There is none either when removing the calls would leave a bare
-        block (`{ ... }`) empty, or starting with something like `a => 1,`,
-        because perl reads such a block as a hash. It is unsafe because a
+        block (`{ ... }`) empty, starting with `;`, or starting with something
+        like `a => 1,`, because perl reads such a block as a hash. It is unsafe because a
         parent that is not a Moose, Mouse or Moo class may rely on the call,
         because any arguments the call changed are no longer passed, and
         because when the call is the last statement of the method, the
@@ -158,14 +158,14 @@ sub _call ($statement) {
 # `{ }`, and a block that starts like `{ a => 1, ...` or `{ "a", ...`, as a
 # hash, so `{ } my $x = 1;` does not compile. Perl is fine with `{ ; }`, but
 # PPI reads a block that starts with `;` as a hash, and with it the code that
-# follows.
+# follows. The `;` is no statement to `schildren`, so a block with nothing
+# else left falls out of the loop.
 sub _keeps_block ( $block, $statement ) {
     my $seen = 0;
     for my $child ( $block->schildren ) {
         $seen ||= $child == $statement;
         next if _call($child);
         return 1 unless $seen;
-        return 0 if $child->isa('PPI::Statement::Null');
         my ( $first, $next ) = $child->schildren;
         return 1 unless $next && $next->isa('PPI::Token::Operator') && $next->content =~ /\A(?:,|=>)\z/;
         return !grep { $first->isa("PPI::Token::$_") } qw( Word Quote QuoteLike Number );
@@ -201,8 +201,9 @@ twice.
 The unsafe fix removes the call when it is a statement of its own, with its
 line when nothing else is on it. A trailing comment stays where it was. A
 call whose value is used, that is inside a C<map>, C<grep>, C<sort>,
-C<do> or C<eval> block, or whose removal would leave a bare block empty or
-starting like a hash (C<< { a => 1, ... } >>), is reported with no fix.
+C<do> or C<eval> block, or whose removal would leave a bare block empty, starting
+with C<;>, or starting like a hash (C<< { a => 1, ... } >>), is reported
+with no fix.
 When the call is the last statement of the method, the fix changes what
 the method returns.
 
