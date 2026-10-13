@@ -76,8 +76,8 @@ sub check ( $self, $elem, $doc ) {
         my ( $body, $interpolates ) = command_body($elem);
         return if !defined $body || $interpolates;    # S008 reports the ones that interpolate
 
-        # No /a: perl takes a non-ASCII space after qx as the delimiter, not as space
-        $body = _unescape($body) // return unless $elem->content =~ /\Aqx\s*'/;
+        # /a: perl takes a non-ASCII space after qx as the delimiter, not as space
+        $body = _unescape($body) // return unless $elem->content =~ /\Aqx\s*'/a;
         my $syntax = _shell_syntax($body) // return;
         return $self->violation( $elem, message => _message( 'Command', $syntax, $CAPTURE ) );
     }
@@ -173,8 +173,9 @@ constant command string that Perl runs through /bin/sh: it has shell
 metacharacters (as listed in F<doio.c>), a newline before the end, a first
 word of C<.> or C<exec>, or a leading C<VAR=value> assignment. A trailing
 C<2E<gt>&1> after whitespace (ASCII only, as in Perl), followed by nothing
-but whitespace, is not shell syntax: F<doio.c> handles it with C<dup2> and
-runs the program directly, so C<system 'ls -l 2E<gt>&1'> is not reported. There is no fix.
+but whitespace, is not shell syntax: F<doio.c> handles it with C<dup2>
+and runs the program directly, so C<system 'ls -l 2E<gt>&1'> is not
+reported. There is no fix.
 
 A double-quoted string is analysed only when its escapes are C<\n>, C<\t>,
 C<\r>, C<\f>, C<\a>, C<\e> or a backslashed non-word character. Any other
