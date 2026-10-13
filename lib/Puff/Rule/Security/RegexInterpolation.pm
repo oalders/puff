@@ -62,8 +62,9 @@ sub explanation {
           nowhere else: any other assignment (`=`, `.=`, `||=`, `//=`,
           `&.=` and the like, in any scope, also in a nested list such as
           `($z, ($x)) = ...` or a conditional such as `($c ? $a : $x) =
-          ...`), `local $x` other than a qualifying `local $x =
-          qr/.../;`, a `foreach` loop over it or over a list holding it, a
+          ...` or `$c ? $x : $a = ...`), `local $x` other than a
+          qualifying `local $x = qr/.../;`, a `foreach` loop over it or
+          over a list holding it, a
           reference `\$x`, `$x++` or `--$x` (also `($x)++`), `$x =~ s///`
           or `tr///` (also `($x) =~ s///`), or a builtin changing it means
           it is reported. The builtins are `chomp`, `chop`, `undef`, `tie`, `open`,
@@ -523,7 +524,7 @@ sub _analysis ($doc) {
     $cached_doc = $doc;
     weaken($cached_doc);
     my %data = map { $_ => {} } qw( declarations assigned qualifying writes );
-    my ( %changed, %outer );
+    my ( %changed, %cache );
     for my $token ( $doc->tokens ) {
         for my $decl ( declarations($token) ) {
             push @{ $data{declarations}{ $decl->{symbol} }{ refaddr $decl->{scope} } },
@@ -535,7 +536,7 @@ sub _analysis ($doc) {
             push @{ $data{assigned}{$name}{ refaddr $stmt->parent } }, { elem => $stmt, at => $stmt->location };
             $data{qualifying}{ refaddr $token } = 1;
         }
-        elsif ( $changed{ refaddr $token } || _is_write( $token, $last, \%outer ) ) {
+        elsif ( $changed{ refaddr $token } || _is_write( $token, $last, \%cache ) ) {
             $data{writes}{$name}++;
             $data{writes}{$1}++ if $name =~ /::(\w+)\z/;
         }
@@ -639,9 +640,9 @@ my $END_WORD = qr/\A(?:or|and|xor|not|if|unless|while|until|for|foreach)\z/;
 # incremented or decremented, localized, aliased by foreach, referenced
 # with `\`, or changed by s/// or tr/// (without /r), alone or in
 # parentheses. A builtin in %CHANGES_ARGS is handled by _builtin_args.
-# $outer caches _outer_list.
-sub _is_write ( $first, $last, $outer ) {
-    my $target = _outer_list( $first, $outer );
+# $cache holds the caches of _outer_list and _conditionals.
+sub _is_write ( $first, $last, $cache ) {
+    my $target = _outer_list( $first, $cache );
     my $step   = qr/\A(?:\+\+|--)\z/;
     for my $el ( [ $first, $last ], [ $target, $target ] ) {
         return 1
@@ -671,20 +672,33 @@ sub _is_write ( $first, $last, $outer ) {
         my %mod = $re->get_modifiers;
         return 1 unless $mod{r};
     }
+
+    # A branch other than the last of a conditional that is assigned to:
+    # `$c ? $x : $y = 1` is `($c ? $x : $y) = 1`.
+    for my $el ( [ $first, $last ], [ $target, $target ] ) {
+        my $colon = $el->[1]->snext_sibling;
+        return 1
+            if _is_token( $colon, 'Operator', ':' )
+            && _is_token( $el->[0]->sprevious_sibling, 'Operator', qr/\A[?:]\z/ )
+            && _conditionals( $colon->parent, $cache )->{ refaddr $colon }{assigned};
+    }
     return 0;
 }
 
 # The outermost list that $elem is an element of, through nested lists and
 # the branches of a conditional: `($z, ($x))` for `$x`, and `($c ? $a : $x)`
-# for each of its scalars. $elem itself when it is not a list element. The
-# result for each list climbed is cached in $memo, so a list is climbed
-# once however many elements it holds.
-sub _outer_list ( $elem, $memo ) {
+# for each of its scalars, but not `(my $t = $c ? $a : $x)`, where the
+# conditional is not the element. $elem itself when it is not a list
+# element. The result for each list climbed is cached in $cache, so a list
+# is climbed once however many elements it holds.
+sub _outer_list ( $elem, $cache ) {
+    my $memo = $cache->{outer} //= {};
     my ( $el, @climbed ) = ($elem);
     while (1) {
         if ( my $cached = $memo->{ refaddr $el } ) { $el = $cached; last }
         my $prev = $el->sprevious_sibling;
         last if $prev && !_is_token( $prev, 'Operator', qr/\A[,?:]\z/ );
+        last if $prev && $prev->content ne ',' && _conditionals( $prev->parent, $cache )->{ refaddr $prev }{after};
         my $list = $el->parent && $el->parent->parent;
         last unless $list && $list->isa('PPI::Structure::List');
         push @climbed, $list;
@@ -692,6 +706,53 @@ sub _outer_list ( $elem, $memo ) {
     }
     $memo->{ refaddr $_ } = $el for @climbed;
     return $el;
+}
+
+# The operators of the conditionals among the children of $parent, by
+# refaddr: for each `?` and `:`, whether it comes after an assignment
+# operator in the same element of a comma-separated list (`after`, as in
+# `my $t = $c ? $x : $y`); for each `:`, whether the conditional whose
+# middle branch it ends is assigned to (`assigned`). `?:` binds tighter
+# than assignment, so in `$c ? $x : $c2 ? $y : $z = 1` all three branches
+# are assigned, but in `$c ? $x : $c2 ? $y = 1 : $z` only `$y` is.
+# Computed once for each parent, in two linear passes, and cached in
+# $cache.
+sub _conditionals ( $parent, $cache ) {
+    return $cache->{conditionals}{ refaddr $parent } //= do {
+        my @els   = $parent->schildren;
+        my $comma = qr/\A(?:,|=>)\z/;
+        my ( %ops, $after );
+        for my $el (@els) {
+            if    ( _is_token( $el, 'Operator', $comma ) )       { $after                     = 0 }
+            elsif ( _is_token( $el, 'Operator', $ASSIGN ) )      { $after                     = 1 }
+            elsif ( _is_token( $el, 'Operator', qr/\A[?:]\z/ ) ) { $ops{ refaddr $el }{after} = $after }
+        }
+
+        # Backwards: $assigned[$k] is whether, inside $k middle branches,
+        # an assignment to the conditional follows before the end of the
+        # expression. An assignment inside a middle branch is its own.
+        my @assigned = (0);
+        for my $el ( reverse @els ) {
+            if ( _is_token( $el, 'Operator', ':' ) ) {
+                $ops{ refaddr $el }{assigned} = $assigned[0];
+                unshift @assigned, $assigned[0];
+            }
+            elsif ( _is_token( $el, 'Operator', '?' ) ) {
+                shift @assigned;
+                @assigned = (0) unless @assigned;
+            }
+            elsif ( _is_token( $el, 'Operator', $ASSIGN ) ) {
+                $assigned[0] = 1;
+            }
+            elsif (_is_token( $el, 'Operator', $comma )
+                || _is_token( $el, 'Operator', $END_WORD )
+                || _is_token( $el, 'Word', $END_WORD )
+                || $el->isa('PPI::Token::Structure') ) {
+                @assigned = (0);
+            }
+        }
+        \%ops;
+    };
 }
 
 # The elements of a list in parentheses: those of its one statement.
@@ -898,7 +959,8 @@ regex in the same or an enclosing block (or the file).
 In both cases the name must have no other write anywhere in the file: any
 assignment operator after it (C<=>, C<.=>, C<||=>, C<//=>, C<&.=> and so
 on, alone or in a list on the left, nested lists such as C<($z, ($x)) =
-...> and conditionals such as C<($c ? $a : $x) = ...> included), C<local
+...> and conditionals such as C<($c ? $a : $x) = ...> or C<$c ? $x : $a =
+...> included), C<local
 $x> other than a qualifying C<local $x = qr/.../;>, a C<foreach> loop
 variable of that name or a C<foreach> list holding it, a reference
 C<\$x>, C<$x++>, C<$x-->, C<++$x> or C<--$x> (also C<($x)++>),

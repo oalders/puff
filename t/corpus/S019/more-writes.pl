@@ -99,6 +99,28 @@ local ( $c ? $y : $t5 );
 --( ($t9) );
 print "1\n" if $str =~ /$t1$t2$t3$t4$t5$t6$t7$t8$t9/; # expect: S019 S019 S019 S019 S019 S019 S019 S019 S019
 
+# A conditional assigned to without parentheses: `?:` binds tighter than
+# assignment, so every branch is assigned.
+our $v1 = qr/a/;
+our $v2 = qr/a/;
+our $v3 = qr/a/;
+our $v4 = qr/a/;
+our $v5 = qr/a/;
+our $v6 = qr/a/;
+our $v7 = qr/a/;
+our $v8 = qr/a/;
+our $v9 = qr/a/;
+$c ? $v1 : $y = 1;
+$c ? $v2 : $y .= 1;
+$c ? $v3 : $y ||= 1;
+$c ? $v4 : $y //= 1;
+$c ? $v5 : $y x= 1;
+$c ? $v6 : $c ? $y : $z = 1;
+$c ? $y : $c ? $v7 : $z = 1;
+$c ? $c ? $v8 : $y : $z = 1;
+my $chained = $c ? $v9 : $y = 1;
+print "1\n" if $str =~ /$v1$v2$v3$v4$v5$v6$v7$v8$v9/; # expect: S019 S019 S019 S019 S019 S019 S019 S019 S019
+
 # The string bitwise assignments, and more builtins that write.
 our $b1  = qr/a/;
 our $b2  = qr/a/;
@@ -142,6 +164,23 @@ my $piece = CORE::substr( $u3, 0, 1 );
 $o->tie($u4) if 0;
 chomp $o->foo($u5) if 0;
 print "1\n" if $str =~ /$u1$u2$u3$u4$u5/;
+
+# A conditional that is not the whole element is not assigned to, and
+# `=~` binds tighter than `?:`, so only the last branch is bound.
+our $u6  = qr/a/;
+our $u7  = qr/a/;
+our $u8  = qr/a/;
+our $u9  = qr/a/;
+our $u10 = qr/a/;
+our $u11 = qr/a/;
+no warnings qw( syntax void );
+( my $cp1 = $c ? $u6 : $y ) =~ s/a/b/;
+( my $cp2 = $c ? $y : $u7 ) =~ s/a/b/;
+for my $i ( my $cp3 = $c ? $u8 : $y ) { }
+{ local ( $_ = $c ? $u9 : $y ); }
+$c ? $u10 : $y =~ s/a/b/;
+$c ? $u11 : $c ? $y = 1 : $z;
+print "1\n" if $str =~ /$u6$u7$u8$u9$u10$u11/;
 
 sub TIESCALAR { return bless {}, shift }
 sub FETCH     { return 'a' }

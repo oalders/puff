@@ -130,7 +130,8 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
 # lookups are counted, as timings would be flaky. The bound of each case is
 # about 4 times the lookups it takes (2,020 for the bare chomps, 5,026 for
 # the chomps after `chomp $y` and the wide nested list, 3,321 for the deep
-# one, 927 after a chomp); the quadratic walk took about 2 million, and
+# one, 927 after a chomp, 22,030 for the conditional and 47,020 for the
+# conditionals in assignments); the quadratic walk took about 2 million, and
 # climbing each element of the deep list to its outermost list without a
 # cache takes 48,470.
 {
@@ -147,6 +148,8 @@ is( fixed("/\$::x\$main::y/;\n")->{new_text}, "/\\Q\$::x\\E\\Q\$main::y\\E/;\n",
         'wide nested list'      => [ 'chomp $y, ' . '($y), ' x $n, 20_000 ],
         'deep nested list'      => [ '($y, ' x $d . ')' x $d, 12_000 ],
         'deep list after chomp' => [ 'chomp $y, ' . '($y, ' x $d . ')' x $d, 4_000 ],
+        'long conditional'      => [ '$c ? $y : ' x $n . '$y = 1', 90_000 ],
+        'conditionals copied'   => [ 'my $t = $c ? $y : $z, ' x $n, 190_000 ],
     );
     for my $label ( sort keys %lists ) {
         my ( $list, $bound ) = @{ $lists{$label} };
