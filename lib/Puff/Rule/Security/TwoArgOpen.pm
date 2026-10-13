@@ -48,9 +48,16 @@ sub explanation {
         with whitespace, `:` or NUL). Declined calls are reported as not
         fixable.
 
-        The fix takes an interpolated value as it is. A value that would
-        change the mode or the filename, such as `-` in `"<$file"` or an
-        empty `$prefix` in `"<$prefix-\tz"`, is not guarded against.
+        The fix takes an interpolated value as it is, so a value that
+        two-argument open reads specially is not guarded against. Three-argument
+        open reads it differently when the value:
+        - has leading or trailing whitespace (two-argument open trims it,
+          three-argument open keeps it);
+        - is `-` (STDIN or STDOUT, including after `>>`, in two-argument open;
+          a file named `-` in three-argument open);
+        - is a dup such as `&0` or `&STDOUT` (a literal file name in
+          three-argument open).
+        An empty `$e` in `"<$e-\tz"` is rewritten to `'<', "$e-\tz"`.
 
         Two-argument open strips only ASCII whitespace. A non-ASCII space such
         as U+00A0 or U+2028 at either end of the filename is part of the
@@ -163,8 +170,13 @@ C<:> or NUL, which perl also treats as STDIN or STDOUT, or by a variable in
 a C<"..."> string), other quote styles and expressions, is reported with
 C<fixable> 0.
 
-The fix takes an interpolated value as it is. A value that would change the
-mode or the filename, such as C<-> in C<"E<lt>$file"> or an empty C<$prefix>
-in C<"E<lt>$prefix-\tz">, is not guarded against.
+The fix takes an interpolated value as it is, so a value that two-argument
+open reads specially is not guarded against. Three-argument open reads it
+differently when the value has leading or trailing whitespace (two-argument
+open trims it, three-argument open keeps it), is C<-> (STDIN or STDOUT,
+including after C<E<gt>E<gt>>, in two-argument open; a file named C<-> in
+three-argument open), or is a dup such as C<&0> or C<&STDOUT> (a literal file
+name in three-argument open). An empty C<$e> in C<"E<lt>$e-\tz"> is rewritten
+to C<'E<lt>', "$e-\tz">.
 
 =cut

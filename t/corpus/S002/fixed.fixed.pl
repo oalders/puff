@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 
-my ( $file, $dir, $f, $g );
+my ( $file, $dir, $f, $g, $e );
 open(FH, '<', $file); # expect: S002
 open(my $fh, '>', "$dir/out.txt") or die; # expect: S002
 open(LOG, '>>', 'log.txt'); # expect: S002
@@ -13,4 +13,5 @@ open(FH, '<', '$f'); # expect: S002
 open(FH, '<', '-$x'); # expect: S002
 open(FH, '>', '-$x'); # expect: S002
 open(FH, '<', "$f$g"); # expect: S002
+open(FH, '<', "$e-\tz"); # expect: S002
 open(FH, '<', $f); # expect: S002
