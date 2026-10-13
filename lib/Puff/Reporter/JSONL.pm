@@ -81,7 +81,8 @@ Prints one compact JSON object per C<\n>-terminated line, flushing after
 each, so a consumer can follow a run as it goes. The output is pure ASCII:
 every non-ASCII character, and DEL, is written as a C<\u> escape, so
 characters such as U+2028, U+2029 and U+0085 never appear raw where a
-Unicode-aware line splitter could break a line on them. Every object has a C<type>:
+Unicode-aware line splitter could break a line on them. Every object has a
+C<type>:
 
 =over 4
 

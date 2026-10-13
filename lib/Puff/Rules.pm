@@ -185,11 +185,12 @@ An C<ignore> entry that matches nothing is allowed.
 C<load> also dies if a C<Puff::Rule::*> module on C<@INC> fails to compile.
 Load errors, and warnings raised while rules load, have their file names
 and control characters escaped as L<Puff::Path> C<display_lines> does. Such
-text is read as UTF-8 bytes even when perl marks it as characters, since
-perl's messages quote file names as bytes, so a Latin-1 character such as
-C<E<eacute>> from a rule with C<use utf8> is shown as C<\xE9>, as it would be
-in a file name. A package name or rule code in an error is shown as it is
-when perl marks it as characters, and decoded as UTF-8 otherwise.
+text is always read as UTF-8 bytes, even when perl marks it as characters,
+because perl's messages quote file names as bytes. So a Latin-1 character
+such as C<E<eacute>> from a rule with C<use utf8> is shown as C<\xE9> in a
+load error or warning, just as it would be in a file name. A package name or
+rule code in an error is different: it is shown as it is when perl marks it
+as characters, and decoded as UTF-8 otherwise.
 Warnings go to any C<__WARN__> handler already in place.
 
 =cut
