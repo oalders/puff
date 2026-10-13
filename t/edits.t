@@ -175,6 +175,20 @@ subtest 'a deferred fix leaves no edits behind' => sub {
     is ids($acc), [ 'a', 'b' ], 'both accepted';
 };
 
+subtest 'a rolled-back edit does not hide an identical later edit' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [
+            fix( 1, 'r', [ 7, 9, 'R' ] ),
+            fix( 2, 'd', [ 2, 4, 'X' ], [ 8, 8, 'I' ] ),
+            fix( 3, 'c', [ 2, 4, 'X' ] ),
+        ]
+    );
+    is $new, 'abXefgRj', 'later identical edit applied, not dropped as a duplicate';
+    is ids($acc), [ 'r', 'c' ], 'accepted';
+    is ids($def), ['d'], 'deferred';
+};
+
 # The algorithm Puff::Edits::apply replaced, kept as a reference.
 sub reference_apply ( $text, $fixes ) {
     my $conflicts = sub ( $edit, $other ) {
@@ -225,13 +239,14 @@ FIX: for my $fix (@sorted) {
     return ( $text, \@accepted, \@deferred );
 }
 
-# A fixed linear congruential generator, so every run sees the same input
-# and a failing round can be replayed.
+# A fixed Lehmer generator (MINSTD), so every run sees the same input and a
+# failing round can be replayed. Products stay below 2**47, so the arithmetic
+# is exact even where integers are only 53-bit doubles.
 my $lcg = 12345;
 
 sub roll ($n) {
-    $lcg = ( $lcg * 1103515245 + 12345 ) % 2**31;
-    return ( $lcg >> 16 ) % $n;
+    $lcg = ( $lcg * 48271 ) % 2147483647;
+    return ( $lcg >> 8 ) % $n;
 }
 
 subtest 'matches the reference on generated fixes' => sub {
@@ -282,7 +297,8 @@ package Counted {
 
 # Each pair of edits is accepted. Each fix after it adds an insertion and a
 # replacement, then conflicts and is rolled back. Binary search keeps the
-# count near n log n; checking every accepted edit would be quadratic.
+# number of comparisons near n log n; checking every accepted edit would be
+# quadratic. (Comparisons only: splice insertion is linear per edit.)
 subtest 'comparisons grow as n log n, with many fixes deferred' => sub {
     my $n    = 2000;
     my $text = 'x' x ( 2 * $n );

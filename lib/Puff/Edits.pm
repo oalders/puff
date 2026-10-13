@@ -45,7 +45,7 @@ FIX: for my $fix (@sorted) {
             if ( _conflicts( $edit, \@reps, \@ins ) ) {
 
                 # Undo this fix's edits, newest first, so each insertion is
-                # still the last one at its offset.
+                # the last one at its offset when it is removed.
                 for my $undo ( reverse @new ) {
                     delete $seen{ _key($undo) };
                     if ( $undo->{start} == $undo->{end} ) {
@@ -111,5 +111,7 @@ accepted order.
 
 Accepted edits are kept sorted by start, so each new edit is checked against
 its neighbours with a binary search rather than against every accepted edit.
+That takes O(n log n) comparisons overall; C<splice> insertion is linear per
+edit, so wall time can grow faster for very large edit counts.
 
 =cut
