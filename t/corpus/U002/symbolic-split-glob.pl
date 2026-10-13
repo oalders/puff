@@ -1,5 +1,4 @@
-use v5.36;
+use v5.10;
 use English;
-no strict q{refs};
 ${ *{"main::O"."RS"} } = "!";
 print "hello\n"; # expect: U002

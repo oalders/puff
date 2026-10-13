@@ -1,5 +1,4 @@
-use v5.36;
-no strict q{refs};
+use v5.10;
 my $class = q{main};
-*{"${class}::ORS"} = \"x";
+*{"${class}::O" . "RS"} = \"x";
 print "hello\n"; # expect: U002

@@ -1,4 +1,3 @@
-use v5.36;
-no strict q{refs};
+use v5.10;
 ${ (qw/\\/)[0] } = "!";
 print "hello\n"; # expect: U002

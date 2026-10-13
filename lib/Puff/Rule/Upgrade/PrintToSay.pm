@@ -3,7 +3,7 @@ package Puff::Rule::Upgrade::PrintToSay;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Scalar::Util qw( refaddr );
+use Scalar::Util qw( refaddr weaken );
 use version      ();
 
 use Puff::PPIUtil qw( call_args is_builtin_call );
@@ -66,31 +66,34 @@ sub explanation {
         The fix replaces `print` with `say` and removes the trailing `\n`
         from the string, keeping its quotes. It is safe, except that `say`
         always ends the output with "\n" where `print` adds `$\`. So the
-        violation has no fix when the file's text contains `$\`,
-        `$OUTPUT_RECORD_SEPARATOR`, `$ORS` or `output_record_separator`
-        anywhere, even in a string, regex, heredoc or comment (but not `$$\`,
-        as in `"pid $$\n"`); mentions the globs `*\`, `*ORS` and
-        `*OUTPUT_RECORD_SEPARATOR`, or `$ \` with a space; has a `#!` line
-        with an `-l` switch, or
+        violation has no fix when the file's text contains `$\` (but not
+        `$$\`, as in `"pid $$\n"`), `$ \` or `${\}` with any white space,
+        the word `ORS` or `OUTPUT_RECORD_SEPARATOR` in any spelling (`$ORS`,
+        `$::ORS`, `${ORS}`, `*ORS`), `output_record_separator`, or
+        `no strict`, anywhere, even in a string, regex, heredoc or comment;
+        mentions the glob `*\`; has a `#!` line with an `-l` switch; or
         has a symbolic `${...}` or `*{...}` that is not one of two shapes
         taken to be safe. One is a scalar variable, with optional
         subscripts that have no backslash or ORS name in them (`${$ref}`,
         `${ $self->{x} }`), when strict refs appears to be in effect, so the
         variable should hold a reference: a top-level `use strict` (bare or
         naming `refs`) or `use v5.12` or later comes first, and the file
-        has no `no strict` and no `use VERSION` below 5.12. Without that,
+        has no `use VERSION` below 5.12. Without that,
         `${$name}` and `$$name` may name `$\`, so the fix is withheld. The
         other is strings and scalar variables joined with `.`, with no
         backslash, whose text ends in a literal `::name` other than `ORS`
         or `OUTPUT_RECORD_SEPARATOR` (`*{"${class}::foo"}`). Anything else,
         such as `${"\\"}`, `${ chr(92) }` or `${ "main::" . $name }`, has
-        no fix. Not seen: a `$\` set in another file or module; stash
-        access (`$::{"\\"}`) and glob slots (`*{$glob}{SCALAR}`, with a glob
+        no fix. Not seen: a `$\` set in another file or module, or by
+        `perl -l` or `PERL5OPT`; stash access (`$::{"\\"}`,
+        `$main::{"\\"}`) and glob slots (`*{$glob}{SCALAR}`, with a glob
         from `Symbol::qualify_to_ref`); method names built at run time
         (`STDOUT->can("output_" . "record_separator")`, `STDOUT->$m(...)`);
         strict refs turned off without a `no strict` statement
         (`BEGIN { strict->unimport('refs') }`, `$^H`, a module's `import`);
-        and a `$\` set in a string `eval`.
+        in a file without strict refs, a symbolic `${...}` in code PPI does
+        not tokenise (`"@{[ ${ chr 92 } = '' ]}"`); and a `$\` set in a
+        string `eval`.
 
         Also, `say` passes its newline through `$\`, so a tied handle whose
         `PRINT` ignores `$\` loses the newline. This is a known caveat of
@@ -101,14 +104,14 @@ sub explanation {
 sub check ( $self, $elem, $doc ) {
     _last_string($elem) or return;
     return unless $self->_say_enabled( $elem, $doc );
-    return $self->violation( $elem, fixable => _sets_ors($doc) ? 0 : 1 );
+    return $self->violation( $elem, fixable => _analysis($doc)->{sets_ors} ? 0 : 1 );
 }
 
 sub fix ( $self, $violation, $fix ) {
     my $word  = $violation->element;
     my $doc   = $word->top;
     my $quote = _last_string($word) or return 0;
-    return 0 if _sets_ors($doc) || !$self->_say_enabled( $word, $doc );
+    return 0 if _analysis($doc)->{sets_ors} || !$self->_say_enabled( $word, $doc );
 
     my $src = $fix->source;
     $fix->replace_range( $src->start_of($word), $src->end_of($word), 'say' );
@@ -169,11 +172,31 @@ sub _is_filehandle ($elem) {
 
 my $MIN = version->parse('v5.10.0');
 
+my ( $cached_doc, $cached );
+
+# What the rule needs from the whole document, found once per document
+# rather than once per print, which made a file with many prints
+# quadratic: its use/no statements, whether one of them turns `say` off,
+# and whether `$\` may be set.
+sub _analysis ($doc) {
+    return $cached if $cached_doc && refaddr($cached_doc) == refaddr($doc);
+    $cached_doc = $doc;
+    weaken($cached_doc);
+    my $includes = $doc->find('PPI::Statement::Include') || [];
+    $cached = {
+        includes => $includes,
+        disabled => scalar( grep { _disables($_) } @$includes ),
+        sets_ors => _sets_ors($doc),
+    };
+    return $cached;
+}
+
 # Whether a statement earlier in this or an enclosing block turned `say` on,
 # and nothing in the file may have turned it off.
 sub _say_enabled ( $self, $word, $doc ) {
-    my $includes = $doc->find('PPI::Statement::Include') || [];
-    return 0 if grep { _disables($_) } @$includes;
+    my $analysis = _analysis($doc);
+    return 0 if $analysis->{disabled};
+    my $includes = $analysis->{includes};
 
     my %modules = map { $_ => 1 } @{ $self->option('modules') };
     my %scope;
@@ -245,21 +268,30 @@ sub _empty_import ($include) {
 
 # Whether the output record separator may be set, so that print and say
 # end their output differently. The raw text is searched first, so that
-# `$\` in code PPI does not tokenise (interpolated `@{[ ]}`, `s///e`,
-# `(?{ })`, heredoc bodies) counts. That also matches `"\$\\"` and the
-# like, which only loses a fix. A `$\` after another `$` is skipped: perl
-# reads `$$\` as `$$` then `\`, as in `"pid $$\n"`.
+# code PPI does not tokenise (interpolated `@{[ ]}`, `s///e`, `(?{ })`,
+# heredoc bodies) counts: `$\`, `$ \` and `${\}`; the words `ORS` and
+# `OUTPUT_RECORD_SEPARATOR` in any spelling (`$::ORS`, `$main'ORS`,
+# `${ORS}`, `*ORS`); `output_record_separator`; and `no strict`, behind
+# which a name built at run time may be `\`. That also matches `"\$\\"`
+# and the like, which only loses a fix. A `$\` after another `$` is
+# skipped: perl reads `$$\` as `$$` then `\`, as in `"pid $$\n"`.
+my $RAW_ORS = qr{
+      (?<!\$) \$ \\
+    | \$ \s+ \\
+    | \$ \s* \{ \s* \\ \s* \}
+    | \b (?: ORS | OUTPUT_RECORD_SEPARATOR ) \b
+    | output_record_separator
+    | \b no \s+ strict \b
+}x;
+
 sub _sets_ors ($doc) {
-    return 1 if $doc->serialize =~ /(?<!\$)\$\\|\$(?:ORS|OUTPUT_RECORD_SEPARATOR)\b|output_record_separator/;
+    return 1 if $doc->serialize =~ $RAW_ORS;
     my $first     = $doc->first_token;
     my $strict_at = _strict_refs_at($doc);
     return 1 if $first && $first->isa('PPI::Token::Comment') && $first->content =~ /\A#!.*\s-\S*l/;
     return 1 if $doc->find_first(
         sub {
             my $elem = $_[1];
-            return 1
-                if $elem->isa('PPI::Token::Symbol')
-                && $elem->content =~ /\A[\$*](?:\w+::)*(?:ORS|OUTPUT_RECORD_SEPARATOR)\z/;
 
             # `*\` and `*main::\` parse as `*` or `*main::` followed by `\`.
             if ( $elem->isa('PPI::Token::Cast') && $elem->content eq '\\' ) {
@@ -479,12 +511,13 @@ enables C<say> that way is not checked.
 C<say> sets C<local $\ = "\n">, so if the program sets C<$\> the output
 changes: C<print "x\n"> prints C<"x\n"> followed by C<$\>, while C<say "x">
 prints C<"x\n">. The violation is still reported, but with no fix, when the
-file's text contains C<$\>, C<$OUTPUT_RECORD_SEPARATOR>, C<$ORS> or
-C<output_record_separator> anywhere, even in a string, regex, heredoc or
-comment (but not C<$$\>, as in C<"pid $$\n">); mentions the globs C<*\>,
-C<*ORS> and C<*OUTPUT_RECORD_SEPARATOR>, or C<$ \> with a space; has a
-C<#!> line with an C<-l> switch; or has a symbolic C<${...}> or C<*{...}>
-that is not one of two shapes taken to be safe:
+file's text contains C<$\> (but not C<$$\>, as in C<"pid $$\n">), C<$ \>
+or C<${\}> with any white space, the word C<ORS> or
+C<OUTPUT_RECORD_SEPARATOR> in any spelling (C<$ORS>, C<$::ORS>, C<${ORS}>,
+C<*ORS>), C<output_record_separator>, or C<no strict>, anywhere, even in a
+string, regex, heredoc or comment; mentions the glob C<*\>; has a C<#!> line
+with an C<-l> switch; or has a symbolic C<${...}> or C<*{...}> that is not
+one of two shapes taken to be safe:
 
 =over 4
 
@@ -494,8 +527,7 @@ a scalar variable, with optional subscripts that have no backslash or ORS
 name in them: C<${$ref}>, C<${ $self-E<gt>{x} }>, but only when strict refs
 appears to be in effect, so the variable should hold a reference. That means a
 top-level C<use strict> (bare or naming C<refs>) or C<use v5.12> or later
-comes first, and the file has no C<no strict> and no C<use VERSION> below
-5.12. Otherwise C<${$name}> and C<$$name> may name C<$\>, and have no fix;
+comes first, and the file has no C<use VERSION> below 5.12. Otherwise C<${$name}> and C<$$name> may name C<$\>, and have no fix;
 
 =item *
 
@@ -509,13 +541,15 @@ joined first, so C<"main::O" . "RS"> names C<ORS>.
 Anything else, such as C<${"\\"}>, C<${ chr(92) }>, a C<qw> or heredoc,
 or C<${ "main::" . $name }>, has no fix.
 
-Not seen: a C<$\> set in another file or module; stash access
-(C<$main::{ORS}>, C<$::{"\\"}>) and glob slots (C<*{$glob}{SCALAR}>, with a
-glob from C<Symbol::qualify_to_ref>); method names built at run time
-(C<< STDOUT->can("output_" . "record_separator") >>, C<< STDOUT->$m(...) >>);
-strict refs turned off without a C<no strict> statement
-(C<BEGIN { strict-E<gt>unimport('refs') }>, C<$^H>, a module's C<import>);
-and a C<$\> set in a string C<eval>.
+Not seen: a C<$\> set in another file or module, or by C<perl -l> or
+C<PERL5OPT>; stash access (C<$::{"\\"}>, C<$main::{"\\"}>) and glob slots
+(C<*{$glob}{SCALAR}>, with a glob from C<Symbol::qualify_to_ref>); method
+names built at run time (C<< STDOUT->can("output_" . "record_separator") >>,
+C<< STDOUT->$m(...) >>); strict refs turned off without a C<no strict>
+statement (C<BEGIN { strict-E<gt>unimport('refs') }>, C<$^H>, a module's
+C<import>); in a file without strict refs, a symbolic C<${...}> in code PPI
+does not tokenise (C<"@{[ ${ chr 92 } = '' ]}">); and a C<$\> set in a
+string C<eval>.
 
 =item *
 
