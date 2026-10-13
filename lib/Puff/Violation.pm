@@ -14,12 +14,17 @@ sub column  ($self) { $self->{column} }
 sub message ($self) { $self->{message} }
 
 # The violation's own fix safety when the rule gave one, else the rule's.
+# A rule that declares none (or no rule at all) wins over the violation, so
+# the engine and every reporter agree that it is never fixed.
 sub fix_safety ($self) {
-    return $self->{fix_safety} // ( $self->{rule} ? $self->{rule}->fix_safety : 'none' );
+    my $rule = $self->{rule} or return 'none';
+    return 'none' if $rule->fix_safety eq 'none';
+    return $self->{fix_safety} // $rule->fix_safety;
 }
 
 sub fixable ( $self, @set ) {
     $self->{fixable} = $set[0] if @set;
+    return 0 if $self->fix_safety eq 'none';
     return $self->{fixable};
 }
 
@@ -41,7 +46,9 @@ __END__
 Holds the rule, code, element, 1-based line and column (in characters),
 message, whether a fix is offered, how safe that fix is, and the file.
 C<fix_safety> is the safety given to L<Puff::Rule/violation>, else the
-rule's C<fix_safety> (C<none> when there is no rule). C<file> and C<fixable> are
+rule's C<fix_safety>. It is C<none> when there is no rule or the rule's
+C<fix_safety> is C<none>, whatever the violation was given, and then
+C<fixable> is always 0. C<file> and C<fixable> are
 getters and, given an argument, setters, because the engine fills in the
 file after C<check> and withdraws the fix offer for files it will not fix.
 

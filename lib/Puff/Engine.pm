@@ -106,6 +106,9 @@ sub _collect_fixes ( $self, $src, $violations ) {
 }
 
 sub _fixable_in_mode ( $self, $v ) {
+
+    # fixable is 0 and fix_safety none for a rule with no fix (see
+    # Puff::Violation); any safety but safe or unsafe is never fixed.
     return 0 unless $v->fixable && $v->rule;
     my $safety = $v->fix_safety;
     my $mode   = $self->{fix_mode};
@@ -175,6 +178,7 @@ __END__
 C<fix_mode> is C<none>, C<safe> (apply fixes of violations whose
 C<fix_safety> is C<safe>) or C<unsafe> (C<safe> and C<unsafe> fixes). A
 violation's C<fix_safety> is its rule's unless the rule set one for it.
+A violation of a rule whose C<fix_safety> is C<none> is never fixed.
 
 C<process_source> parses the text with PPI, runs each rule's C<check> on the
 elements matching its C<applies_to>, drops suppressed violations and adds a

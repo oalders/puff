@@ -221,8 +221,13 @@ Optional: C<safe> or C<unsafe>, for a rule whose fixes are not all equally
 safe. It overrides the rule's L</fix_safety> for this violation only, and
 decides whether C<--fix> applies it and how the report marks it. Declare
 the rule's own C<fix_safety> as the least safe of its fixes, since that is
-what C<puff rules> shows. Ignored when the rule's C<fix_safety> is C<none>.
+what C<puff rules> shows. Ignored when the rule's C<fix_safety> is C<none>:
+a violation of such a rule is never fixed, whatever it claims.
 Any other value dies.
+
+A C<safe> here is the rule author's claim, and C<--fix> trusts it. Rules
+from C<rule-paths> already run arbitrary Perl, so this grants no new
+privilege.
 
 =back
 
