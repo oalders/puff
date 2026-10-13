@@ -15,4 +15,6 @@ print "two\n\n"; # expect: U002
 print "even \\\\\n"; # expect: U002
 print "modifier\n" if $x; # expect: U002
 print "or\n" or die; # expect: U002
-print "a\$\n"; # expect: U002
+print "pid $$\n"; # expect: U002
+print "$@\n"; # expect: U002
+print "$$\n"; # expect: U002
