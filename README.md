@@ -913,10 +913,11 @@ Calls inside an anonymous sub in the method are not reported. The unsafe fix
 removes the call when it is a statement of its own, with its line when
 nothing else is on it; a trailing comment stays where it was. A call whose
 value is used (`return $self->SUPER::BUILD(@_)`), that is inside a `map`,
-`grep`, `sort`, `do` or `eval` block, or that is all that is in a bare block
-(perl reads the `{ }` left behind as a hash) has no fix. It is unsafe because a
-parent outside the framework may rely on the call, and because removing the
-last statement of a method changes what it returns.
+`grep`, `sort`, `do` or `eval` block, or whose removal would leave a bare
+block empty or starting like a hash (perl reads `{ }` and `{ a => 1, ... }`
+as a hash) has no fix. It is unsafe because a parent outside the framework
+may rely on the call, and because removing the last statement of a method
+changes what it returns.
 
 **M005** is not selected by default; turn it on with `--select M`. It
 reports `use Moose`, `use Mouse`, `use Moo` or one of their `::Role`
