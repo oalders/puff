@@ -47,9 +47,12 @@ sub explanation {
         variables is used. Values from other calls are left alone, since
         they may be objects that do their work when destroyed, such as a
         temporary directory or a lock. An unused `my $x = EXPR;` is not
-        fixed either, since EXPR may matter. The fix is unsafe because the rule cannot see uses
-        that only exist at runtime, such as code in a single-quoted string
-        passed to `eval`.
+        fixed either, since EXPR may matter. Nor is a declaration whose
+        removal would leave a bare block (`{ ... }`) empty or starting with
+        something like `a => 1,`, because perl reads such a block as a
+        hash. The fix is unsafe because the rule cannot see uses that only
+        exist at runtime, such as code in a single-quoted string passed to
+        `eval`.
 
         Option `allow-unused-subroutine-arguments` (default `true`): do not
         report variables assigned from `@_`, `shift`, `pop` or `$_[N]`, as
@@ -69,7 +72,7 @@ sub check ( $self, $elem, $doc ) {
     return if $self->option('allow-unused-subroutine-arguments') && _from_arguments($elem);
     return if $self->_computed_by_allowed($elem);
     my @unused  = $self->_unused( $elem, $doc, @vars ) or return;
-    my $fixable = _fix_kind( $elem, \@vars, \@unused );
+    my $fixable = $self->_kind( $elem, \@vars, \@unused );
     return map {
         $self->violation(
             $_,
@@ -84,7 +87,7 @@ sub fix ( $self, $violation, $fix ) {
     my $stmt   = _declaration($var) // return 0;
     my @vars   = _declared($stmt)                           or return 0;
     my @unused = $self->_unused( $stmt, $stmt->top, @vars ) or return 0;
-    my $what   = _fix_for( $var, _fix_kind( $stmt, \@vars, \@unused ) ) // return 0;
+    my $what   = _fix_for( $var, $self->_kind( $stmt, \@vars, \@unused ) ) // return 0;
     if ( $what eq 'delete' ) {
         _delete_statement( $fix, $stmt );
     }
@@ -160,6 +163,52 @@ sub _fix_kind ( $stmt, $vars, $unused ) {
     my $op = $stmt->schild(2);
     return unless $list && $op && $op->isa('PPI::Token::Operator') && $op->content eq q{=};
     return _plain_values($stmt) ? 'undef' : undef;
+}
+
+# _fix_kind, but no 'delete' when deleting $stmt, and any other declaration
+# deleted with it, would leave a bare block that perl reads as a hash.
+sub _kind ( $self, $stmt, $vars, $unused ) {
+    my $kind = _fix_kind( $stmt, $vars, $unused ) // return;
+    return $kind unless $kind eq 'delete';
+    my $block = $stmt->parent;
+    return $kind unless $block->isa('PPI::Structure::Block') && _bare($block);
+    return $self->_keeps_block( $block, $stmt ) ? $kind : undef;
+}
+
+# True when $stmt is a declaration the fix deletes.
+sub _deletable ( $self, $stmt ) {
+    return 0 unless $stmt->isa('PPI::Statement::Variable');
+    my @vars   = _declared($stmt)                           or return 0;
+    my @unused = $self->_unused( $stmt, $stmt->top, @vars ) or return 0;
+    return ( _fix_kind( $stmt, \@vars, \@unused ) // q{} ) eq 'delete';
+}
+
+# True when deleting $statement, and any other declaration before the first
+# statement that stays, leaves bare $block still read as a block. Perl reads
+# `{ }`, and a block that starts like `{ a => 1, ...` or `{ "a", ...`, as a
+# hash, so `{ } my $x = 1;` does not compile. Perl is fine with `{ ; }`, but
+# PPI reads a block that starts with `;` as a hash, and with it the code that
+# follows. The `;` is no statement to `schildren`, so a block with nothing
+# else left falls out of the loop.
+sub _keeps_block ( $self, $block, $statement ) {
+    my $seen = 0;
+    for my $child ( $block->schildren ) {
+        $seen ||= $child == $statement;
+        next if $self->_deletable($child);
+        return 1 unless $seen;
+        my ( $first, $next ) = $child->schildren;
+        return 1 unless $next && $next->isa('PPI::Token::Operator') && $next->content =~ /\A(?:,|=>)\z/;
+        return !grep { $first->isa("PPI::Token::$_") } qw( Word Quote QuoteLike Number );
+    }
+    return 0;
+}
+
+# True when $block is a bare block, `{ ... }` or `LABEL: { ... }`, rather
+# than the block of `if`, `for`, `while`, `continue` and the like.
+sub _bare ($block) {
+    return 0 unless $block->parent->isa('PPI::Statement::Compound');
+    my $prev = $block->sprevious_sibling;
+    return !$prev || $prev->isa('PPI::Token::Label');
 }
 
 # Builtins whose results are new plain values or still referenced elsewhere.
@@ -296,7 +345,8 @@ __END__
 Reports a C<my> or C<state> variable that is not mentioned after its
 declaration in the same scope, counting interpolation into strings, regexes
 and heredocs. The unsafe fix replaces an unused list member with C<undef>, or
-deletes a declaration without an assignment.
+deletes a declaration without an assignment, unless that would leave a bare
+block empty or starting like a hash (C<< { a => 1, ... } >>).
 
 Based on L<Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter>,
 limited to statement-level declarations, with subroutine arguments allowed by
