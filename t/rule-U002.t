@@ -89,4 +89,38 @@ is( fixable(qq{use v5.36;\n# CORS, ORS_X\nprint "x\\n";\n}), [1], 'ORS inside a 
     cmp_ok( $calls{serialize} // 0, '<', 3, 'serializes: once per document, not per print' );
 }
 
+# Each print looks up only the uses in its own blocks, not every use in
+# the file: 2000 subs, each with a `use` and a `print`, took 21s. Calls
+# to the uses' `type` are counted, as timings would be flaky.
+{
+    no warnings 'redefine';
+    my $calls = 0;
+    my $orig  = PPI::Statement::Include->can('type');
+    local *PPI::Statement::Include::type = sub { $calls++; goto &$orig };
+    my $n    = 200;
+    my $text = "use v5.36;\n" . join q{}, map {qq{sub f$_ {\n    use Carp;\n    print "x\\n";\n}\n}} 1 .. $n;
+    my $doc  = PPI::Document->new( \$text );
+    $doc->index_locations;
+    my @prints = grep { $_->content eq 'print' } @{ $doc->find('PPI::Token::Word') };
+    $calls = 0;
+    my $rule  = $class->new;
+    my @found = map { $rule->check( $_, $doc ) } @prints;
+    is( scalar @found, $n, 'every print in a sub is reported' );
+    cmp_ok( $calls, '<', 5 * $n, 'types: a few per use, not one per use per print' );
+}
+
+# The analysis is cached per document, and a new document gets its own:
+# the same rule instance sees a file that sets `$\`, then one that does
+# not.
+{
+    my $rule = $class->new;
+    my @fixable;
+    for my $text ( qq{use v5.36;\n\$\\ = "!";\nprint "x\\n";\n}, qq{use v5.36;\nprint "x\\n";\n} ) {
+        my $result
+            = Puff::Engine->new( rules => [$rule] )->process_source( Puff::Source->from_string($text), file => 'x.pl' );
+        push @fixable, map { $_->fixable } @{ $result->{violations} };
+    }
+    is( \@fixable, [ 0, 1 ], 'the second document is analysed afresh' );
+}
+
 done_testing;

@@ -1,0 +1,5 @@
+use 5.012;
+my $name = q{x};
+my $ref  = \$name;
+${$ref} = "!";
+say "x"; # expect: U002

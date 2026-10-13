@@ -955,11 +955,13 @@ where the `\n` may not be a newline, such as `"a$\n"`, `"a$ \n"` and
 `"\n"`, no fix is offered when the file's text contains `$\`, `$ \`,
 `${\}`, the word `ORS` or `OUTPUT_RECORD_SEPARATOR` (so `$ORS`, `$::ORS`,
 `${ORS}`, `*ORS`), `output_record_separator` or `no strict` anywhere (even
-in a string or comment), or its `#!` line has `-l`. A symbolic `${...}` or
-`*{...}` also turns the fix off, unless it is a string naming a literal
-`::name` other than ORS (`*{"${class}::foo"}`), or a scalar variable with
-plain subscripts (`${ $self->{x} }`) when strict refs appears to be in
-effect: a top-level `use strict` or `use v5.12` or later comes first.
+in a string or comment), or its `#!` line has `-l`. So any `no strict` in a
+file, including `no strict 'refs'` or the words in a comment, withholds every
+U002 fix in that file. A symbolic `${...}` or `*{...}` also turns the fix off,
+unless it is a string naming a literal `::name` other than ORS
+(`*{"${class}::foo"}`), or a scalar variable with plain subscripts
+(`${ $self->{x} }`) when strict refs appears to be in effect: a top-level
+`use strict` or `use v5.11` or later comes first.
 
 **A001** is not selected by default; turn it on with `--select A`. It reports
 `$a` and `$b` outside a block passed directly to `sort`, `reduce`,
