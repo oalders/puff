@@ -125,4 +125,145 @@ subtest 'edits of one fix that overlap each other' => sub {
     is ids($def), ['a'], 'self-overlapping fix deferred';
 };
 
+subtest 'a deferred fix leaves no edits behind' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [
+            fix( 7, 'r', [ 7, 9, 'R' ] ),
+            fix( 7, 'd', [ 3, 3, 'I' ], [ 2, 4, 'X' ], [ 2, 4, 'X' ], [ 6, 8, 'Y' ] ),
+            fix( 8, 'c', [ 2, 5, 'C' ] ),
+        ]
+    );
+    is $new, 'abCfgRj', 'later fix overlapping the deferred edits applied';
+    is ids($acc), [ 'r', 'c' ], 'accepted';
+    is ids($def), ['d'], 'deferred';
+
+    ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [ fix( 2, 'a', [ 2, 4, 'X' ] ), fix( 2, 'b', [ 2, 4, 'X' ], [ 6, 7, 'Y' ] ) ]
+    );
+    is $new, 'abXefYhij', 'identical replacement dropped, rest of the fix applied';
+    is ids($acc), [ 'a', 'b' ], 'both accepted';
+};
+
+# The algorithm Puff::Edits::apply replaced, kept as a reference.
+sub reference_apply ( $text, $fixes ) {
+    my $conflicts = sub ( $edit, $other ) {
+        my ( $s, $e )   = @{$edit}{qw( start end )};
+        my ( $os, $oe ) = @{$other}{qw( start end )};
+        return $os < $s && $s < $oe if $s == $e;
+        return $s < $os && $os < $e if $os == $oe;
+        return $s < $oe && $os < $e;
+    };
+    my $same = sub ( $edit, $other ) {
+        return
+               $edit->{start} == $other->{start}
+            && $edit->{end} == $other->{end}
+            && $edit->{text} eq $other->{text};
+    };
+    my @sorted
+        = sort { $a->{key}[0] <=> $b->{key}[0] || $a->{key}[1] cmp $b->{key}[1] || $a->{key}[2] <=> $b->{key}[2] }
+        @$fixes;
+
+    my ( @accepted, @deferred, @edits );
+FIX: for my $fix (@sorted) {
+        my @new;
+        for my $edit ( @{ $fix->{edits} } ) {
+            next if grep { $same->( $edit, $_ ) } @edits, @new;
+            for my $other ( @edits, @new ) {
+                if ( $conflicts->( $edit, $other ) ) {
+                    push @deferred, $fix;
+                    next FIX;
+                }
+            }
+            push @new, $edit;
+        }
+        push @accepted, $fix;
+        push @edits, @new;
+    }
+
+    my $seq     = 0;
+    my @ordered = sort {
+               $a->[0]{start}                     <=> $b->[0]{start}
+            || ( $b->[0]{start} == $b->[0]{end} ) <=> ( $a->[0]{start} == $a->[0]{end} )
+            || $a->[1]                            <=> $b->[1]
+    } map { [ $_, $seq++ ] } @edits;
+
+    for my $pair ( reverse @ordered ) {
+        my $edit = $pair->[0];
+        substr( $text, $edit->{start}, $edit->{end} - $edit->{start}, $edit->{text} );
+    }
+    return ( $text, \@accepted, \@deferred );
+}
+
+# puff: ignore-file S001 - rand only builds test input
+subtest 'matches the reference on random fixes' => sub {
+    my $len = length $t;
+    my $mismatch;
+    for my $round ( 1 .. 2000 ) {
+        my @fixes;
+        for my $id ( 1 .. 1 + int rand 6 ) {
+            my @edits;
+            for ( 1 .. 1 + int rand 3 ) {
+                my $start = int rand( $len + 1 );
+                my $end   = rand() < 0.4 ? $start : $start + int rand( $len - $start + 1 );
+                push @edits, [ $start, $end, ( 'A', 'B', '' )[ rand 3 ] ];
+            }
+            my $f = fix( $edits[0][0], $id, @edits );
+            $f->{key}[2] = int rand 3;
+            push @fixes, $f;
+        }
+        my @got  = Puff::Edits::apply( $t, \@fixes );
+        my @want = reference_apply( $t, \@fixes );
+        my $ok
+            = $got[0] eq $want[0]
+            && "@{ ids( $got[1] ) }" eq "@{ ids( $want[1] ) }"
+            && "@{ ids( $got[2] ) }" eq "@{ ids( $want[2] ) }";
+        next if $ok;
+        $mismatch = 1;
+        is \@got, \@want, "round $round";
+        last;
+    }
+    ok !$mismatch, 'all rounds match';
+};
+
+# Offsets that count every comparison made on them, so the test does not
+# depend on timing.
+package Counted {
+    our $count = 0;
+    use overload
+        '<=>' => sub ( $x, $y, $swap ) {
+        $count++;
+        my $r = ( ref $x ? $$x : $x ) <=> ( ref $y ? $$y : $y );
+        return $swap ? -$r : $r;
+        },
+        '0+'     => sub ( $x, @ ) {$$x},
+        '""'     => sub ( $x, @ ) {$$x},
+        fallback => 1;
+    sub new ( $class, $n ) { return bless \$n, $class }
+}
+
+subtest 'comparisons grow about linearly with the number of edits' => sub {
+    my $n    = 2000;
+    my $text = 'x' x ( 2 * $n );
+    my @fixes;
+    for my $i ( 0 .. $n - 1 ) {
+        my $at = 2 * $i;
+        push @fixes,
+            {
+            id    => $i,
+            key   => [ $at, 'X001', 1 ],
+            edits => [
+                { start => Counted->new($at), end => Counted->new($at), text       => '+' },
+                { start => Counted->new($at), end => Counted->new( $at + 1 ), text => 'y' },
+            ],
+            };
+    }
+    local $Counted::count = 0;
+    my ( $new, $acc ) = Puff::Edits::apply( $text, \@fixes );
+    is scalar @$acc, $n, 'all accepted';
+    is $new, '+yx' x $n, 'text';
+    cmp_ok $Counted::count, '<', 100 * $n, "comparisons: $Counted::count";
+};
+
 done_testing;
