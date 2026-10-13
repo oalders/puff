@@ -71,7 +71,9 @@ sub lists {
     my @v = map { my $unused; $_ => 1 } @_;    # expect: B006
     my @o = sort { my $unused; $a <=> $b } @_;    # expect: B006
     my @pk = map( { my $unused; $_ * 2 } @_ );    # expect: B006
-    return ( @m, @g, @s, @h, @n, @c, @i, @pm, @pg, @ps, @ph, @k, @v, @o, @pk );
+    my $j = join( ",", map { my $unused; } @_ );    # expect: B006
+    my @sp = map ( { my $unused; } @_ );    # expect: B006
+    return ( @m, @g, @s, @h, @n, @c, @i, @pm, @pg, @ps, @ph, @k, @v, @o, @pk, $j, @sp );
 }
 
 sub body { my $unused; }    # expect: B006
