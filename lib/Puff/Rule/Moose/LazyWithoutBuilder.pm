@@ -3,7 +3,10 @@ package Puff::Rule::Moose::LazyWithoutBuilder;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::Moose qw( attributes class_include framework package_name package_region package_statements same_package );
+use Scalar::Util qw( refaddr );
+use Puff::Moose  qw(
+    attributes class_include framework package_block package_name package_region package_statements same_package
+);
 
 sub code       {'M003'}
 sub summary    {'Lazy attribute has no default or builder'}
@@ -13,8 +16,9 @@ sub explanation {
     return <<~'END';
         A lazy attribute builds its value the first time it is read, from
         its `default` or `builder`. Without either there is nothing to
-        build it from: Moose and Mouse die when the class is built, and in
-        Moo `lazy` does nothing useful.
+        build it from: Moose and Mouse die when the class is built. Moo
+        does not complain; the accessor returns undef unless a value was
+        passed to the constructor, so `lazy` does nothing.
 
             has config => ( is => 'ro', lazy => 1 );                     # reported
             has config => ( is => 'ro', lazy => 1, builder => '_load' ); # fine
@@ -30,13 +34,22 @@ sub explanation {
 
         A builder must be a method. When the builder has a known name
         (`builder => '_load'`, Moo's `builder => 1` or `is => 'lazy'`, which
-        mean `_build_NAME`) and the name appears nowhere else in the
-        package, not even as `sub _load`, that is reported too. The method
-        may come from somewhere else when the package `extends` a class,
-        consumes roles `with`, sets `@ISA`, uses `parent` or `base`, or is
-        a role itself (the consuming class may provide it), so a missing
-        builder is not reported in those packages. `lazy_build` builders
-        are not checked.
+        mean `_build_NAME`) and the package does not define it with
+        `sub _load`, `*_load = ...` or `->add_method( _load => ... )`, that
+        is reported too. A mention in a comment, POD or a string does not
+        count, nor does a sub in a `package NAME { }` block inside the
+        package. The method may come from somewhere else when the package
+        `extends` a class or consumes roles `with` (also inside a `BEGIN`
+        block), sets `@ISA`, uses `parent` or `base`, or is a role itself
+        (the consuming class may provide it), so a missing builder is not
+        reported in those packages. Nor is it reported when the package may
+        define methods under names that are not literal, with
+        `*{ EXPR } = ...`, `*$name = ...` or `add_method( $name => ... )`.
+        Other ways of getting a method are not seen and are reported: roles
+        applied at run time (`apply_all_roles`, `with_roles`, `use roles`),
+        `->meta->superclasses(...)`, `handles` delegation, Sub::Install,
+        `install_modifier`, and in-house modules that set up inheritance. `lazy_build` builders are not
+        checked.
 
         Not reported: `has '+name'`, a lazy value that is not a literal,
         `builder => sub { ... }`, Moose's `builder => 1` (a method named
@@ -52,7 +65,7 @@ sub check ( $self, $elem, $doc ) {
     return unless $first && same_package( $first, $elem );
     my $moo = $framework->{family} eq 'Moo';
 
-    my ( @violations, $may_inherit );
+    my ( @violations, $defs );
     for my $attr ( attributes($region) ) {
         my ( $names, $options ) = @{$attr}{qw( names options )};
         next unless $names && $options;
@@ -84,11 +97,13 @@ sub check ( $self, $elem, $doc ) {
             next;
         }
 
-        $may_inherit //= $framework->{role} || _may_inherit($region);
-        next if $may_inherit;
+        next if $framework->{role};
+        $defs //= _definitions($region);
+        next if $defs->{may_inherit} || $defs->{dynamic};
         my $package = package_name($region);
+        my $skip    = refaddr( $attr->{word}->statement );
         for my $builder (@builders) {
-            next if _mentioned( $region, $attr->{word}->statement, $builder );
+            next if grep { $_ != $skip } @{ $defs->{names}{$builder} // [] };
             push @violations,
                 $self->violation(
                 $attr->{word},
@@ -111,32 +126,85 @@ sub _literal ($tokens) {
     return;
 }
 
-# Whether the package extends a class, consumes roles or otherwise gets
-# methods from elsewhere.
-sub _may_inherit ($region) {
+# What the package defines and where else it may get methods from, in one
+# walk over its statements:
+#   names       - { method name => [ refaddr of each statement defining it ] },
+#                 from `sub NAME`, `*NAME = ...` and `->add_method( NAME => ... )`
+#                 (a mention in a comment, POD or string does not count)
+#   may_inherit - true when it extends a class or consumes roles (`extends` or
+#                 `with`, also inside BEGIN), uses parent or base, or sets @ISA
+#   dynamic     - true when it may define methods whose names are not literal:
+#                 `*{ EXPR } = ...`, `*$name = ...` or `add_method` with a
+#                 non-literal name
+# Nested `package NAME { }` blocks are other packages and are not walked.
+sub _definitions ($region) {
+    my $package = package_name($region);
+    my %defs    = ( names => {}, may_inherit => 0, dynamic => 0 );
+    my $add     = sub ( $name, $statement ) {
+        $name =~ s/\A\Q$package\E:://;
+        push @{ $defs{names}{$name} }, refaddr($statement);
+    };
     for my $statement ( package_statements($region) ) {
         if ( $statement->isa('PPI::Statement::Include') ) {
-            return 1 if ( $statement->module // q{} ) =~ /\A(?:parent|base)\z/;
+            $defs{may_inherit} = 1 if ( $statement->module // q{} ) =~ /\A(?:parent|base)\z/;
             next;
         }
-        my $first = $statement->schild(0) or next;
-        return 1 if $first->isa('PPI::Token::Word') && $first->content =~ /\A(?:extends|with)\z/;
-        return 1
-            if $statement->find_first(
-            sub ( $top, $el ) { $el->isa('PPI::Token::Symbol') && $el->symbol =~ /::ISA\z|\A\@ISA\z/ } );
+
+        # A nested `package NAME { }` is another package, checked on its own.
+        next if _package_block($statement);
+        my $begin = $statement->isa('PPI::Statement::Scheduled') && $statement->type eq 'BEGIN';
+        $defs{may_inherit} = 1 if _extends_or_with($statement);
+        my $visit = sub ( $top, $el ) {
+            return if _package_block($el);    # undef: do not look inside
+            if ( $el->isa('PPI::Statement::Sub') ) {
+                $add->( $el->name, $statement ) if defined $el->name;
+            }
+            elsif ( $el->isa('PPI::Token::Symbol') ) {
+                $defs{may_inherit} = 1 if $el->symbol =~ /::ISA\z|\A\@ISA\z/;
+                $add->( $1, $statement ) if $el->symbol =~ /\A\*(.+)\z/;
+            }
+            elsif ( $el->isa('PPI::Token::Cast') && $el->content eq '*' ) {
+                $defs{dynamic} = 1 if _glob_assign($el);
+            }
+            elsif ( $el->isa('PPI::Token::Word') && $el->content eq 'add_method' ) {
+                my $list = $el->snext_sibling;
+                return 0 unless $list && $list->isa('PPI::Structure::List');
+                my $arg  = $list->schild(0) && $list->schild(0)->schild(0) or return 0;
+                my $name = _literal( [$arg] ) // ( $arg->isa('PPI::Token::Word') ? $arg->content : undef );
+                if   ( defined $name ) { $add->( $name, $statement ) }
+                else                   { $defs{dynamic} = 1 }
+            }
+            elsif ( $begin && _extends_or_with($el) ) {
+                $defs{may_inherit} = 1;
+            }
+            return 0;
+        };
+        $visit->( undef, $statement );
+        $statement->find($visit);
     }
-    return 0;
+    return \%defs;
 }
 
-# Whether $name appears anywhere in the package outside $skip, as in
-# `sub NAME`, `*NAME = ...` or `add_method('NAME', ...)`.
-sub _mentioned ( $region, $skip, $name ) {
-    my $re = qr/(?<!\w)\Q$name\E(?!\w)/;
-    for my $statement ( package_statements($region) ) {
-        next if $statement == $skip;
-        return 1 if $statement->content =~ $re;
-    }
-    return 0;
+# Whether the `*` cast $el starts an assignment to a glob whose name is not
+# literal: `*{ EXPR } = ...` or `*$name = ...`, with any `{CODE}` after it.
+sub _glob_assign ($cast) {
+    my $target = $cast->snext_sibling or return 0;
+    return 0 unless $target->isa('PPI::Structure::Block') || $target->isa('PPI::Token::Symbol');
+    my $op = $target->snext_sibling;
+    $op = $op->snext_sibling
+        while $op && ( $op->isa('PPI::Structure::Block') || $op->isa('PPI::Structure::Subscript') );
+    return $op && $op->isa('PPI::Token::Operator') && $op->content eq '=';
+}
+
+sub _package_block ($el) {
+    return $el->isa('PPI::Statement::Package') && package_block($el);
+}
+
+# Whether $el is a statement that starts with `extends` or `with`.
+sub _extends_or_with ($el) {
+    return 0 unless $el->isa('PPI::Statement');
+    my $first = $el->schild(0) or return 0;
+    return $first->isa('PPI::Token::Word') && $first->content =~ /\A(?:extends|with)\z/;
 }
 
 1;
@@ -156,9 +224,15 @@ and Moose's C<< lazy_build => 1 >> imply the builder C<_build_NAME>.
 
 Also reports a lazy attribute whose named builder (C<< builder => 'NAME' >>,
 or C<_build_NAME> from Moo's C<< builder => 1 >> or C<< is => 'lazy' >>) is
-not mentioned anywhere else in the package. That check is skipped for roles
-and for packages that may inherit the method (C<extends>, C<with>,
-C<use parent>, C<use base> or C<@ISA>). There is no fix.
+not defined in the package by C<sub NAME>, C<*NAME = ...> or
+C<add_method>; comments, POD and strings do not count. That check is skipped
+for roles, for packages that may inherit the method (C<extends> or
+C<with>, also inside C<BEGIN>, C<use parent>, C<use base> or C<@ISA>) and
+for packages that may define methods under names that are not literal
+(C<*{ EXPR } = ...>, C<*$name = ...> or C<add_method> with a non-literal
+name). Subs in a nested C<package NAME { }> block belong to that package.
+Roles applied at run time, Sub::Install and C<install_modifier> are not
+seen. There is no fix.
 
 Not selected by default; select it with C<M> or C<M003>.
 

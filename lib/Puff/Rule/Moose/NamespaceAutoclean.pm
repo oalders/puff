@@ -43,6 +43,14 @@ sub explanation {
         because the module must be installed. namespace::autoclean works
         with Moo too; namespace::clean, which many Moo users choose, is
         accepted as well.
+
+        `use MooseX::MarkAsMethods autoclean => 1` runs namespace::autoclean
+        too, so it counts as a cleaner. An in-house module that cleans the
+        namespace for its users is not recognized, and those packages are
+        reported; suppress the rule for them.
+
+        namespace::autoclean keeps the subs that `use overload` installs,
+        so overloading still works with it.
         END
 }
 
@@ -74,9 +82,48 @@ sub _cleaned ($region) {
         my $type   = $statement->type   // next;
         my $module = $statement->module // next;
         return 1 if $type eq 'use' && $CLEANER{$module};
+        return 1 if $type eq 'use' && $module eq 'MooseX::MarkAsMethods' && _autoclean_option($statement);
         return 1 if $type eq 'no'  && $FRAMEWORK{$module};
     }
     return 0;
+}
+
+# Whether `use MooseX::MarkAsMethods` passes a literal true `autoclean`.
+# Only keys count: the elements at even positions of the argument list. The
+# value must end the list or be followed by a comma, not by `=>`.
+sub _autoclean_option ($include) {
+    my @args = $include->arguments;
+    @args = map { $_->schildren } map { $_->schildren } @args
+        if @args == 1 && $args[0]->isa('PPI::Structure::List');
+    my @items = ( [] );
+    my @ends;    # the separator after each item
+    for my $arg (@args) {
+        if ( $arg->isa('PPI::Token::Operator') && $arg->content =~ /\A(?:,|=>)\z/ ) {
+            push @ends, $arg->content;
+            push @items, [];
+        }
+        else { push @{ $items[-1] }, $arg }
+    }
+    pop @items unless @{ $items[-1] };
+    for ( my $i = 0 ; $i < @items ; $i += 2 ) {
+        my ( $key, $value ) = @items[ $i, $i + 1 ];
+        next unless @$key == 1 && ( _literal( $key->[0] ) // q{} ) eq 'autoclean';
+        return 0 unless $value && @$value == 1 && !$value->[0]->isa('PPI::Token::Word');
+        return 0 if ( $ends[ $i + 1 ] // q{,} ) ne q{,};
+        return _literal( $value->[0] ) ? 1 : 0;
+    }
+    return 0;
+}
+
+# The value of a word, number or plain string token, or undef.
+sub _literal ($token) {
+    return $token->content if $token->isa('PPI::Token::Word');
+    return $token->can('literal') ? $token->literal : $token->content if $token->isa('PPI::Token::Number');
+    return $token->string
+        if $token->isa('PPI::Token::Quote::Single')
+        || $token->isa('PPI::Token::Quote::Literal')
+        || ( $token->isa('PPI::Token::Quote::Double') && $token->string !~ /[\$\@\\]/ );
+    return;
 }
 
 # Whether the fix can insert after $include: it ends with `;` and only
@@ -116,7 +163,8 @@ __END__
 
 Reports C<use Moose> (or Moose::Role, Mouse, Mouse::Role, Moo, Moo::Role) in
 a package with no C<use namespace::autoclean>, C<use namespace::clean> or
-C<use namespace::sweep> and no C<no Moose> (or the matching C<no>). The
+C<use namespace::sweep>, no C<use MooseX::MarkAsMethods> with a true
+C<autoclean> option, and no C<no Moose> (or the matching C<no>). The
 imported sugar (C<has>, C<extends>, C<with>, ...) otherwise stays callable as
 methods of the class.
 
