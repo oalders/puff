@@ -15,3 +15,5 @@ $out = qx(ls $x); # expect: S008
 $out = qx{ls @a}; # expect: S008
 system 1, "tar xf $file"; # expect: S008
 system( 1, $cmd ); # expect: S008
+CORE::system 1, $cmd; # expect: S008
+system 0, "tar xf $file"; # expect: S008
