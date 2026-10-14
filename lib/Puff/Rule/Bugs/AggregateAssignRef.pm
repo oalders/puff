@@ -26,8 +26,9 @@ sub explanation {
         slice (`@a[...]`, `@h{...}`), and the whole right side starts with
         a `[...]` or `{...}` constructor. It does not report a slice with
         one scalar subscript (`@a[$i] = [...]`), which stores the reference
-        in that element, or an array that is also given `[...]` or `{...}`
-        rows by `push` or `unshift`, which is an array of references.
+        in that element, or an array that `push` or `unshift` in the same
+        block also gives `[...]` or `{...}` rows, which is an array of
+        references.
 
         The fix replaces the brackets or braces with parens, so the list
         is assigned. That changes what the code does, so it is unsafe, and
@@ -44,7 +45,7 @@ sub check ( $self, $elem, $doc ) {
     return unless $rhs->isa('PPI::Structure::Constructor');
     my $target = _list_target($elem) // return;
     return if $target eq 'Slice' && _one_element( $elem->sprevious_sibling );
-    return if $target eq 'Array' && _has_ref_rows( $elem->sprevious_sibling, $doc );
+    return if $target eq 'Array' && _has_ref_rows( $elem->sprevious_sibling );
     my $ref = $rhs->start->content eq '[' ? '[...]' : '{...}';
     return $self->violation(
         $elem,
@@ -99,16 +100,20 @@ sub _one_element ($subscript) {
         return 0 if $part->isa('PPI::Token::Symbol')   && $part->raw_type ne '$';
         return 0 if $part->isa('PPI::Token::Cast')     && $part->content =~ /\A[\@%]/;
         return 0 if $part->isa('PPI::Token::QuoteLike::Words');
+        return 0 if $part->isa('PPI::Token::Word');    # a call may return a list
+        return 0 if $part->isa('PPI::Structure::List') || $part->isa('PPI::Structure::Block');
     }
     return 1;
 }
 
-# Somewhere in $doc, push or unshift adds a [...] or {...} row to the array
-# $sym names, so its first [...] is a row too.
-sub _has_ref_rows ( $sym, $doc ) {
+# A push or unshift in the block around $sym, or in the document if there is
+# none, adds a [...] or {...} row to the array $sym names.
+sub _has_ref_rows ($sym) {
     return 0 unless $sym->isa('PPI::Token::Symbol') && $sym->raw_type eq '@';
-    my $name = $sym->symbol;
-    for my $word ( @{ $doc->find('PPI::Token::Word') || [] } ) {
+    my $name  = $sym->symbol;
+    my $scope = $sym->parent;
+    $scope = $scope->parent until $scope->isa('PPI::Structure::Block') || !$scope->parent;
+    for my $word ( @{ $scope->find('PPI::Token::Word') || [] } ) {
         next unless $word->content =~ /\A(?:push|unshift)\z/ && is_builtin_call($word);
         my ( $array, $row ) = @{ call_args($word) };
         next unless $array && $row && @$array == 1 && $row->[0]->isa('PPI::Structure::Constructor');

@@ -30,3 +30,5 @@ push @reports, [ 'Foo', 1, 2 ];
 my @lines;
 my $n = 0;
 @lines[ $n++ ] = [split];
+my @queue = [ 'a' ];
+unshift @queue, { b => 1 };

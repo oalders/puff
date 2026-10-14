@@ -18,3 +18,8 @@ my @x;
 @h{ 'a', 'b' } = [ 1, 2 ]; # expect: B002
 @{$ref}[ 0, 1 ] = [ 1, 2 ]; # expect: B002
 my @list = map { $_ } ( @names = [1] ); # expect: B002
+my ( $i, $j );
+@x[ ( $i, $j ) ] = [1]; # expect: B002
+@x[ f() ] = [1]; # expect: B002
+sub f { my @y = [3]; } # expect: B002
+sub g { my @y; push @y, [1]; }
