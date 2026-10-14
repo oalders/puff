@@ -32,3 +32,7 @@ my $n = 0;
 @lines[ $n++ ] = [split];
 my @queue = [ 'a' ];
 unshift @queue, { b => 1 };
+{
+    my @rows = [1];
+    push @rows,, [2];
+}

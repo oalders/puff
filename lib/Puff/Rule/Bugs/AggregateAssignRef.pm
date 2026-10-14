@@ -115,7 +115,7 @@ sub _has_ref_rows ($sym) {
     $scope = $scope->parent until $scope->isa('PPI::Structure::Block') || !$scope->parent;
     for my $word ( @{ $scope->find('PPI::Token::Word') || [] } ) {
         next unless $word->content =~ /\A(?:push|unshift)\z/ && is_builtin_call($word);
-        my ( $array, $row ) = @{ call_args($word) };
+        my ( $array, $row ) = grep {@$_} @{ call_args($word) };    # push @a,, [1] has an empty group
         next unless $array && $row && @$array == 1 && $row->[0]->isa('PPI::Structure::Constructor');
         return 1 if $array->[0]->isa('PPI::Token::Symbol') && $array->[0]->symbol eq $name;
     }
