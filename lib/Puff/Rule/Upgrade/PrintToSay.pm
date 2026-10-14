@@ -67,18 +67,19 @@ sub explanation {
         from the string, keeping its quotes. It is safe, except that `say`
         always ends the output with "\n" where `print` adds `$\`. So the
         violation has no fix when the file's text contains `$\` (but not
-        `$$\`, as in `"pid $$\n"`), `$ \` or `${\}` with any white space,
-        the word `ORS` or `OUTPUT_RECORD_SEPARATOR` in any spelling (`$ORS`,
-        `$::ORS`, `${ORS}`, `*ORS`), `output_record_separator`, or
-        `no strict`, anywhere, even in a string, regex, heredoc or comment;
-        mentions the glob `*\`; has a `#!` line with an `-l` switch; or
-        has a symbolic `${...}` or `*{...}` that is not one of two shapes
-        taken to be safe. One is a scalar variable, with optional
-        subscripts that have no backslash or ORS name in them (`${$ref}`,
-        `${ $self->{x} }`), when strict refs appears to be in effect, so the
-        variable should hold a reference: a top-level `use strict` (bare or
-        naming `refs`) or `use v5.12` or later comes first, and the file
-        has no `use VERSION` below 5.12. Without that,
+        `$$\`, as in `"pid $$\n"`), `$ \` or `${\}` with any white space
+        or comments, the word `ORS` or `OUTPUT_RECORD_SEPARATOR` in any
+        spelling (`$ORS`, `$::ORS`, `${ORS}`, `*ORS`),
+        `output_record_separator`, or `no strict` (with any white space or
+        comments between), anywhere, even in a string, regex, heredoc or
+        comment; mentions the glob `*\`; has a `#!` line with an `-l`
+        switch; or has a symbolic `${...}` or `*{...}` that is not one of
+        two shapes taken to be safe. One is a scalar variable, with
+        optional subscripts that have no backslash or ORS name in them
+        (`${$ref}`, `${ $self->{x} }`), when strict refs appears to be in
+        effect, so the variable should hold a reference: a top-level
+        `use strict` (bare or naming `refs`) or `use v5.11` or later comes
+        first, and the file has no `use VERSION` below 5.11. Without that,
         `${$name}` and `$$name` may name `$\`, so the fix is withheld. The
         other is strings and scalar variables joined with `.`, with no
         backslash, whose text ends in a literal `::name` other than `ORS`
@@ -176,49 +177,81 @@ my ( $cached_doc, $cached );
 
 # What the rule needs from the whole document, found once per document
 # rather than once per print, which made a file with many prints
-# quadratic: its use/no statements, whether one of them turns `say` off,
-# and whether `$\` may be set.
+# quadratic: whether a use/no statement turns `say` off, whether `$\` may
+# be set, and each `use` that may turn `say` on or off. Only values derived
+# from the document are kept, not its nodes.
 sub _analysis ($doc) {
     return $cached if $cached_doc && refaddr($cached_doc) == refaddr($doc);
     $cached_doc = $doc;
     weaken($cached_doc);
     my $includes = $doc->find('PPI::Statement::Include') || [];
     $cached = {
-        includes => $includes,
         disabled => scalar( grep { _disables($_) } @$includes ),
         sets_ors => _sets_ors($doc),
+        uses     => [ map { _use_effect($_) } grep { $_->type eq 'use' } @$includes ],
     };
     return $cached;
 }
 
+# What a `use` does to `say`, as [ line, column, parent, on, module ]: `on`
+# is 1 or 0 for a version or `feature`, or undef for a module, which counts
+# only if it is in the `modules` option. Nothing if it has no effect.
+sub _use_effect ($include) {
+    my @at     = @{ _position($include) };
+    my $parent = refaddr( $include->parent );
+    my $module = $include->module // q{};
+    if ( my $v = $include->version ) {
+        my $parsed = eval { version->parse($v) } or return;
+        return [ @at, $parent, $parsed >= $MIN ? 1 : 0 ];
+    }
+    if ( $module eq 'feature' ) {
+        return unless grep { _enables_say($_) } _strings($include);
+        return [ @at, $parent, 1 ];
+    }
+    return if _empty_import($include);
+    return [ @at, $parent, undef, $module ];
+}
+
 # Whether a statement earlier in this or an enclosing block turned `say` on,
-# and nothing in the file may have turned it off.
+# and nothing in the file may have turned it off. The last such statement
+# before the print wins. Each block's statements are in document order, so
+# a binary search finds the last one before the print, and a print costs
+# its depth times the log of the number of statements, not the number of
+# statements. The innermost block with one wins: a use in an enclosing
+# block comes before the block that holds the print, or holds it.
 sub _say_enabled ( $self, $word, $doc ) {
     my $analysis = _analysis($doc);
     return 0 if $analysis->{disabled};
-    my $includes = $analysis->{includes};
 
-    my %modules = map { $_ => 1 } @{ $self->option('modules') };
-    my %scope;
-    for ( my $p = $word->parent ; $p ; $p = $p->parent ) { $scope{ refaddr($p) } = 1 }
+    my @modules = sort @{ $self->option('modules') };
+    my $blocks  = $analysis->{blocks}{ join "\0", @modules } //= _blocks( $analysis->{uses}, @modules );
     my $here    = _position($word);
-    my $enabled = 0;
-    for my $include (@$includes) {
-        next unless $include->type eq 'use';
-        next unless $scope{ refaddr( $include->parent ) };
-        next unless _before( _position($include), $here );
-        if ( my $v = $include->version ) {
-            my $parsed = eval { version->parse($v) } or next;
-            $enabled = $parsed >= $MIN ? 1 : 0;
+    for ( my $p = $word->parent ; $p ; $p = $p->parent ) {
+        my $uses = $blocks->{ refaddr($p) } or next;
+        my ( $lo, $hi ) = ( 0, scalar @$uses );
+        while ( $lo < $hi ) {
+            my $mid = int( ( $lo + $hi ) / 2 );
+            if   ( _before( $uses->[$mid], $here ) ) { $lo = $mid + 1 }
+            else                                     { $hi = $mid }
         }
-        elsif ( ( $include->module // q{} ) eq 'feature' ) {
-            $enabled = 1 if grep { _enables_say($_) } _strings($include);
-        }
-        elsif ( $modules{ $include->module // q{} } && !_empty_import($include) ) {
-            $enabled = 1;
-        }
+        return $uses->[ $lo - 1 ][2] if $lo;
     }
-    return $enabled;
+    return 0;
+}
+
+# The uses that affect `say`, given the `modules` option, by parent block.
+sub _blocks ( $uses, @modules ) {
+    my %modules = map { $_ => 1 } @modules;
+    my %blocks;
+    for my $use (@$uses) {
+        my ( $line, $column, $parent, $on, $module ) = @$use;
+        if ( !defined $on ) {
+            next unless $modules{$module};
+            $on = 1;
+        }
+        push @{ $blocks{$parent} }, [ $line, $column, $on ];
+    }
+    return \%blocks;
 }
 
 sub _position ($elem) {
@@ -274,14 +307,17 @@ sub _empty_import ($include) {
 # `${ORS}`, `*ORS`); `output_record_separator`; and `no strict`, behind
 # which a name built at run time may be `\`. That also matches `"\$\\"`
 # and the like, which only loses a fix. A `$\` after another `$` is
-# skipped: perl reads `$$\` as `$$` then `\`, as in `"pid $$\n"`.
+# skipped: perl reads `$$\` as `$$` then `\`, as in `"pid $$\n"`. Perl
+# allows comments as well as white space between the parts, as in
+# `no # c` then `strict` on the next line.
+my $GAP     = qr{ (?: \s | \# [^\n]* \n ) }x;
 my $RAW_ORS = qr{
       (?<!\$) \$ \\
-    | \$ \s+ \\
-    | \$ \s* \{ \s* \\ \s* \}
+    | \$ $GAP+ \\
+    | \$ $GAP* \{ $GAP* \\ $GAP* \}
     | \b (?: ORS | OUTPUT_RECORD_SEPARATOR ) \b
     | output_record_separator
-    | \b no \s+ strict \b
+    | \b no $GAP+ strict \b
 }x;
 
 sub _sets_ors ($doc) {
@@ -332,11 +368,11 @@ sub _names_ors ( $block, $strict ) {
     return 1;
 }
 
-my $STRICT_MIN = version->parse('v5.12.0');
+my $STRICT_MIN = version->parse('v5.11.0');
 
 # Where strict refs appears to be on for the rest of the file: the first
-# top-level `use strict` (bare, or naming `refs`) or `use v5.12` or later.
-# Undef if the file has any `no strict`, or a `use VERSION` below 5.12,
+# top-level `use strict` (bare, or naming `refs`) or `use v5.11` or later.
+# Undef if the file has any `no strict`, or a `use VERSION` below 5.11,
 # which may turn implicit strict off.
 sub _strict_refs_at ($doc) {
     my $at;
@@ -378,13 +414,14 @@ sub _block_parts ($block) {
     return @parts;
 }
 
-# A scalar variable, then subscripts with no backslash or ORS name in them.
+# A scalar variable, then subscripts with no backslash in them. An ORS
+# name in a subscript is caught by the raw-text scan in _sets_ors.
 sub _is_variable ( $first, @rest ) {
     return 0 unless $first->isa('PPI::Token::Symbol') && $first->raw_type eq '$';
     for my $part (@rest) {
         next if $part->isa('PPI::Token::Operator') && $part->content eq '->';
         return 0 unless $part->isa('PPI::Structure::Subscript');
-        return 0 if $part->content =~ /\\|ORS|OUTPUT_RECORD_SEPARATOR/;
+        return 0 if $part->content =~ /\\/;
         return 0 if $part->find_first('PPI::Token::HereDoc');
     }
     return 1;
@@ -512,12 +549,13 @@ C<say> sets C<local $\ = "\n">, so if the program sets C<$\> the output
 changes: C<print "x\n"> prints C<"x\n"> followed by C<$\>, while C<say "x">
 prints C<"x\n">. The violation is still reported, but with no fix, when the
 file's text contains C<$\> (but not C<$$\>, as in C<"pid $$\n">), C<$ \>
-or C<${\}> with any white space, the word C<ORS> or
+or C<${\}> with any white space or comments, the word C<ORS> or
 C<OUTPUT_RECORD_SEPARATOR> in any spelling (C<$ORS>, C<$::ORS>, C<${ORS}>,
-C<*ORS>), C<output_record_separator>, or C<no strict>, anywhere, even in a
-string, regex, heredoc or comment; mentions the glob C<*\>; has a C<#!> line
-with an C<-l> switch; or has a symbolic C<${...}> or C<*{...}> that is not
-one of two shapes taken to be safe:
+C<*ORS>), C<output_record_separator>, or C<no strict> (with any white space
+or comments between), anywhere, even in a string, regex, heredoc or
+comment; mentions the glob C<*\>; has a C<#!> line with an C<-l> switch;
+or has a symbolic C<${...}> or C<*{...}> that is not one of two shapes
+taken to be safe:
 
 =over 4
 
@@ -525,9 +563,10 @@ one of two shapes taken to be safe:
 
 a scalar variable, with optional subscripts that have no backslash or ORS
 name in them: C<${$ref}>, C<${ $self-E<gt>{x} }>, but only when strict refs
-appears to be in effect, so the variable should hold a reference. That means a
-top-level C<use strict> (bare or naming C<refs>) or C<use v5.12> or later
-comes first, and the file has no C<use VERSION> below 5.12. Otherwise C<${$name}> and C<$$name> may name C<$\>, and have no fix;
+appears to be in effect, so the variable should hold a reference. That
+means a top-level C<use strict> (bare or naming C<refs>) or C<use v5.11> or
+later comes first, and the file has no C<use VERSION> below 5.11. Otherwise
+C<${$name}> and C<$$name> may name C<$\>, and have no fix;
 
 =item *
 
