@@ -7,3 +7,5 @@ print 'found' if index( $path, $root ) >= 0;
 $path =~ s/^\Q$root\E//;
 print 'found' if $line =~ /^\Q$name\E/;
 print "x" if index( $msg, $prefix ) == 0;
+print 'found' if index( $path, $root . '/' ) == 0;
+print 'found' if 0 == index( $path, abs_path( $dirs[0] ) . '/' );

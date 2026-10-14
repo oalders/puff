@@ -563,8 +563,9 @@ not reported. The unsafe fix anchors the pattern with `\z`.
 directory: `index($path, $root) == 0` (or `!index`, `!= 0`),
 `substr($path, 0, length $root) eq $root`, and `$path =~ /^\Q$root\E/`,
 when the prefix variable's name contains root, dir, base, home, top, parent,
-folder or path. Such a test lets `/srv/www-private` pass for `/srv/www`. The
-unsafe fix rewrites the `index` and regex forms as
+folder or path. Such a test lets `/srv/www-private` pass for `/srv/www`. An
+`index` prefix that already ends in `/`, such as `index($path, $root . '/')`,
+is not reported. The unsafe fix rewrites the `index` and regex forms as
 `$path =~ m{\A\Q$root\E(?:/|\z|(?<=/))}`; the substr form is not fixed.
 
 **S016** reports `require` and `do` of a file name built from a variable
