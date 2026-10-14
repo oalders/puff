@@ -151,19 +151,24 @@ socket( $b13, 1, 1, 0 ) if 0;
 print "1\n" if $str =~ /$b1$b2$b3$b4$b5$b6$b7$b8$b9$b10$b11$b12$b13/; # expect: S019 S019 S019 S019 S019 S019 S019 S019 S019 S019 S019 S019 S019
 
 # The right-hand side of an assignment in the argument, the arguments of a
-# nested call or a method, and a 3-argument CORE::substr are not changed.
+# nested call or a method, and a 3-argument CORE::substr are not changed,
+# also in a conditional after the assignment or the call.
 our $u1 = qr/a/;
 our $u2 = qr/a/;
 our $u3 = qr/a/;
 our $u4 = qr/a/;
 our $u5 = qr/a/;
+our $u12 = qr/a/;
+our $u13 = qr/a/;
 my $o = 'main';
 chomp( my $copy = $u1 );
 chomp( ( foo $u2 ) ) if 0;    # parse only: foo is defined below
 my $piece = CORE::substr( $u3, 0, 1 );
 $o->tie($u4) if 0;
 chomp $o->foo($u5) if 0;
-print "1\n" if $str =~ /$u1$u2$u3$u4$u5/;
+chomp( $z = $c ? $y : $u12 );
+chomp( foo $c ? $y : $u13 ) if 0;
+print "1\n" if $str =~ /$u1$u2$u3$u4$u5$u12$u13/;
 
 # A conditional that is not the whole element is not assigned to, and
 # `=~` binds tighter than `?:`, so only the last branch is bound.
@@ -181,6 +186,41 @@ for my $i ( my $cp3 = $c ? $u8 : $y ) { }
 $c ? $u10 : $y =~ s/a/b/;
 $c ? $u11 : $c ? $y = 1 : $z;
 print "1\n" if $str =~ /$u6$u7$u8$u9$u10$u11/;
+
+# An assignment after a comma, `=>`, `or`, `and` or a statement modifier
+# is not to the conditional before it, and a scalar that ends a middle
+# branch without being all of it is not assigned to.
+our $a1 = qr/a/;
+our $a2 = qr/a/;
+our $a3 = qr/a/;
+our $a4 = qr/a/;
+our $a5 = qr/a/;
+our $a6 = qr/a/;
+our $a7 = qr/a/;
+our $a8 = qr/a/;
+$c ? $a1 : $y, $z = 1;
+$c ? $a2 : $y => $z = 1;
+$c ? $a3 : $y or $z = 1;
+$c ? $a4 : $y and $z = 1;
+$c ? $a5 : $y if $z = 1;
+$c ? $a6 : $y for $z = 1;
+$c ? vec $str, 1, $a7 : $z = 1;
+my $u = undef || $a8;
+print "1\n" if $str =~ /$a1$a2$a3$a4$a5$a6$a7$a8/;
+
+# A conditional after a comma that ends an assignment, or one with a
+# branch in parentheses, can still be assigned to. `?:` ends an assignment
+# in its middle branch, so in an argument of chomp the last branch is
+# still changed. A declaration in an argument is changed.
+our $l1 = qr/a/;
+our $l2 = qr/a/;
+our $l3 = qr/a/;
+our $l4 = qr/a/;
+( my $cp4 = $in, $c ? $l1 : $y ) = @ARGV;
+$c ? ($l2) : ($y) = (1);
+chomp( $c ? $y = 1 : $l3 );
+sub opens { open( my $l4, '<', $0 ) or die; return }
+print "1\n" if $str =~ /$l1$l2$l3$l4/; # expect: S019 S019 S019 S019
 
 sub TIESCALAR { return bless {}, shift }
 sub FETCH     { return 'a' }
