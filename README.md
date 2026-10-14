@@ -29,9 +29,9 @@ Directories are searched recursively for `*.pl`, `*.pm`, `*.t` and `*.psgi`
 files, and for files with no `.` in their name (such as `bin/tool`) whose
 first line is a Perl shebang: `#!` and a path whose last part starts with
 `perl` (`#!/usr/bin/perl -w`), or `#!/usr/bin/env perl` (env options such as
-`-S` allowed). Only the first 256 bytes are read; unreadable and binary files
-are skipped silently. A file named on the command line is always checked.
-Symlinked directories are not followed.
+`-S` allowed). Only the first 256 bytes are read; unreadable and binary files,
+and directories that can't be opened, are skipped silently. A file named on
+the command line is always checked. Symlinked directories are not followed.
 
 Lint a project:
 

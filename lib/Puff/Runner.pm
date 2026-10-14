@@ -71,7 +71,11 @@ sub _find ( $self, $root ) {
     my @found;
     my @queue = $root;
     while ( my $dir = shift @queue ) {
-        for my $child ( sort { $a->basename cmp $b->basename } $dir->children ) {
+
+        # A found directory may be unreadable or gone by now: skip it, like an
+        # unreadable file. A directory named on the command line still dies.
+        my @children = $dir eq $root ? $dir->children : eval { $dir->children };
+        for my $child ( sort { $a->basename cmp $b->basename } @children ) {
             next if $config->is_excluded( $child->relative($root)->stringify, $base );
             if ( $child->is_dir ) {
                 push @queue, $child unless -l $child;
