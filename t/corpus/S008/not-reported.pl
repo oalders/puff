@@ -18,3 +18,5 @@ $cmd{system} = 1;
 sub exec { 1 }
 open( $fh, " -|", $cmd ) or die;    # NBSP before -|
 open( $fh, "-| ", $cmd ) or die;    # NBSP after -|
+system 1, 'tar', 'xf', $file;
+exec 1, "ls $file";

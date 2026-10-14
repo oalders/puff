@@ -43,6 +43,18 @@ sub explanation {
         A constant command string with shell syntax is reported by S018,
         which is selected only by its code.
 
+        `system 1, ...` is Win32's asynchronous spawn: the leading 1 is a flag,
+        so the call is judged by the arguments after it. On Unix it would run
+        a program named `1`.
+
+        On Win32 the child gets one command line and parses it itself, so the
+        list form is emulated and some quoting problems survive it. `system
+        LIST` also falls back to the shell if the first spawn fails, so only
+        `system { $prog } @args` reliably avoids the shell there.
+
+        A lone program path that may contain spaces (`system $path`) should
+        be written `system { $path } $path`; parentheses change nothing.
+
         Ruff's equivalents are S602, S605 and S607.
         END
 }
@@ -62,6 +74,14 @@ sub check ( $self, $elem, $doc ) {
         my $next = $elem->snext_sibling;
         return if $next && $next->isa('PPI::Structure::Block');
         my $args = call_args($elem);
+
+        # Win32 system(1, ...) spawns async; the 1 is a flag, not the program
+        shift @$args
+            if $name =~ /\A(?:CORE::)?system\z/
+            && @$args > 1
+            && @{ $args->[0] } == 1
+            && $args->[0][0]->isa('PPI::Token::Number')
+            && $args->[0][0]->content eq '1';
         return unless @$args == 1 && _is_shell_string( $args->[0] );
         ( my $short = $name ) =~ s/\ACORE:://;
         return $self->violation(
@@ -110,6 +130,7 @@ __END__
 
 Reports one-string C<system>, C<exec> and C<readpipe> calls, interpolating
 backticks and C<qx>, and three-argument piped opens with one command string
-that is not constant. There is no fix.
+that is not constant. In C<system 1, ...> the leading C<1> is the Win32
+async-spawn flag, so the remaining arguments are judged. There is no fix.
 
 =cut
