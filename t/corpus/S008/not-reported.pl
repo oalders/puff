@@ -21,3 +21,4 @@ open( $fh, "-| ", $cmd ) or die;    # NBSP after -|
 system 1, 'tar', 'xf', $file;
 exec 1, "ls $file";
 system 1, @cmd;
+system 2, "tar xf $file";

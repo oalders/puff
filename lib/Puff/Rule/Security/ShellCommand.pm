@@ -44,9 +44,9 @@ sub explanation {
         A constant command string with shell syntax is reported by S018,
         which is selected only by its code.
 
-        A leading number literal is the Win32 spawn mode (`system 1, ...`
-        spawns asynchronously), so the call is judged by the arguments after
-        it. On Unix it would run a program named after the number.
+        A leading 0 or 1 is the Win32 spawn mode (0 waits, 1 spawns
+        asynchronously), so the call is judged by the arguments after it. On
+        Unix it would run a program named after the number.
 
         On Win32 the child gets one command line and parses it itself, so the
         list form is emulated and some quoting problems survive it. `system
@@ -76,12 +76,13 @@ sub check ( $self, $elem, $doc ) {
         return if $next && $next->isa('PPI::Structure::Block');
         my $args = call_args($elem);
 
-        # Win32 takes a leading number as the spawn mode, not the program
+        # Win32 takes a leading 0 or 1 as the spawn mode, not the program
         shift @$args
             if $SYSTEM{$name}
             && @$args > 1
             && @{ $args->[0] } == 1
-            && $args->[0][0]->isa('PPI::Token::Number');
+            && $args->[0][0]->isa('PPI::Token::Number')
+            && ( $args->[0][0]->literal // q{} ) =~ /\A[01]\z/;
         return unless @$args == 1 && _is_shell_string( $args->[0] );
         ( my $short = $name ) =~ s/\ACORE:://;
         return $self->violation(
@@ -130,8 +131,8 @@ __END__
 
 Reports one-string C<system>, C<exec> and C<readpipe> calls, interpolating
 backticks and C<qx>, and three-argument piped opens with one command string
-that is not constant. A leading number literal in C<system> is the Win32
-spawn mode (C<system 1, ...>), so the arguments after it are judged. There is
-no fix.
+that is not constant. A leading 0 or 1 in C<system> is the Win32 spawn mode
+(0 waits, 1 spawns asynchronously), so the arguments after it are judged.
+There is no fix.
 
 =cut
