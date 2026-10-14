@@ -166,8 +166,14 @@ subtest 'unreadable directory is skipped' => sub {
     $tree->child( 'locked', 'hidden.pl' )->touchpath->spew_utf8("foo;\n");
     chmod 0000, $tree->child('locked');
 
-    my $run = runner('lint')->run("$tree");
+    # Catch any death so the directory is made removable again before asserting.
+    my $run       = eval { runner('lint')->run("$tree") };
+    my $run_error = $@;
+    my $named     = dies { runner('lint')->run( $tree->child('locked')->stringify ) };
     chmod 0700, $tree->child('locked');
+
+    is( $run_error, q{}, 'walking past an unreadable directory does not die' );
+    like( $named, qr/opendir/, 'an unreadable directory named on the command line still dies' );
     is( $run->{exit_code}, 1, 'readable files are still linted' );
     is(
         [ map { path( $_->{file} )->basename } @{ $run->{files} } ], ['ok.pl'],
