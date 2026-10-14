@@ -2,23 +2,34 @@ package Puff::Edits;
 
 use v5.36;
 
-sub _conflicts ( $edit, $other ) {
-    my ( $s, $e )   = @{$edit}{qw( start end )};
-    my ( $os, $oe ) = @{$other}{qw( start end )};
-    if ( $s == $e ) {    # insertion
-        return $os < $s && $s < $oe;
+# Index of the first edit in the start-sorted @$list that starts at or after
+# $x, or strictly after $x when $after is true.
+sub _bisect ( $list, $x, $after = 0 ) {
+    my ( $lo, $hi ) = ( 0, scalar @$list );
+    while ( $lo < $hi ) {
+        my $mid = ( $lo + $hi ) >> 1;
+        my $s   = $list->[$mid]{start};
+        if   ( $after ? $s <= $x : $s < $x ) { $lo = $mid + 1 }
+        else                                 { $hi = $mid }
     }
-    if ( $os == $oe ) {    # other is an insertion
-        return $s < $os && $os < $e;
-    }
-    return $s < $oe && $os < $e;
+    return $lo;
 }
 
-sub _same ( $edit, $other ) {
-    return
-           $edit->{start} == $other->{start}
-        && $edit->{end} == $other->{end}
-        && $edit->{text} eq $other->{text};
+# $reps and $ins hold the edits accepted so far: replacements and insertions,
+# each sorted by start. Accepted replacements never overlap, so they are also
+# sorted by end, and the last one starting before $e is the only one that can
+# reach past $s.
+sub _conflicts ( $edit, $reps, $ins ) {
+    my ( $s, $e ) = @{$edit}{qw( start end )};
+    my $i = _bisect( $reps, $e );
+    return 1 if $i > 0 && $reps->[ $i - 1 ]{end} > $s;
+    return 0 if $s == $e;    # insertions never conflict with each other
+    my $j = _bisect( $ins, $s, 1 );
+    return $j < @$ins && $ins->[$j]{start} < $e;
+}
+
+sub _key ($edit) {
+    return join ',', @{$edit}{qw( start end text )};
 }
 
 sub apply ( $text, $fixes ) {
@@ -26,16 +37,33 @@ sub apply ( $text, $fixes ) {
         = sort { $a->{key}[0] <=> $b->{key}[0] || $a->{key}[1] cmp $b->{key}[1] || $a->{key}[2] <=> $b->{key}[2] }
         @$fixes;
 
-    my ( @accepted, @deferred, @edits );
+    my ( @accepted, @deferred, @edits, @reps, @ins, %seen );
 FIX: for my $fix (@sorted) {
         my @new;
         for my $edit ( @{ $fix->{edits} } ) {
-            next if grep { _same( $edit, $_ ) } @edits, @new;
-            for my $other ( @edits, @new ) {
-                if ( _conflicts( $edit, $other ) ) {
-                    push @deferred, $fix;
-                    next FIX;
+            next if $seen{ _key($edit) };
+            if ( _conflicts( $edit, \@reps, \@ins ) ) {
+
+                # Undo this fix's edits, newest first, so each insertion is
+                # the last one at its offset when it is removed.
+                for my $undo ( reverse @new ) {
+                    delete $seen{ _key($undo) };
+                    if ( $undo->{start} == $undo->{end} ) {
+                        splice @ins, _bisect( \@ins, $undo->{start}, 1 ) - 1, 1;
+                    }
+                    else {
+                        splice @reps, _bisect( \@reps, $undo->{start} ), 1;
+                    }
                 }
+                push @deferred, $fix;
+                next FIX;
+            }
+            $seen{ _key($edit) } = 1;
+            if ( $edit->{start} == $edit->{end} ) {
+                splice @ins, _bisect( \@ins, $edit->{start}, 1 ), 0, $edit;
+            }
+            else {
+                splice @reps, _bisect( \@reps, $edit->{start} ), 0, $edit;
             }
             push @new, $edit;
         }
@@ -80,5 +108,10 @@ another of its own edits. Two replacements conflict when their ranges overlap; a
 conflicts with a replacement C<[s,e)> only when C<s E<lt> X E<lt> e>. An edit
 identical to an accepted one is dropped. Insertions at one offset keep their
 accepted order.
+
+Accepted edits are kept sorted by start, so each new edit is checked against
+its neighbours with a binary search rather than against every accepted edit.
+That takes O(n log n) comparisons overall; C<splice> insertion is linear per
+edit, so wall time can grow faster for very large edit counts.
 
 =cut

@@ -45,25 +45,41 @@ subtest 'overlapping replaces' => sub {
 };
 
 subtest 'insert vs replace' => sub {
-    my %expect = ( 3 => 'defer', 2 => 'ok', 5 => 'ok' );
+    my %expect = ( 2 => 'ab+Rfghij', 3 => undef, 5 => 'abR+fghij' );
     for my $x ( sort keys %expect ) {
         my ( $new, undef, $def ) = Puff::Edits::apply(
             $t,
             [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( $x, 'i', [ $x, $x, '+' ] ) ]
         );
-        if ( $expect{$x} eq 'defer' ) {
+        if ( defined $expect{$x} ) {
+            is ids($def), [], "insert at $x accepted";
+            is $new, $expect{$x}, "insert at $x placed";
+        }
+        else {
             is ids($def), ['i'], "insert at $x deferred";
             is $new, 'abRfghij', 'text';
         }
-        else {
-            is ids($def), [], "insert at $x accepted";
-            like $new, qr/\+/, 'inserted';
-        }
     }
-    my ($new) = Puff::Edits::apply( $t, [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( 2, 'i', [ 2, 2, '+' ] ) ] );
-    is $new, 'ab+Rfghij', 'insert at start goes before replacement';
-    ($new) = Puff::Edits::apply( $t, [ fix( 2, 'r', [ 2, 5, 'R' ] ), fix( 5, 'i', [ 5, 5, '+' ] ) ] );
-    is $new, 'abR+fghij', 'insert at end goes after replacement';
+};
+
+subtest 'replace after an insert' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [ fix( 3, 'i', [ 3, 3, '+' ] ), fix( 4, 'r', [ 2, 5, 'R' ] ) ]
+    );
+    is $new, 'abc+defghij', 'insert inside the range wins';
+    is ids($acc), ['i'], 'insert accepted';
+    is ids($def), ['r'], 'replacement deferred';
+
+    for my $case ( [ 2, 'ab+Rfghij' ], [ 5, 'abR+fghij' ] ) {
+        my ( $x, $want ) = @$case;
+        ( $new, $acc, $def ) = Puff::Edits::apply(
+            $t,
+            [ fix( 1, 'i', [ $x, $x, '+' ] ), fix( 6, 'r', [ 2, 5, 'R' ] ) ]
+        );
+        is $new, $want, "insert at $x, then replacement";
+        is $def, [], "insert at $x: none deferred";
+    }
 };
 
 subtest 'identical edits are dropped' => sub {
@@ -123,6 +139,198 @@ subtest 'edits of one fix that overlap each other' => sub {
     is $new, 'abcdefgh_j', 'only the other fix applied';
     is ids($acc), ['b'], 'other fix accepted';
     is ids($def), ['a'], 'self-overlapping fix deferred';
+};
+
+subtest 'a deferred fix leaves no edits behind' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [
+            fix( 7, 'r', [ 7, 9, 'R' ] ),
+            fix( 7, 'd', [ 3, 3, 'I' ], [ 2, 4, 'X' ], [ 2, 4, 'X' ], [ 6, 8, 'Y' ] ),
+            fix( 8, 'c', [ 2, 5, 'C' ] ),
+        ]
+    );
+    is $new, 'abCfgRj', 'later fix overlapping the deferred edits applied';
+    is ids($acc), [ 'r', 'c' ], 'accepted';
+    is ids($def), ['d'], 'deferred';
+
+    # The deferred fix adds a replacement before it conflicts.
+    ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [
+            fix( 6, 'r', [ 7, 9, 'R' ] ),
+            fix( 7, 'd', [ 2, 4, 'X' ], [ 8, 8, 'I' ] ),
+            fix( 8, 'c', [ 3, 5, 'C' ] ),
+        ]
+    );
+    is $new, 'abcCfgRj', 'later fix overlapping the deferred replacement applied';
+    is ids($acc), [ 'r', 'c' ], 'accepted';
+    is ids($def), ['d'], 'deferred';
+
+    ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [ fix( 2, 'a', [ 2, 4, 'X' ] ), fix( 2, 'b', [ 2, 4, 'X' ], [ 6, 7, 'Y' ] ) ]
+    );
+    is $new, 'abXefYhij', 'identical replacement dropped, rest of the fix applied';
+    is ids($acc), [ 'a', 'b' ], 'both accepted';
+};
+
+subtest 'a rolled-back edit does not hide an identical later edit' => sub {
+    my ( $new, $acc, $def ) = Puff::Edits::apply(
+        $t,
+        [
+            fix( 1, 'r', [ 7, 9, 'R' ] ),
+            fix( 2, 'd', [ 2, 4, 'X' ], [ 8, 8, 'I' ] ),
+            fix( 3, 'c', [ 2, 4, 'X' ] ),
+        ]
+    );
+    is $new, 'abXefgRj', 'later identical edit applied, not dropped as a duplicate';
+    is ids($acc), [ 'r', 'c' ], 'accepted';
+    is ids($def), ['d'], 'deferred';
+};
+
+# The algorithm Puff::Edits::apply replaced, kept as a reference.
+sub reference_apply ( $text, $fixes ) {
+    my $conflicts = sub ( $edit, $other ) {
+        my ( $s, $e )   = @{$edit}{qw( start end )};
+        my ( $os, $oe ) = @{$other}{qw( start end )};
+        return $os < $s && $s < $oe if $s == $e;
+        return $s < $os && $os < $e if $os == $oe;
+        return $s < $oe && $os < $e;
+    };
+    my $same = sub ( $edit, $other ) {
+        return
+               $edit->{start} == $other->{start}
+            && $edit->{end} == $other->{end}
+            && $edit->{text} eq $other->{text};
+    };
+    my @sorted
+        = sort { $a->{key}[0] <=> $b->{key}[0] || $a->{key}[1] cmp $b->{key}[1] || $a->{key}[2] <=> $b->{key}[2] }
+        @$fixes;
+
+    my ( @accepted, @deferred, @edits );
+FIX: for my $fix (@sorted) {
+        my @new;
+        for my $edit ( @{ $fix->{edits} } ) {
+            next if grep { $same->( $edit, $_ ) } @edits, @new;
+            for my $other ( @edits, @new ) {
+                if ( $conflicts->( $edit, $other ) ) {
+                    push @deferred, $fix;
+                    next FIX;
+                }
+            }
+            push @new, $edit;
+        }
+        push @accepted, $fix;
+        push @edits, @new;
+    }
+
+    my $seq     = 0;
+    my @ordered = sort {
+               $a->[0]{start}                     <=> $b->[0]{start}
+            || ( $b->[0]{start} == $b->[0]{end} ) <=> ( $a->[0]{start} == $a->[0]{end} )
+            || $a->[1]                            <=> $b->[1]
+    } map { [ $_, $seq++ ] } @edits;
+
+    for my $pair ( reverse @ordered ) {
+        my $edit = $pair->[0];
+        substr( $text, $edit->{start}, $edit->{end} - $edit->{start}, $edit->{text} );
+    }
+    return ( $text, \@accepted, \@deferred );
+}
+
+# A fixed Lehmer generator (MINSTD), so every run sees the same input and a
+# failing round can be replayed. Products stay below 2**47, so the arithmetic
+# is exact even where integers are only 53-bit doubles.
+my $lcg = 12345;
+
+sub roll ($n) {
+    $lcg = ( $lcg * 48271 ) % 2147483647;
+    return ( $lcg >> 8 ) % $n;
+}
+
+subtest 'matches the reference on generated fixes' => sub {
+    my $len = length $t;
+    my $mismatch;
+    for my $round ( 1 .. 2000 ) {
+        my @fixes;
+        for my $id ( 1 .. 1 + roll(6) ) {
+            my @edits;
+            for ( 1 .. 1 + roll(3) ) {
+                my $start = roll( $len + 1 );
+                my $end   = roll(10) < 4 ? $start : $start + roll( $len - $start + 1 );
+                push @edits, [ $start, $end, ( 'A', 'B', '' )[ roll(3) ] ];
+            }
+            my $f = fix( $edits[0][0], $id, @edits );
+            $f->{key}[2] = roll(3);
+            push @fixes, $f;
+        }
+        my @got  = Puff::Edits::apply( $t, \@fixes );
+        my @want = reference_apply( $t, \@fixes );
+        my $ok
+            = $got[0] eq $want[0]
+            && "@{ ids( $got[1] ) }" eq "@{ ids( $want[1] ) }"
+            && "@{ ids( $got[2] ) }" eq "@{ ids( $want[2] ) }";
+        next if $ok;
+        $mismatch = 1;
+        is \@got, \@want, "round $round";
+        last;
+    }
+    ok !$mismatch, 'all rounds match';
+};
+
+# Offsets that count every comparison made on them, so the test does not
+# depend on timing.
+package Counted {
+    our $count = 0;
+    use overload
+        '<=>' => sub ( $x, $y, $swap ) {
+        $count++;
+        my $r = ( ref $x ? $$x : $x ) <=> ( ref $y ? $$y : $y );
+        return $swap ? -$r : $r;
+        },
+        '0+'     => sub ( $x, @ ) {$$x},
+        '""'     => sub ( $x, @ ) {$$x},
+        fallback => 1;
+    sub new ( $class, $n ) { return bless \$n, $class }
+}
+
+# Each pair of edits is accepted. Each fix after it adds an insertion and a
+# replacement, then conflicts and is rolled back. Binary search keeps the
+# number of comparisons near n log n; checking every accepted edit would be
+# quadratic. (Comparisons only: splice insertion is linear per edit.)
+subtest 'comparisons grow as n log n, with many fixes deferred' => sub {
+    my $n    = 2000;
+    my $text = 'x' x ( 2 * $n );
+    my $at   = sub ($x) { Counted->new($x) };
+    my @fixes;
+    for my $i ( 0 .. $n - 1 ) {
+        my $x = 2 * $i;
+        push @fixes,
+            {
+            id    => "a$i",
+            key   => [ $x, 'X001', 1 ],
+            edits => [
+                { start => $at->($x), end => $at->($x), text       => '+' },
+                { start => $at->($x), end => $at->( $x + 1 ), text => 'y' },
+            ],
+            },
+            {
+            id    => "d$i",
+            key   => [ $x, 'X002', 1 ],
+            edits => [
+                { start => $at->( $x + 1 ), end => $at->( $x + 1 ), text => '-' },
+                { start => $at->( $x + 1 ), end => $at->( $x + 2 ), text => 'q' },
+                { start => $at->($x), end       => $at->( $x + 1 ), text => 'z' },
+            ],
+            };
+    }
+    local $Counted::count = 0;
+    my ( $new, $acc, $def ) = Puff::Edits::apply( $text, \@fixes );
+    is scalar @$acc, $n, 'first fix of each pair accepted';
+    is scalar @$def, $n, 'second fix of each pair deferred';
+    is $new, '+yx' x $n, 'text';
+    cmp_ok $Counted::count, '<', 20 * $n * log($n) / log(2), "comparisons: $Counted::count";
 };
 
 done_testing;
