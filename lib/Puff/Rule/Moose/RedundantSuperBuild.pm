@@ -11,6 +11,7 @@ sub applies_to {'PPI::Statement::Sub'}
 sub fix_safety {'unsafe'}
 
 my %HOOK = map { $_ => 1 } qw( BUILD DEMOLISH );
+my $CALL = qr/\A(?:SUPER::(?:BUILD|DEMOLISH)|(?:maybe::)?next::method)\z/;
 
 sub explanation {
     return <<~'END';
@@ -33,13 +34,16 @@ sub explanation {
 
         The unsafe fix removes the call when it is a statement of its own
         (`$obj->SUPER::BUILD(...);`), and the whole line when nothing else
-        is on it. A trailing comment stays where it was. When the call's value is used, as in
-        `return $self->SUPER::BUILD(@_)`, or the call is inside a `map`,
-        `grep`, `sort`, `do` or `eval` block, there is no fix. It is unsafe
-        because a parent that is not a Moose, Mouse or Moo class may rely
-        on the call, because any arguments the call changed are no longer
-        passed, and because when the call is the last statement of the
-        method, the method returns something else.
+        is on it. A trailing comment stays where it was. When the call's
+        value is used, as in `return $self->SUPER::BUILD(@_)`, or the call
+        is inside a `map`, `grep`, `sort`, `do` or `eval` block, there is no
+        fix. There is none either when removing the calls would leave a
+        bare block (`{ ... }`) empty, starting with `;`, or starting with
+        something like `a => 1,`, because perl reads such a block as a hash.
+        It is unsafe because a parent that is not a Moose, Mouse or Moo
+        class may rely on the call, because any arguments the call changed
+        are no longer passed, and because when the call is the last
+        statement of the method, the method returns something else.
         END
 }
 
@@ -121,21 +125,60 @@ sub _owner_block ($el) {
 # it sits in the sub's body or in the block of `if`, `for`, `while` or a bare
 # block. In a `map`, `grep`, `sort`, `do` or `eval` block the statement may be
 # the block's value, and removing it may leave an empty `map { }` that does
-# not compile.
+# not compile. The block of `if`, `for`, `while`, `continue` and the like
+# may be empty, but a bare block must still read as a block once the calls
+# are gone (see _keeps_block).
 sub _standalone ($word) {
     my $statement = $word->parent;
-    return unless ref $statement eq 'PPI::Statement';
+    return unless _call($statement) && $statement->schild(2) == $word;
     my $block = $statement->parent;
     return unless $block && $block->isa('PPI::Structure::Block');
     my $owner = $block->parent;
     return unless $owner && ( $owner->isa('PPI::Statement::Sub') || $owner->isa('PPI::Statement::Compound') );
+    return if _bare($block) && !_keeps_block( $block, $statement );
+    return $statement;
+}
+
+# True when $statement is a call this rule may remove, such as
+# `$self->SUPER::BUILD(@_);`, with nothing else in it.
+sub _call ($statement) {
+    return 0 unless ref $statement eq 'PPI::Statement';
     my @children = $statement->schildren;
     pop @children if $children[-1]->isa('PPI::Token::Structure') && $children[-1]->content eq ';';
-    pop @children if @children == 4                              && $children[-1]->isa('PPI::Structure::List');
-    return unless @children == 3                                 && $children[2] == $word;
-    return unless $children[0]->isa('PPI::Token::Symbol')        && $children[0]->raw_type eq '$';
-    return if $statement->find_first('PPI::Token::HereDoc');
-    return $statement;
+    pop @children if @children == 4 && $children[-1]->isa('PPI::Structure::List');
+    return 0 unless @children == 3;
+    return 0 unless $children[0]->isa('PPI::Token::Symbol')   && $children[0]->raw_type eq '$';
+    return 0 unless $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->';
+    return 0 unless $children[2]->isa('PPI::Token::Word')     && $children[2]->content =~ $CALL;
+    return !$statement->find_first('PPI::Token::HereDoc');
+}
+
+# True when removing $statement, and any other call before the first
+# statement that stays, leaves bare $block still read as a block. Perl reads
+# `{ }`, and a block that starts like `{ a => 1, ...` or `{ "a", ...`, as a
+# hash, so `{ } my $x = 1;` does not compile. Perl is fine with `{ ; }`, but
+# PPI reads a block that starts with `;` as a hash, and with it the code that
+# follows. The `;` is no statement to `schildren`, so a block with nothing
+# else left falls out of the loop.
+sub _keeps_block ( $block, $statement ) {
+    my $seen = 0;
+    for my $child ( $block->schildren ) {
+        $seen ||= $child == $statement;
+        next if _call($child);
+        return 1 unless $seen;
+        my ( $first, $next ) = $child->schildren;
+        return 1 unless $next && $next->isa('PPI::Token::Operator') && $next->content =~ /\A(?:,|=>)\z/;
+        return !grep { $first->isa("PPI::Token::$_") } qw( Word Quote QuoteLike Number );
+    }
+    return 0;
+}
+
+# True when $block is a bare block, `{ ... }` or `LABEL: { ... }`, rather
+# than the block of `if`, `for`, `while`, `continue` and the like.
+sub _bare ($block) {
+    return 0 unless $block->parent->isa('PPI::Statement::Compound');
+    my $prev = $block->sprevious_sibling;
+    return !$prev || $prev->isa('PPI::Token::Label');
 }
 
 1;
@@ -157,9 +200,11 @@ twice.
 
 The unsafe fix removes the call when it is a statement of its own, with its
 line when nothing else is on it. A trailing comment stays where it was. A
-call whose value is used, or that is inside a C<map>, C<grep>, C<sort>,
-C<do> or C<eval> block, is reported with no fix. When the call is the last
-statement of the method, the fix changes what the method returns.
+call whose value is used, that is inside a C<map>, C<grep>, C<sort>,
+C<do> or C<eval> block, or whose removal would leave a bare block empty,
+starting with C<;>, or starting like a hash (C<< { a => 1, ... } >>), is
+reported with no fix. When the call is the last statement of the method,
+the fix changes what the method returns.
 
 Not selected by default; select it with C<M> or C<M004>.
 
