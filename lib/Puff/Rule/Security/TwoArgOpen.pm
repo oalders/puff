@@ -48,6 +48,21 @@ sub explanation {
         with whitespace, `:` or NUL). Declined calls are reported as not
         fixable.
 
+        The fix takes an interpolated value as it is, so a value that
+        two-argument open reads specially is not guarded against. Three-argument
+        open reads it differently when the value:
+        - has leading or trailing whitespace (two-argument open trims it,
+          three-argument open keeps it);
+        - is `-` (STDIN or STDOUT, including after `>>`, in two-argument open;
+          a file named `-` in three-argument open);
+        - is a dup such as `&0` or `&STDOUT` (a literal file name in
+          three-argument open);
+        - starts or ends with `|` when there is no mode prefix (a command in
+          two-argument open, a plain file name after the rewrite).
+        A literal mode prefix does not help when an empty value comes before
+        the rest of the name: with an empty `$e`, `"<$e-\tz"` used to read
+        STDIN, and the rewrite opens a file named `-<TAB>z`.
+
         Two-argument open strips only ASCII whitespace. A non-ASCII space such
         as U+00A0 or U+2028 at either end of the filename is part of the
         name, so the fix keeps it there.
@@ -110,8 +125,9 @@ sub _replacement ($arg) {
     return if $s eq '' || $s =~ /\A[|&]/ || $s =~ /\|\z/;
 
     # "-" alone, or followed by NUL, opens STDIN. A backslash after the "-"
-    # might start an escape for NUL, and a variable after it might be empty
-    # or start with NUL.
+    # is declined in both quote styles: in a "..." string it might start an
+    # escape for NUL. In a "..." string, a variable after the "-" might be
+    # empty or start with NUL.
     return if $s =~ /\A\s*-(?:\z|\0|\\)/a;
     return if $double && $s =~ /\A\s*-?[\$\@]/a;
 
@@ -124,8 +140,9 @@ sub _replacement ($arg) {
         return if $file eq '' || $file =~ /\A&/;
 
         # After a mode, "-" alone or followed by ASCII whitespace, ":" or NUL
-        # opens STDIN or STDOUT. A backslash after the "-" might start an
-        # escape for one of those, and a variable after it might be empty or
+        # opens STDIN or STDOUT. A backslash after the "-" is declined in both
+        # quote styles: in a "..." string it might start an escape for one of
+        # those. In a "..." string, a variable after the "-" might be empty or
         # start with one.
         return if $file =~ /\A-(?:\z|[\s:\0\\])/a;
         return if $double && $file =~ /\A-[\$\@]/;
@@ -156,5 +173,17 @@ including pipes, C<&> duplication, C<-> (alone, or followed by whitespace,
 C<:> or NUL, which perl also treats as STDIN or STDOUT, or by a variable in
 a C<"..."> string), other quote styles and expressions, is reported with
 C<fixable> 0.
+
+The fix takes an interpolated value as it is, so a value that two-argument
+open reads specially is not guarded against. Three-argument open reads it
+differently when the value has leading or trailing whitespace (two-argument
+open trims it, three-argument open keeps it), is C<-> (STDIN or STDOUT,
+including after C<E<gt>E<gt>>, in two-argument open; a file named C<-> in
+three-argument open), or is a dup such as C<&0> or C<&STDOUT> (a literal file
+name in three-argument open), or starts or ends with C<|> when there is no
+mode prefix (a command in two-argument open, a plain file name after the
+rewrite). A literal mode prefix does not help when an empty value comes
+before the rest of the name: with an empty C<$e>, C<"E<lt>$e-\tz"> used
+to read STDIN, and the rewrite opens a file named C<-E<lt>TABE<gt>z>.
 
 =cut
