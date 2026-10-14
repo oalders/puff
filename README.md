@@ -801,7 +801,10 @@ interpolation into strings, regexes and heredocs. Subroutine arguments
 functions and classes whose result is kept only to be destroyed later. The
 unsafe fix replaces an unused list member with `undef` when the values come
 from a builtin such as `split` or `caller`, `@_` or a regex match, and
-deletes a declaration that has no assignment. Based on
+deletes a declaration that has no assignment. It does not delete one when
+that would leave a bare block (`{ ... }`), or the block of `map`, `grep` or
+`sort`, empty, starting with `;` or an inner block, or starting like a hash (`a => 1,`), since
+perl reads such a block as a hash. Based on
 Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter, limited to
 statement-level declarations.
 
