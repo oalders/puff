@@ -888,6 +888,51 @@ subtest 'control and bidi characters in messages are escaped' => sub {
     unlike( $out, qr/[^\x00-\x7F]/, 'JSON output is ASCII' );
 };
 
+subtest 'DEL in messages and errors is escaped in every format' => sub {
+    my $dir = hostile_project(qq{my \$x = "a\x7fb";\nmy \$y = "die\x7f";\n});
+    $dir->child('ok.pl')->spew_utf8(qq{my \$x = "a\x7fb";\n});
+    my ( $out, undef, $exit ) = puff( $dir, 'check', 'ok.pl' );
+    is( $exit, 1, 'text: exit 1' );
+    is( $out =~ s/\n.*//sr, 'ok.pl:1:9: X900 literal a\x7Fb', 'text: DEL as \x7F' );
+
+    ( $out, undef, $exit ) = puff_raw( $dir, 'check', '--output-format', 'json', 'ok.pl' );
+    is( $exit, 1, 'json: exit 1' );
+    like( $out, qr/"literal a\\u007fb"/, 'json: DEL as \u007f' );
+    unlike( $out, qr/\x7F/, 'json: no raw DEL' );
+    is( JSON::PP->new->decode($out)->[0]{message}, "literal a\x7fb", 'json: decodes to a real DEL' );
+
+    ( $out, undef, $exit ) = puff_raw( $dir, 'check', '--output-format', 'jsonl', 'ok.pl', 'hostile.pl' );
+    is( $exit, 2, 'jsonl: exit 2 for the rule error' );
+    unlike( $out, qr/\x7F/, 'jsonl: no raw DEL' );
+    like( $out, qr/"message":"literal a\\u007fb"/, 'jsonl: DEL in a message as \u007f' );
+    like( $out, qr/"error":"rule X900 failed: cannot check die\\u007f"/, 'jsonl: DEL in an error as \u007f' );
+    my %file = map { $_->{file} => $_ } grep { $_->{type} eq 'file' } jsonl($out);
+    is( $file{'hostile.pl'}{error}, "rule X900 failed: cannot check die\x7f", 'jsonl: decodes to a real DEL' );
+};
+
+subtest 'a non-ASCII file name in JSON is escaped as \u' => sub {
+    my $dir  = project();
+    my $name = Encode::encode_utf8("caf\x{e9}.pl");
+    spew_named( $dir, $name, corpus('S001/basic.pl')->slurp_raw );
+    my ( $out, undef, $exit ) = puff_raw( $dir, 'check', '--select', 'S001', '--output-format', 'json' );
+    is( $exit, 1, 'exit 1' );
+    like( $out, qr/"file" : "caf\\u00e9\.pl"/, 'file field written as a \u escape' );
+    unlike( $out, qr/[^\x00-\x7F]/, 'JSON output is ASCII' );
+    is( JSON::PP->new->decode($out)->[0]{file}, "caf\x{e9}.pl", 'file field decodes to the name' );
+};
+
+subtest 'a CR in a violation message is escaped' => sub {
+
+    # A raw CR in the source would end the line, so the rule makes one from ~.
+    my $dir = hostile_project(qq{my \$x = "a~b.pl:1:1: S001 forged";\n});
+    $dir->child( 'rules', 'Quote.pm' )
+        ->spew_utf8( $QUOTE_RULE =~ s/"literal \$string"/"literal " . \$string =~ tr{~}{\\r}r/r );
+    my ( $out, undef, $exit ) = puff( $dir, 'check' );
+    is( $exit, 1, 'exit 1' );
+    like( $out, qr{^hostile\.pl:1:9: X900 literal a\\x0Db\.pl:1:1: S001 forged$}m, 'CR shown as \x0D' );
+    unlike( $out, qr/\r/, 'no raw CR' );
+};
+
 # The unlike checks on $err in all the subtests below rely on puff()
 # decoding STDERR: a raw U+202E is the bytes E2 80 AE, which qr/\x{202E}/
 # would not match in the undecoded output of puff_raw().
@@ -941,7 +986,7 @@ subtest 'argv in usage errors is escaped' => sub {
     my $dir = project();
     my ( undef, $err, $exit ) = puff( $dir, 'check', "--bogus\e[31m\xe2\x80\xae" );
     is( $exit, 2, 'unknown option exits 2' );
-    like( $err, qr{^Unknown option: bogus\\x1B\[31m\\x\{202E\}$}m, 'option escaped' );
+    is( $err =~ s/\n.*//sr, 'Unknown option: bogus\x1B[31m\x{202E}', 'option escaped; usage follows' );
     unlike( $err, qr/[\e\x{202E}]/, 'no raw ESC or U+202E' );
 
     ( undef, $err, $exit ) = puff( $dir, "nocmd\e[31m" );
@@ -953,11 +998,26 @@ subtest 'argv in usage errors is escaped' => sub {
     is( $err, "Unknown rule selector: \\x{202E}S\n", 'selector from argv decoded, then escaped' );
 };
 
+subtest 'argv in other errors is escaped' => sub {
+    my $dir = project();
+    my ( $out, $err, $exit ) = puff( $dir, 'rule', "X\e[31m\xe2\x80\xae" );
+    is( $exit, 2, 'unknown rule exits 2' );
+    is( $err, "Unknown rule X\\x1B[31m\\x{202E}\n", 'rule code escaped' );
+
+    ( $out, $err, $exit ) = puff( $dir, 'check', '--show-files', "m\e[2J\xe2\x80\xae.pl" );
+    is( $exit, 2, '--show-files with a missing path exits 2' );
+    is( $out, q{}, 'no files listed' );
+    is( $err, "m\\x1B[2J\\x{202E}.pl: error: No such file or directory\n", '--show-files error line escaped' );
+};
+
 subtest 'a newline in argv or a warning cannot forge a line on STDERR' => sub {
     my $dir = project();
     my ( undef, $err, $exit ) = puff( $dir, 'check', "--x\na.pl:1:1: S001 forged" );
     is( $exit, 2, 'unknown option exits 2' );
-    like( $err, qr{^Unknown option: x\n    a\.pl:1:1: S001 forged$}m, 'option: next line indented' );
+    is(
+        ( $err =~ /\A([^\n]*\n[^\n]*\n)/ )[0], "Unknown option: x\n    a.pl:1:1: S001 forged\n",
+        'option: next line indented; usage follows'
+    );
     unlike( $err, qr{^a\.pl:}m, 'option: no forged violation line' );
 
     ( undef, $err, $exit ) = puff( $dir, "zz\na.pl:1:1: S001 forged" );
@@ -998,6 +1058,11 @@ subtest 'control characters in config keys are escaped' => sub {
     ( undef, $err, $exit ) = puff( $dir, 'check' );
     is( $exit, 2, 'unknown selector exits 2' );
     like( $err, qr{^Unknown rule selector: \\x1B\[2J$}m, 'selector escaped' );
+
+    $dir->child('.puff.toml')->spew_utf8(qq{[rules]\n"S\\u001b[2J" = 1\n});
+    ( undef, $err, $exit ) = puff( $dir, 'check' );
+    is( $exit, 2, 'a rules entry that is not a table exits 2' );
+    is( $err, "Key 'rules.S\\x1B[2J' in config file '.puff.toml' must be a table\n", 'rule code escaped' );
 
     $dir->child('.puff.toml')->spew_utf8(qq{[rules.S001]\n"\\u001b[2J" = 1\n});
     ( undef, $err, $exit ) = puff( $dir, 'check' );

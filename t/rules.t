@@ -174,6 +174,67 @@ my $warned = warnings {
 };
 is( $warned, [], 'no uninitialized warning' );
 
+# A Latin-1 character in a code from a "use utf8" rule is characters, not
+# UTF-8 bytes: it is shown as it is, not as \xE9. Without "use utf8" the same
+# code is UTF-8 bytes, decoded like a path. A warning is always read as
+# bytes, like a file name it may quote.
+for my $case ( [ 'use utf8', "use utf8;\n" ], [ 'bytes', q{} ] ) {
+    my ( $label, $pragma ) = @$case;
+    my $dir = $tmp->child( 'latin1-' . ( $label =~ tr/ /-/r ) );
+    $dir->mkpath;
+    $dir->child('L.pm')
+        ->spew_utf8( "package B::Latin;\n${pragma}use parent 'Puff::Rule';\n"
+            . "warn qq{caf\x{e9}\\n};\nsub code {'\x{e9}01'}\n1;\n" );
+    my $error;
+    my $w = warnings {
+        $error = dies { Puff::Rules->load( rule_paths => ["$dir"] ) }
+    };
+    is(
+        $error, "Rule B::Latin has invalid code '\x{e9}01' (expected letters followed by three digits)\n",
+        "$label: code shown as it is"
+    );
+    is( $w, [ $pragma ? 'caf\xE9' . "\n" : "caf\x{e9}\n" ], "$label: warning read as bytes" );
+}
+
+# Every call site that names a package or code uses the same helper. A code
+# that reaches the reserved, ALL and duplicate-code messages has already
+# matched [A-Z]+[0-9]{3}, so it is ASCII there; only the package name is
+# Latin-1 (use utf8). The invalid-code case has a Latin-1 code as well.
+for my $case (
+    [ 'reserved code', ['P001'], qr/\ARule B::Caf\x{e9}0 uses code P001, which is reserved/ ],
+    [ 'ALL prefix', ['ALL001'], qr/\ARule B::Caf\x{e9}0 uses code ALL001, but the prefix ALL/ ],
+    [ 'duplicate', [qw( Q902 Q902 )], qr/\ARules B::Caf\x{e9}0 and B::Caf\x{e9}1 both use code Q902\n/ ],
+    [ 'invalid code', ["\x{e9}01"], qr/\ARule B::Caf\x{e9}0 has invalid code '\x{e9}01'/ ],
+) {
+    my ( $label, $codes, $want ) = @$case;
+    my $dir = $tmp->child( 'latin1-pkg-' . ( $label =~ tr/ /-/r ) );
+    $dir->mkpath;
+    my $n = 0;
+    $dir->child('P.pm')->spew_utf8(
+        "use utf8;\n" . join(
+            q{},
+            map { my $i = $n++; "package B::Caf\x{e9}$i;\nuse parent 'Puff::Rule';\nsub code {'$_'}\n" } @$codes
+            )
+            . "1;\n"
+    );
+    like( dies { Puff::Rules->load( rule_paths => ["$dir"] ) }, $want, "$label: Latin-1 package name shown as it is" );
+}
+
+# C1 controls, a bidi override, a zero-width space and a newline in a code from
+# a "use utf8" rule are escaped; only the Latin-1 letter is shown as it is.
+{
+    my $dir = $tmp->child('utf8-invisible');
+    $dir->mkpath;
+    $dir->child('I.pm')
+        ->spew_utf8( "use utf8;\npackage B::Invisible;\nuse parent 'Puff::Rule';\n"
+            . "sub code {\"X\\x{85}\\x{9b}\\x{202E}\\x{200B}\\x{0A}\\x{e9}\"}\n1;\n" );
+    is(
+        dies { Puff::Rules->load( rule_paths => ["$dir"] ) },
+        "Rule B::Invisible has invalid code 'X\\x85\\x9B\\x{202E}\\x{200B}\\x0A\x{e9}' (expected letters followed by three digits)\n",
+        'use utf8: C1, bidi, zero-width and newline characters in a code are escaped'
+    );
+}
+
 # Module::Pluggable discovery
 my $lib = $tmp->child('lib');
 $lib->child(qw( Puff Rule Fake ))->mkpath;

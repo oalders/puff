@@ -16,7 +16,7 @@ sub report ( $self, $run, $out, $err ) {
     for my $file (@files) {
         push @items, map { $self->violation_data($_) } @{ $file->{violations} };
     }
-    print {$out} JSON::PP->new->canonical->pretty->ascii->encode( \@items );
+    print {$out} $self->escape_del( JSON::PP->new->canonical->pretty->ascii->encode( \@items ) );
     Puff::Reporter::Text->flush_or_die($out);
     return;
 }
@@ -36,6 +36,13 @@ sub violation_data ( $class, $v ) {
             applied   => JSON::PP::false,
         },
     };
+}
+
+# JSON::PP's ascii option leaves DEL (0x7F) raw. In JSON it can only be
+# inside a string, so writing it as \u007f keeps the output valid and free of
+# control characters, as the text output is.
+sub escape_del ( $class, $json ) {
+    return $json =~ s/\x7F/\\u007f/gr;
 }
 
 1;
@@ -65,11 +72,12 @@ C<available> says whether a fix is offered for this violation; C<applied>
 is always false, because only violations that remain are listed. A
 C<file> that is not valid UTF-8 has C<\xHH> escapes for its invalid bytes
 (see L<Puff::Path>), so C<file> is a name to show, not always a path that
-can be opened. The output is pure ASCII: every non-ASCII character is
-written as a C<\u> escape. Give it a handle with an encoding layer all the
-same. File errors go to the error handle.
+can be opened. The output is pure ASCII: every non-ASCII character, and
+DEL, is written as a C<\u> escape. Give it a handle with an encoding layer
+all the same. File errors go to the error handle.
 
 C<< Puff::Reporter::JSON->violation_data($violation) >> returns the hash
-above for one violation.
+above for one violation. C<< Puff::Reporter::JSON->escape_del($json) >>
+returns encoded JSON with each DEL written as C<\u007f>.
 
 =cut
