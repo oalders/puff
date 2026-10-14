@@ -20,3 +20,13 @@ my @list = ( 1, 2 );
 @list = sort @list;
 our @ISA = 'Exporter';
 my $count = () = ( 1, 2 );
+
+# An array of rows whose first row is a header: the arrayref is meant
+# (Dist::Zilla's generated t/00-report-prereqs.t).
+my @reports = [qw/Module Want Have/];
+push @reports, [ 'Foo', 1, 2 ];
+
+# A one-element slice assigns the reference to that element.
+my @lines;
+my $n = 0;
+@lines[ $n++ ] = [split];
