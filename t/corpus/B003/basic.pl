@@ -6,7 +6,7 @@ my $neg = -0644; # expect: B003
 my $under = 0_755; # expect: B003
 my @list = ( 1, 02, 3 ); # expect: B003
 my %h = ( 007 => 'bond' ); # expect: B003
-my $mode = 0755; # expect: B003
+my $size = 0755; # expect: B003
 print 0755 + 1, "\n"; # expect: B003
 my $sum = $count + 01; # expect: B003
 my $x = foo(0600); # expect: B003

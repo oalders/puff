@@ -21,6 +21,7 @@ if (0) {
     POSIX::mkfifo( $file, 0600 ); # expect: B010
     my %db;
     dbmopen %db, 'foo.db', 0644; # expect: B010
+    tie my %dbm, 'DB_File', $file, O_RDWR, 0640; # expect: B010
     mkpath( $dir, 0, 0711 ); # expect: B010
     make_path( $dir, { mode => 0711 } ); # expect: B010
     make_path $dir, { chmod => 0755, verbose => 1 }; # expect: B010

@@ -3,7 +3,7 @@ package Puff::Rule::Bugs::LeadingZeros;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( mode_call );
+use Puff::PPIUtil qw( call_args mode_call );
 
 sub code       {'B003'}
 sub summary    {'Number with a leading zero is octal'}
@@ -24,15 +24,19 @@ sub explanation {
         followed by another digit, such as `010` or `0_755`. `0` and `00`
         are not reported. Permission modes are octal by convention, so the
         rule does not report the mode argument of `chmod`, `umask`,
-        `mkdir`, `mkfifo`, `POSIX::mkfifo`, `dbmopen`, `sysopen` and
-        `mkpath`, the argument of a `->chmod(0755)` method call (Path::Tiny),
-        the `mask` value in an options hash passed to `make_path`, `mkpath`
-        or a `->mkdir`/`->mkpath` method, or a number after a fat comma whose
+        `mkdir`, `mkfifo`, `POSIX::mkfifo`, `dbmopen`, `sysopen`, `mkpath`
+        and `tie` (the fifth argument, as DB_File takes), the argument of a
+        `->chmod(0755)` method call (Path::Tiny), the `mask` value in an
+        options hash passed to `make_path`, `mkpath` or a
+        `->mkdir`/`->mkpath` method, or a number after a fat comma whose
         key mentions `mode` or `perm` or is `chmod` (`mode => 0755`, as
         `make_path` takes). These are the positions where B010 adds the
         leading zero to a decimal mode, so its fix is not reported. Nor does
-        it report an operand of a bitwise operator, as in `$mode & 07777`
-        or `0666 & ~$umask`, where octal is the norm.
+        it report the mode of a `->mkpath( $verbose, 0755 )` method call
+        (Path::Class), a number assigned to or compared with (`=`, `==`,
+        `!=`) a variable whose name mentions `mode` or `perm` or is
+        `chmod` (`$mode = 0600`), or an operand of a bitwise operator, as
+        in `$mode & 07777` or `0666 & ~$umask`, where octal is the norm.
 
         The fix replaces the literal with an `oct()` call of the same value,
         so `010` becomes `oct('010')` and `-0644` becomes `-oct('0644')`. It
@@ -49,7 +53,11 @@ sub explanation {
 sub check ( $self, $elem, $doc ) {
     return unless $elem->content =~ /\A[+-]?(?:0+_*)+[1-9]/;
     return
-        if !$self->option('strict') && ( defined mode_call($elem) || _is_mode_value($elem) || _is_bit_operand($elem) );
+        if !$self->option('strict')
+        && ( defined mode_call($elem)
+        || _is_mode_value($elem)
+        || _is_mkpath_method_mode($elem)
+        || _is_bit_operand($elem) );
     return $self->violation(
         $elem,
         message => 'Number '
@@ -74,13 +82,28 @@ sub _oct_call ($elem) {
     return "${sign}oct('$digits')";
 }
 
-# mode => 0755, perms => 0600
+# mode => 0755, perms => 0600, $mode = 0600, $mode == 0755
+my %MODE_VALUE_OP = map { $_ => 1 } qw( => = == != );
+
 sub _is_mode_value ($elem) {
     my $op = $elem->sprevious_sibling or return 0;
-    return 0 unless $op->isa('PPI::Token::Operator') && $op->content eq '=>';
+    return 0 unless $op->isa('PPI::Token::Operator') && $MODE_VALUE_OP{ $op->content };
     my $key  = $op->sprevious_sibling or return 0;
     my $name = $key->isa('PPI::Token::Quote') ? $key->string : $key->content;
     return $name =~ /mode|perm|chmod/i;
+}
+
+# Path::Class's $dir->mkpath( $verbose, $mode ). Not in mode_call, as B010
+# leaves positional method modes alone.
+sub _is_mkpath_method_mode ($elem) {
+    my $expr = $elem->parent or return 0;
+    my $list = $expr->parent or return 0;
+    return 0 unless $list->isa('PPI::Structure::List');
+    my $word  = $list->sprevious_sibling or return 0;
+    my $arrow = $word->sprevious_sibling or return 0;
+    return 0 unless $word->content eq 'mkpath' && $arrow->content eq '->';
+    my $mode = call_args($word)->[1];
+    return $mode && @$mode == 1 && $mode->[0] == $elem ? 1 : 0;
 }
 
 # 0666 &~ $umask, $mode & 07777: octal is the norm for bit masks.
@@ -107,7 +130,8 @@ outside the permission-mode argument of C<chmod>, C<mkdir> and friends. The
 safe fix rewrites it as an C<oct()> call with the same value.
 
 Based on L<Perl::Critic::Policy::ValuesAndExpressions::ProhibitLeadingZeros>,
-extended to C<mkpath>, C<< mode => ... >> pairs and bit-mask operands.
+extended to C<mkpath>, C<tie>, C<< mode => ... >> pairs, C<$mode> variables
+and bit-mask operands.
 
 Selected by default, as part of C<B>.
 

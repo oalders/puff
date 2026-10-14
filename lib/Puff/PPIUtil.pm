@@ -107,6 +107,7 @@ my %MODE_ARG = (
     sysopen              => 3,
     mkpath               => 2,
     'File::Path::mkpath' => 2,
+    tie                  => 4,    # DB_File and the *DBM_File modules
 );
 
 # Functions and methods that take a File::Path options hash, and its keys
@@ -267,8 +268,8 @@ they agree on which commands interpolate.
 C<mode_call($elem)> says whether C<$elem> is the whole of a permission-mode
 argument and returns the call's name, or undef. The positions are the mode
 argument of C<chmod>, C<umask>, C<mkdir>, C<mkfifo>, C<POSIX::mkfifo>,
-C<dbmopen>, C<sysopen> and legacy C<mkpath> (C<CORE::> is dropped from the
-name); the sole argument of a C<< ->chmod(...) >> method (returned as
+C<dbmopen>, C<sysopen>, legacy C<mkpath> and C<tie> (the fifth argument, as
+DB_File and the *DBM_File modules take; C<CORE::> is dropped from the name); the sole argument of a C<< ->chmod(...) >> method (returned as
 C<< ->chmod >>); and the value of a C<mode>, C<chmod> or C<mask> key in a
 C<{ ... }> hash passed to File::Path's C<make_path> or C<mkpath>, or to a
 C<< ->mkdir >> or C<< ->mkpath >> method (Path::Tiny). C<decimal_mode($elem)>

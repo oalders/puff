@@ -768,12 +768,15 @@ Perl::Critic::Pulp, extended to hashes.
 
 **B003** is selected by default. It reports a number literal with a leading
 zero, which Perl reads as octal: `my $count = 010` is 8. The mode argument of
-`chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen` and `mkpath`, the
-argument of `->chmod(...)`, a value after a `mode` or `perm` key or a `mask`
-key in a `make_path` or `->mkdir` options hash, and an operand of a bitwise operator
-(`$mode & 07777`) are octal by convention and not reported unless the `strict`
-option is on. These are the positions where B010 adds a leading zero; `strict`
-reports all of them, `mask` values and `->chmod(...)` included. The safe fix
+`chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen`, `mkpath` and `tie`
+(DB_File), the argument of `->chmod(...)`, a value after a `mode` or `perm` key
+or a `mask` key in a `make_path` or `->mkdir` options hash, the mode of a
+Path::Class `->mkpath( $verbose, $mode )`, a value assigned to or compared with
+a `$mode` or `$perm` variable (`my $file_mode = 0600`), and an operand of a
+bitwise operator (`$mode & 07777`) are octal by convention and not reported
+unless the `strict` option is on. B010 adds a leading zero in most of these
+positions; `strict` reports all of them, `mask` values and `->chmod(...)`
+included. The safe fix
 rewrites the literal as `oct('0755')`, which compiles to the same constant.
 Based on
 Perl::Critic::Policy::ValuesAndExpressions::ProhibitLeadingZeros.
@@ -848,8 +851,8 @@ There is no fix.
 it on: name it (`--extend-select B010`) or use `ALL`. It reports a file mode
 written as a decimal literal, so `chmod 755, $file` sets mode 01363. It
 checks three- or four-digit literals with only the digits 0 to 7 in the mode
-argument of `chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen` and
-legacy `mkpath`, the `mode`, `chmod` or `mask` value in an options hash passed
+argument of `chmod`, `umask`, `mkdir`, `mkfifo`, `dbmopen`, `sysopen`, legacy
+`mkpath` and `tie` (DB_File), the `mode`, `chmod` or `mask` value in an options hash passed
 to `make_path`, `mkpath` or a `->mkdir`/`->mkpath` method, and the single
 argument of a `->chmod(...)` method. `umask` with two digits (`umask 22`) is
 reported too, since `022` and `077` are its usual values. Octal, hex and

@@ -24,7 +24,8 @@ sub explanation {
         to 7, that is the whole mode argument of:
 
         - `chmod`, `umask`, `mkdir`, `mkfifo`, `POSIX::mkfifo`, `dbmopen`,
-          `sysopen` and File::Path's legacy `mkpath($dir, $verbose, $mode)`;
+          `sysopen`, File::Path's legacy `mkpath($dir, $verbose, $mode)`
+          and `tie` (the fifth argument, as DB_File takes);
         - the `mode`, `chmod` or `mask` value in an options hash passed to
           File::Path's `make_path` or `mkpath`, or to a `->mkdir` or
           `->mkpath` method (Path::Tiny);
