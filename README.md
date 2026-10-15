@@ -491,10 +491,13 @@ and one non-constant command string. The list forms (`system('tar', 'xf',
 $file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
 reported. The unsafe fix splits one interpolating `system` or `exec` string
 of simple words and scalars into a list (`system "tar xf $file"` becomes
-`system 'tar', 'xf', $file`), so each value is one argument that never
-reaches the shell; a variable that held several words on purpose now arrives
-as one argument. A string with shell syntax, `@`, an escape or a single word,
-and every other form, is report-only. A constant command string with shell
+`system 'tar', 'xf', $file`), so Perl starts no shell and each value is one
+argument; a variable that held several words on purpose now arrives as one
+argument. A program that runs a shell itself still interprets its arguments,
+so a call to a shell, `ssh` or `su` is declined. The fix removes shell
+injection, not option injection: a value starting with `-` is still an
+option. A string with shell syntax, `@`, an escape or a single word, and
+every other form, is report-only. A constant command string with shell
 syntax is S018's.
 
 **S009** reports `chmod` with a constant world-writable mode (`chmod 0777,
