@@ -3,14 +3,18 @@ package Puff::Rule::Security::ShellCommand;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body );
+use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body shell_syntax $PERL_SHELL_META );
 
 my %SHELL_FUNCTION = map { $_ => 1 } qw( system exec readpipe CORE::system CORE::exec CORE::readpipe );
 my %SYSTEM         = map { $_ => 1 } qw( system CORE::system );
 
-sub code    {'S008'}
-sub summary {'Do not pass a command built at runtime to the shell'}
-sub cwe     {78}
+# $name, $Pkg::name or ${name}: what the fix may turn into a list element
+my $SCALAR = qr/\$(?:\w+(?:::\w+)*|\{\w+\})/a;
+
+sub code       {'S008'}
+sub summary    {'Do not pass a command built at runtime to the shell'}
+sub cwe        {78}
+sub fix_safety {'unsafe'}
 
 sub applies_to {
     return [ 'PPI::Token::Word', 'PPI::Token::QuoteLike::Backtick', 'PPI::Token::QuoteLike::Command' ];
@@ -40,9 +44,27 @@ sub explanation {
         For captured output, use IPC::Run3, IPC::System::Simple's capturex
         or Capture::Tiny around the list form of system. `system { $prog }
         @args` and `system(@cmd)` are not reported. Two-argument piped opens
-        are reported by S002. There is no fix.
-        A constant command string with shell syntax is reported by S018,
-        which is selected only by its code.
+        are reported by S002. A constant command string with shell syntax is
+        reported by S018, which is selected only by its code.
+
+        The unsafe fix splits one interpolating string given to `system` or
+        `exec` into a list, keeping a leading Win32 spawn mode:
+
+            system "tar -czf $out $src";    # becomes
+            system 'tar', '-czf', $out, $src;
+
+        It splits on ASCII whitespace. A plain word becomes a single-quoted
+        string, a word that is one simple scalar (`$name`, `$Pkg::name`,
+        `${name}`) becomes that variable, and a word mixing the two stays
+        double-quoted (`"backup-$date.tgz"`). Unlike S018's constant strings,
+        this split changes behaviour: each value becomes exactly one argument
+        and never reaches the shell. That is also why the fix is unsafe: a
+        variable that held several words on purpose (`my $opts = '-v -n'`)
+        now arrives as one argument. It is declined when, apart from the
+        simple scalars, the string has shell syntax as S018 defines it, an
+        `@`, an escape or a trailing `2>&1`, or when it has fewer than two
+        words. Every other form (heredocs, concatenations, variables,
+        backticks, `qx`, `readpipe`, piped opens) is report-only.
 
         A leading 0 or 1 is the Win32 spawn mode (0 waits, 1 spawns
         asynchronously), so the call is judged by the arguments after it. On
@@ -66,7 +88,8 @@ sub check ( $self, $elem, $doc ) {
         return unless $interpolates;
         return $self->violation(
             $elem,
-            message => 'Interpolated command runs through the shell (CWE-78); use the list form of system or IPC::Run3'
+            message => 'Interpolated command runs through the shell (CWE-78); use the list form of system or IPC::Run3',
+            fixable => 0,
         );
     }
 
@@ -74,20 +97,13 @@ sub check ( $self, $elem, $doc ) {
     if ( $SHELL_FUNCTION{$name} && is_builtin_call($elem) ) {
         my $next = $elem->snext_sibling;
         return if $next && $next->isa('PPI::Structure::Block');
-        my $args = call_args($elem);
-
-        # Win32 takes a leading 0 or 1 as the spawn mode, not the program
-        shift @$args
-            if $SYSTEM{$name}
-            && @$args > 1
-            && @{ $args->[0] } == 1
-            && $args->[0][0]->isa('PPI::Token::Number')
-            && ( $args->[0][0]->literal // q{} ) =~ /\A[01]\z/;
+        my $args = _command_args($elem);
         return unless @$args == 1 && _is_shell_string( $args->[0] );
         ( my $short = $name ) =~ s/\ACORE:://;
         return $self->violation(
             $elem,
-            message => "$short with one string runs it through the shell (CWE-78); pass the command as a list"
+            message => "$short with one string runs it through the shell (CWE-78); pass the command as a list",
+            fixable => $short ne 'readpipe' && defined _as_list( $args->[0] ) ? 1 : 0,
         );
     }
 
@@ -101,10 +117,49 @@ sub check ( $self, $elem, $doc ) {
         return $self->violation(
             $elem,
             message =>
-                'Piped open with one command string runs it through the shell (CWE-78); pass the command as a list'
+                'Piped open with one command string runs it through the shell (CWE-78); pass the command as a list',
+            fixable => 0,
         );
     }
     return;
+}
+
+sub fix ( $self, $violation, $fix ) {
+    my $args = _command_args( $violation->element );
+    my $text = _as_list( $args->[0] ) // return 0;
+    $fix->replace( $args->[0][0], $text );
+    return 1;
+}
+
+# The call's arguments, without a leading Win32 spawn mode.
+sub _command_args ($elem) {
+    my $args = call_args($elem);
+
+    # Win32 takes a leading 0 or 1 as the spawn mode, not the program
+    shift @$args
+        if $SYSTEM{ $elem->content }
+        && @$args > 1
+        && @{ $args->[0] } == 1
+        && $args->[0][0]->isa('PPI::Token::Number')
+        && ( $args->[0][0]->literal // q{} ) =~ /\A[01]\z/;
+    return $args;
+}
+
+# The list that replaces one interpolating string, or undef unless it holds
+# two or more words with only simple scalars and no shell syntax.
+sub _as_list ($arg) {
+    return unless @$arg == 1;
+    my ($quote) = @$arg;
+    return unless $quote->isa('PPI::Token::Quote::Double') || $quote->isa('PPI::Token::Quote::Interpolate');
+
+    # The source text stands in for the value: escapes and quotes are meta
+    my $string = $quote->string;
+    ( my $rest = $string ) =~ s/$SCALAR//g;
+    return if $rest =~ /\@/ || $rest =~ $PERL_SHELL_META || defined shell_syntax($rest);
+
+    my @words = grep {length} split /\s+/a, $string;
+    return if @words < 2;
+    return join ', ', map { /\A$SCALAR\z/ ? $_ : /\$/ ? qq{"$_"} : qq{'$_'} } @words;
 }
 
 # One argument that the shell may see: anything but a constant string or an
@@ -133,6 +188,14 @@ Reports one-string C<system>, C<exec> and C<readpipe> calls, interpolating
 backticks and C<qx>, and three-argument piped opens with one command string
 that is not constant. A leading 0 or 1 in C<system> is the Win32 spawn mode
 (0 waits, 1 spawns asynchronously), so the arguments after it are judged.
-There is no fix.
+
+The unsafe fix splits one interpolating string given to C<system> or
+C<exec> into a list (C<system "tar xf $f"> becomes
+C<system 'tar', 'xf', $f>): plain words are single-quoted, a word that is one
+simple scalar becomes that variable, and a word mixing the two stays
+double-quoted. It is unsafe because a variable that held several words on
+purpose now arrives as one argument. It is declined when the string, apart
+from its simple scalars, has shell syntax, C<@> or an escape, or has fewer
+than two words. Every other form is report-only.
 
 =cut

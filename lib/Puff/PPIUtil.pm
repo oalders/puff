@@ -7,10 +7,17 @@ use Scalar::Util qw( refaddr );
 
 our @EXPORT_OK = qw(
     is_builtin_call call_args is_constant_string is_sole_subscript_key command_body
-    mode_call decimal_mode
+    mode_call decimal_mode shell_syntax $PERL_SHELL_META
 );
 
 my $INTERPOLATES = qr/(?<!\\)(?:\\\\)*[\$\@]/;
+
+# Perl hands a one-string command to /bin/sh when it contains one of these
+# (doio.c, do_exec3), except for a single newline at the very end, which it
+# strips, and a trailing ` 2>&1`, which it handles itself with dup2. It also
+# does when the first word is `.` or `exec`, or the command starts with a VAR=
+# assignment.
+our $PERL_SHELL_META = qr/[\$&*(){}\[\]'";\\|?<>~`\n]/;
 
 my %STOP_WORD = map { $_ => 1 } qw( or and xor not if unless while until for foreach );
 
@@ -84,6 +91,23 @@ sub command_body ($elem) {
     $body =~ s/.\z//s;    # closing delimiter
     my $interpolates = !( defined $delim && $delim eq q{'} ) && $body =~ $INTERPOLATES;
     return ( $body, $interpolates ? 1 : 0 );
+}
+
+# A short description of why Perl runs this command through /bin/sh, or
+# undef when it runs the program directly. The /a matches doio.c, whose
+# isSPACE and isWORDCHAR are ASCII only: perl and sh do not split on U+00A0.
+sub shell_syntax ($string) {
+    ( my $cmd = $string )            =~ s/\A\s+//a;
+    return '. command' if $cmd       =~ /\A\.\s/a;
+    return 'exec command' if $cmd    =~ /\Aexec\s/a;
+    return 'VAR= assignment' if $cmd =~ /\A\w*=/a;
+
+    $cmd =~ s/\n\z//;
+    $cmd =~ s/(?<=\s)2>&1\s*\z//a;    # Perl does the dup2 itself
+    my %seen;
+    my @meta = grep { !$seen{$_}++ } $cmd =~ /($PERL_SHELL_META)/g;
+    return unless @meta;
+    return join q{ }, map { $_ eq "\n" ? 'newline' : $_ } @meta;
 }
 
 sub is_sole_subscript_key ($elem) {
@@ -263,6 +287,12 @@ C<command_body($elem)> returns the command text of a backtick or C<qx>
 token without its delimiters and whether it interpolates (C<qx'...'> never
 does), or an empty list for any other token. S008 and S018 both use it, so
 they agree on which commands interpolate.
+
+C<shell_syntax($string)> describes the shell syntax that makes Perl run a
+one-string command through /bin/sh (as F<doio.c> decides), or returns undef
+when Perl runs the program directly. C<$PERL_SHELL_META> matches one of the
+metacharacters it looks for. S018 reports constant commands with it, and
+S008 uses both to decide which interpolating commands it can split.
 
 C<mode_call($elem)> says whether C<$elem> is the whole of a permission-mode
 argument and returns the call's name, or undef. The positions are the mode
