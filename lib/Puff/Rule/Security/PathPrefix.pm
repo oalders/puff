@@ -27,6 +27,9 @@ sub explanation {
         - `substr($path, 0, length $root) eq $root`;
         - `$path =~ /^\Q$root\E/` with nothing after the `\E`.
 
+        An `index` prefix that already ends in `/`, such as
+        `index($path, $root . '/')`, is not reported.
+
         Match a whole directory instead:
         `$path =~ m{\A\Q$root\E(?:/|\z|(?<=/))}`. The last alternative
         accepts a root that already ends in `/`. Resolve both paths (with
@@ -112,6 +115,7 @@ sub _index_test ($word) {
     return unless @$args == 2;
     my ( $haystack, $needle ) = @$args;
     return unless _is_directory_name( join q{}, map { $_->content } @$needle );
+    return if _ends_in_separator($needle);
 
     my ( $first, $last, $negated );
     my $next = $list->snext_sibling;
@@ -162,6 +166,12 @@ sub _is_directory_name ($text) {
     my ($name) = $text =~ /\A[\$\@%]?\{?\$?(\w+)/ or return 0;
     my @keys = $text =~ /(?: \{ \s* ['"]? | -> ) (\w+)/xg;
     return grep {/$DIRECTORY/} $name, @keys;
+}
+
+# EXPR . '/': a prefix ending in a separator can't match a sibling directory.
+sub _ends_in_separator ($elements) {
+    my ( $op, $last ) = @$elements[ -2, -1 ];
+    return _is_op( $op, '.' ) && $last->isa('PPI::Token::Quote') && $last->string =~ m{/\z} ? 1 : 0;
 }
 
 # A scalar, optionally with ->[...] / ->{...} subscripts: text that
