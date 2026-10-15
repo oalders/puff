@@ -8,8 +8,8 @@ use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body 
 my %SHELL_FUNCTION = map { $_ => 1 } qw( system exec readpipe CORE::system CORE::exec CORE::readpipe );
 my %SYSTEM         = map { $_ => 1 } qw( system CORE::system );
 
-# These hand their arguments to a shell, so splitting keeps the injection
-my %SHELL_PROGRAM = map { $_ => 1 } qw( sh bash dash zsh ksh csh tcsh fish ssh su );
+# A shell or remote shell anywhere (`sudo sh -c ...`) keeps the injection
+my %SHELL_PROGRAM = map { $_ => 1 } qw( sh ash bash dash zsh ksh mksh rbash csh tcsh fish busybox ssh rsh su );
 
 # $name, $Pkg::name, ${name} or $1, read the same in code as in a string
 my $SCALAR = qr/\$(?:\d+|[A-Za-z_]\w*(?:::\w+)*|\{\w+\})/a;
@@ -61,12 +61,14 @@ sub explanation {
         `${name}`) becomes that variable, and a word mixing the two stays
         double-quoted (`"backup-$date.tgz"`). Perl then starts no shell, but
         a program that runs one itself still interprets its arguments, so a
-        call to `sh`, `bash` or another shell, `ssh` or `su` (by basename) is
-        declined. Unlike a constant string, this split changes behaviour,
-        which is why the fix is unsafe: each value now arrives as exactly one
-        argument, so one that held several words (`my $opts = '-v -n'`), was
-        empty, relied on the shell (a glob such as `*.txt`) or was already
-        quoted for it (`quotemeta`, `shell_quote`) behaves differently. It
+        command that names a shell anywhere (such as `sh`, `bash`, `ssh` or
+        `su`, by basename, also after `sudo` or `env`) is declined. Unlike a
+        constant string, this split changes behaviour, which is why the fix
+        is unsafe: each value now arrives as exactly one argument, so one
+        that held several words (`my $opts = '-v -n'`), was empty, relied on
+        the shell (a glob such as `*.txt`) or was already quoted for it
+        (`quotemeta`, `shell_quote`) behaves differently, and a scalar used
+        as the program (`"$prog $arg"`) cannot be checked for a shell. It
         removes shell injection, not option injection: a value starting with
         `-` is still an option, so use `--` or validate it.
 
@@ -156,8 +158,8 @@ sub _command_args ($elem) {
 }
 
 # The list that replaces one interpolating string, or undef unless it holds
-# two or more words with only simple scalars and no shell syntax, and does
-# not start a shell itself.
+# two or more words with only simple scalars and no shell syntax, and names
+# no shell.
 sub _as_list ($arg) {
     return unless @$arg == 1;
     my ($quote) = @$arg;
@@ -171,8 +173,8 @@ sub _as_list ($arg) {
     return if $rest =~ /\@/ || $rest =~ $PERL_SHELL_META || defined shell_syntax($rest);
 
     my @words = grep {length} split /\s+/a, $string;
-    return if @words < 2 || $SHELL_PROGRAM{ $words[0] =~ s{.*/}{}r };
-    return join ', ', map { /\A$SCALAR\z/ ? $_ : /\$/ ? qq{"$_"} : qq{'$_'} } @words;
+    return if @words < 2 || grep { $SHELL_PROGRAM{s{.*/}{}r} } @words;
+    return join ', ', map        { /\A$SCALAR\z/ ? $_ : /\$/ ? qq{"$_"} : qq{'$_'} } @words;
 }
 
 # One argument that the shell may see: anything but a constant string or an
@@ -207,12 +209,14 @@ C<exec> into a list (C<system "tar xf $f"> becomes
 C<system 'tar', 'xf', $f>): plain words are single-quoted, a word that is one
 simple scalar becomes that variable, and a word mixing the two stays
 double-quoted. Perl then starts no shell, but a program that runs one
-itself still interprets its arguments, so a call to a shell, C<ssh> or
-C<su> is declined. Unlike a constant string, this split changes behaviour,
-which is why the fix is unsafe: each value now arrives as exactly one
-argument, so one that held several words (C<my $opts = '-v -n'>), was
-empty, relied on the shell (a glob such as C<*.txt>) or was already quoted
-for it (C<quotemeta>, C<shell_quote>) behaves differently. It removes shell
+itself still interprets its arguments, so a command that names a shell
+anywhere (such as C<sh>, C<bash>, C<ssh> or C<su>, also after C<sudo>) is
+declined. Unlike a constant string, this split changes behaviour, which is
+why the fix is unsafe: each value now arrives as exactly one argument, so
+one that held several words (C<my $opts = '-v -n'>), was empty, relied on
+the shell (a glob such as C<*.txt>) or was already quoted for it
+(C<quotemeta>, C<shell_quote>) behaves differently, and a scalar used as
+the program (C<"$prog $arg">) cannot be checked for a shell. It removes shell
 injection, not option injection: a value starting with C<-> is still an
 option, so use C<--> or validate it. The fix is also declined when the
 string, apart from its simple scalars, has shell syntax, C<@> or an escape,
