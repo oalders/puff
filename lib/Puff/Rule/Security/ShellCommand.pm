@@ -8,8 +8,8 @@ use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body 
 my %SHELL_FUNCTION = map { $_ => 1 } qw( system exec readpipe CORE::system CORE::exec CORE::readpipe );
 my %SYSTEM         = map { $_ => 1 } qw( system CORE::system );
 
-# $name, $Pkg::name or ${name}: what the fix may turn into a list element
-my $SCALAR = qr/\$(?:\w+(?:::\w+)*|\{\w+\})/a;
+# $name, $Pkg::name, ${name} or $1, read the same in code as in a string
+my $SCALAR = qr/\$(?:\d+|[A-Za-z_]\w*(?:::\w+)*|\{\w+\})/a;
 
 sub code       {'S008'}
 sub summary    {'Do not pass a command built at runtime to the shell'}
@@ -56,11 +56,12 @@ sub explanation {
         It splits on ASCII whitespace. A plain word becomes a single-quoted
         string, a word that is one simple scalar (`$name`, `$Pkg::name`,
         `${name}`) becomes that variable, and a word mixing the two stays
-        double-quoted (`"backup-$date.tgz"`). Unlike S018's constant strings,
-        this split changes behaviour: each value becomes exactly one argument
-        and never reaches the shell. That is also why the fix is unsafe: a
-        variable that held several words on purpose (`my $opts = '-v -n'`)
-        now arrives as one argument. It is declined when, apart from the
+        double-quoted (`"backup-$date.tgz"`). Unlike a constant string, this
+        split changes behaviour, which is why the fix is unsafe: each value
+        now arrives as exactly one argument and never reaches the shell, so
+        one that held several words (`my $opts = '-v -n'`), was empty, or
+        relied on the shell (a glob such as `*.txt`) behaves differently. It
+        is declined when, apart from the
         simple scalars, the string has shell syntax as S018 defines it, an
         `@`, an escape or a trailing `2>&1`, or when it has fewer than two
         words. Every other form (heredocs, concatenations, variables,
@@ -155,6 +156,8 @@ sub _as_list ($arg) {
     # The source text stands in for the value: escapes and quotes are meta
     my $string = $quote->string;
     ( my $rest = $string ) =~ s/$SCALAR//g;
+
+    # shell_syntax adds the leading `.`, `exec` and VAR= checks
     return if $rest =~ /\@/ || $rest =~ $PERL_SHELL_META || defined shell_syntax($rest);
 
     my @words = grep {length} split /\s+/a, $string;
@@ -193,8 +196,11 @@ The unsafe fix splits one interpolating string given to C<system> or
 C<exec> into a list (C<system "tar xf $f"> becomes
 C<system 'tar', 'xf', $f>): plain words are single-quoted, a word that is one
 simple scalar becomes that variable, and a word mixing the two stays
-double-quoted. It is unsafe because a variable that held several words on
-purpose now arrives as one argument. It is declined when the string, apart
+double-quoted. Unlike a constant string, this split changes behaviour,
+which is why the fix is unsafe: each value now arrives as exactly one
+argument, so one that held several words (C<my $opts = '-v -n'>), was
+empty, or relied on the shell (a glob such as C<*.txt>) behaves
+differently. It is declined when the string, apart
 from its simple scalars, has shell syntax, C<@> or an escape, or has fewer
 than two words. Every other form is report-only.
 
