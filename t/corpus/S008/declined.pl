@@ -9,3 +9,4 @@ ls $file
 END
 system "ls " . $file; # expect: S008
 system $cmd; # expect: S008
+system "make $file 2>&1"; # expect: S008
