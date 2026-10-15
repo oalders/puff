@@ -762,7 +762,9 @@ constructor to an array, hash, dereferenced array or hash, or slice:
 `my @names = [ 'ann', 'bob' ]` stores one arrayref, not two names. Write
 `( ... )` for a list, or `( [ ... ] )` when one reference is what you mean. The
 unsafe fix turns the brackets or braces into parens, and is offered only when
-the constructor is the whole right side. Based on
+the constructor is the whole right side. A slice with one scalar subscript
+(`@a[$i] = [...]`) and an array that `push` or `unshift` in the same block also
+gives `[...]` or `{...}` rows are not reported. Based on
 Perl::Critic::Policy::ValuesAndExpressions::ProhibitArrayAssignAref from
 Perl::Critic::Pulp, extended to hashes.
 
