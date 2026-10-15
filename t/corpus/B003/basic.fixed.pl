@@ -6,7 +6,7 @@ my $neg = -oct('0644'); # expect: B003
 my $under = oct('0_755'); # expect: B003
 my @list = ( 1, oct('02'), 3 ); # expect: B003
 my %h = ( oct('007') => 'bond' ); # expect: B003
-my $mode = oct('0755'); # expect: B003
+my $size = oct('0755'); # expect: B003
 print oct('0755') + 1, "\n"; # expect: B003
 my $sum = $count + oct('01'); # expect: B003
 my $x = foo(oct('0600')); # expect: B003

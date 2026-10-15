@@ -42,3 +42,7 @@ my $new = 0666 & ~$zero;
 my $other = 0666 &~ $zero;
 $perm &= ~022;
 $perm = $perm | 0100;
+tie my %dbm, 'DB_File', $file, O_RDWR, 0666;
+my $lockfile_mode = 0600;
+$dir->mkpath( 0, 0700 );
+print 'ok' if $lockfile_mode == 0755;
