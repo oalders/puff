@@ -332,7 +332,7 @@ reported as `P001`:
 | S005 | TLSVerifyDisabled | Do not turn off TLS certificate or SSH host key verification | unsafe | [295](https://cwe.mitre.org/data/definitions/295.html) |
 | S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
 | S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
-| S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
+| S008 | ShellCommand | Do not pass a command built at runtime to the shell | unsafe | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | S009 | WorldWritable | Do not make files world-writable | none | [732](https://cwe.mitre.org/data/definitions/732.html) |
 | S010 | PredictableToken | Do not hash the time, PID or `rand` to make a token | none | [340](https://cwe.mitre.org/data/definitions/340.html), [338](https://cwe.mitre.org/data/definitions/338.html) |
 | S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
@@ -489,7 +489,18 @@ constant string (`system("tar xf $file")`, `system($cmd)`), backticks and
 `qx{...}` that interpolate, and three-argument `open` with mode `-|` or `|-`
 and one non-constant command string. The list forms (`system('tar', 'xf',
 $file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
-reported. There is no fix. A constant command string with shell syntax is S018's.
+reported. The unsafe fix splits one interpolating `system` or `exec` string
+of simple words and scalars into a list (`system "tar xf $file"` becomes
+`system 'tar', 'xf', $file`), so Perl starts no shell and each value is one
+argument; a variable that held several words on purpose now arrives as one
+argument, and a scalar used as the program (`"$prog $arg"`) cannot be
+checked. A program that runs a shell itself still interprets its arguments,
+so a command that names a shell anywhere (such as `sh`, `bash`, `ssh` or
+`su`, also after `sudo`) is declined. The fix removes shell
+injection, not option injection: a value starting with `-` is still an
+option. A string with shell syntax, `@`, an escape or a single word, and
+every other form, is report-only. A constant command string with shell
+syntax is S018's.
 
 **S009** reports `chmod` with a constant world-writable mode (`chmod 0777,
 $dir`, `chmod 0666, $file`), the same through a `->chmod` method (including
