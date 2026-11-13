@@ -3,17 +3,10 @@ package Puff::Rule::Security::ShellString;
 use v5.36;
 use parent 'Puff::Rule';
 
-use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body );
+use Puff::PPIUtil qw( is_builtin_call call_args is_constant_string command_body $PERL_SHELL_META shell_first_word );
 
 my %LIST_FUNCTION = map { $_ => 1 } qw( system exec CORE::system CORE::exec );
 my %PIPE_FUNCTION = map { $_ => 1 } qw( readpipe CORE::readpipe );
-
-# Perl hands a one-string command to /bin/sh when it contains one of these
-# (doio.c, do_exec3), except for a single newline at the very end, which it
-# strips, and a trailing ` 2>&1`, which it handles itself with dup2. It also
-# does when the first word is `.` or `exec`, or the command starts with a VAR=
-# assignment.
-my $PERL_SHELL_META = qr/[\$&*(){}\[\]'";\\|?<>~`\n]/;
 
 my $LIST    = 'pass the command and its arguments as a list';
 my $CAPTURE = 'capture output with IPC::Run3 or Capture::Tiny and a list';
@@ -143,15 +136,14 @@ sub _unescape ($text) {
 
 # A short description of why Perl runs this command through /bin/sh, or
 # undef when it runs the program directly. The /a matches doio.c, whose
-# isSPACE and isWORDCHAR are ASCII only: perl and sh do not split on U+00A0.
+# isSPACE is ASCII only: perl and sh do not split on U+00A0.
 sub _shell_syntax ($string) {
-    ( my $cmd = $string )            =~ s/\A\s+//a;
-    return '. command' if $cmd       =~ /\A\.\s/a;
-    return 'exec command' if $cmd    =~ /\Aexec\s/a;
-    return 'VAR= assignment' if $cmd =~ /\A\w*=/a;
+    my $first = shell_first_word($string);
+    return $first if defined $first;
 
-    $cmd =~ s/\n\z//;
-    $cmd =~ s/(?<=\s)2>&1\s*\z//a;    # Perl does the dup2 itself
+    ( my $cmd = $string ) =~ s/\A\s+//a;
+    $cmd                  =~ s/\n\z//;
+    $cmd                  =~ s/(?<=\s)2>&1\s*\z//a;    # Perl does the dup2 itself
     my %seen;
     my @meta = grep { !$seen{$_}++ } $cmd =~ /($PERL_SHELL_META)/g;
     return unless @meta;

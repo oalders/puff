@@ -7,7 +7,7 @@ use Scalar::Util qw( refaddr );
 
 our @EXPORT_OK = qw(
     is_builtin_call call_args is_constant_string is_sole_subscript_key command_body
-    mode_call decimal_mode
+    mode_call decimal_mode $PERL_SHELL_META shell_first_word
 );
 
 my $INTERPOLATES = qr/(?<!\\)(?:\\\\)*[\$\@]/;
@@ -84,6 +84,22 @@ sub command_body ($elem) {
     $body =~ s/.\z//s;    # closing delimiter
     my $interpolates = !( defined $delim && $delim eq q{'} ) && $body =~ $INTERPOLATES;
     return ( $body, $interpolates ? 1 : 0 );
+}
+
+# Perl hands a one-string command to /bin/sh when it contains one of these
+# (doio.c, do_exec3), except for a single newline at the very end, which it
+# strips, and a trailing ` 2>&1`, which it handles itself with dup2. It also
+# does when the first word is `.` or `exec`, or the command starts with a VAR=
+# assignment (shell_first_word).
+our $PERL_SHELL_META = qr/[\$&*(){}\[\]'";\\|?<>~`\n]/;
+
+# The /a matches doio.c, whose isSPACE and isWORDCHAR are ASCII only.
+sub shell_first_word ($string) {
+    ( my $cmd = $string )            =~ s/\A\s+//a;
+    return '. command' if $cmd       =~ /\A\.\s/a;
+    return 'exec command' if $cmd    =~ /\Aexec\s/a;
+    return 'VAR= assignment' if $cmd =~ /\A\w*=/a;
+    return undef;
 }
 
 sub is_sole_subscript_key ($elem) {
@@ -264,6 +280,12 @@ C<command_body($elem)> returns the command text of a backtick or C<qx>
 token without its delimiters and whether it interpolates (C<qx'...'> never
 does), or an empty list for any other token. S008 and S018 both use it, so
 they agree on which commands interpolate.
+
+C<$PERL_SHELL_META> matches the characters that make Perl run a one-string
+command through /bin/sh (F<doio.c>), and C<shell_first_word($string)>
+returns why the start of a command does (C<. command>, C<exec command> or
+C<VAR= assignment>), or undef. S018 uses both to report shell syntax and
+S008 to decline a fix that would change how the command runs.
 
 C<mode_call($elem)> says whether C<$elem> is the whole of a permission-mode
 argument and returns the call's name, or undef. The positions are the mode
