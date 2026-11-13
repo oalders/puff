@@ -10,3 +10,4 @@ system "tar czf backup-$date.tgz $src"; # expect: S008
 system "cp @files $dest"; # expect: S008
 system "  cp  $x   $y "; # expect: S008
 system "cp a b $x"; # expect: S008 - NBSP in a word
+system "mv $1 $2x"; # expect: S008

@@ -9,7 +9,8 @@ my %SHELL_FUNCTION = map { $_ => 1 } qw( system exec readpipe CORE::system CORE:
 my %SYSTEM         = map { $_ => 1 } qw( system CORE::system );
 my %LIST_FUNCTION  = map { $_ => 1 } qw( system exec CORE::system CORE::exec );
 
-my $VARIABLE = qr/\A[\$\@]\w+(?:::\w+)*\z/;
+# /a and a leading letter: "$2x" is $2 then x, and "$café" without utf8 is $caf
+my $VARIABLE = qr/\A[\$\@](?:\d+|[A-Za-z_]\w*(?:::\w+)*)\z/a;
 
 sub code       {'S008'}
 sub summary    {'Do not pass a command built at runtime to the shell'}
@@ -66,19 +67,21 @@ sub explanation {
         string on spaces: a plain word becomes a '...' string, a whole `$var`
         or `@array` the bare variable, and a word mixing text and variables
         stays a "..." string. It declines when the string has fewer than two
-        words, whitespace other than spaces, a shell metacharacter other than
+        words besides whole `@array` words (an empty array would leave one
+        string, which goes to the shell), whitespace other than spaces, a shell metacharacter other than
         the `$` of a simple variable (so `${x}`, `$h{k}`, quotes, backslashes
         and `2>&1` are declined), a first word of `.` or `exec`, a leading
         `VAR=` assignment, or an `@` anywhere but a whole `@array` word.
         Declined calls are reported as not fixable.
 
         The fix is unsafe because it changes behaviour:
-        - a variable holding several words (`my $opts = '-v -n'`) arrives as
-          one argument instead of being split;
+        - a variable or array element holding several words (`my $opts =
+          '-v -n'`) arrives as one argument instead of being split;
         - an empty or undef variable arrives as an empty argument instead of
           vanishing;
         - shell syntax inside a value (a glob, redirect or pipe) is no longer
-          interpreted.
+          interpreted, nor is a first word whose value is `FOO=1`, `.` or
+          `exec`, which made Perl use the shell.
 
         Ruff's equivalents are S602, S605 and S607.
         END
@@ -165,14 +168,17 @@ sub _replacement ($arg) {
     return if defined shell_first_word($body);
 
     # "$ x" interpolates $x, so it must not be split at that space
-    return if $body =~ /\$(?!\w)/;
+    return if $body =~ /\$(?!\w)/a;
 
-    # Not split ' ': it splits on U+00A0 in a character string and Perl does not
+    # split / +/, not split ' ', which also splits on U+00A0 in a character
+    # string; Perl's exec does not
     my @words = split / +/, $body =~ s/\A +| +\z//gr;
-    return unless @words >= 2;
 
     # An array in a word is joined and then split, so only a whole @array survives
     return if grep { /\@/ && !/$VARIABLE/ } @words;
+
+    # An array may be empty; one element left and Perl may use the shell
+    return unless ( grep { !/\A\@/ } @words ) >= 2;
 
     return join ', ', map { !/[\$\@]/ ? "'$_'" : /$VARIABLE/ ? $_ : qq{"$_"} } @words;
 }
@@ -207,8 +213,10 @@ that is not constant. A leading 0 or 1 in C<system> is the Win32 spawn mode
 The unsafe fix splits a C<system> or C<exec> string of plain words and
 simple variables into a list, so C<system "tar -czf $out $src"> becomes
 C<system 'tar', '-czf', $out, $src>. It declines a string with other shell
-syntax, whitespace other than spaces or a single word. It is unsafe because
-a variable is no longer split into words, an empty one becomes an empty
-argument, and shell syntax in a value is no longer interpreted.
+syntax, whitespace other than spaces, or fewer than two words besides whole
+C<@array> words. It is unsafe because a variable or array element is no
+longer split into words, an empty one becomes an empty argument, and shell
+syntax in a value (including a first word of C<FOO=1>, C<.> or C<exec>) is
+no longer interpreted.
 
 =cut
