@@ -492,7 +492,8 @@ $file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
 reported. The unsafe fix rewrites a `system` or `exec` string of plain words
 and simple variables as a list (`system "tar -czf $out $src"` becomes `system
 'tar', '-czf', $out, $src`); a variable is then no longer split into words or
-dropped when empty. A constant command string with shell syntax is S018's.
+dropped when empty, an array is no longer joined with `$"`, and shell syntax
+in a value is no longer interpreted. A constant command string with shell syntax is S018's.
 
 **S009** reports `chmod` with a constant world-writable mode (`chmod 0777,
 $dir`, `chmod 0666, $file`), the same through a `->chmod` method (including

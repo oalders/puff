@@ -63,7 +63,7 @@ sub explanation {
 
         The fix rewrites `system "tar -czf $out $src"` as `system 'tar',
         '-czf', $out, $src`, for `system` (optionally after a Win32 spawn
-        mode) and `exec` whose argument is one "..." or `qq{...}` string. It
+        mode) or `exec` whose argument is one "..." or `qq{...}` string. It
         splits the string on spaces: a plain word becomes a '...' string, a
         whole `$var` or `@array` the bare variable, and a word mixing text and
         variables stays a "..." string. It declines when the string has fewer
@@ -82,6 +82,8 @@ sub explanation {
           argument instead of being split;
         - an empty or undef variable arrives as an empty argument instead of
           vanishing;
+        - a whole `@array` word passes its elements separately instead of
+          joined with `$"`;
         - shell syntax inside a value (a glob, redirect or pipe) is no longer
           interpreted, nor is a first word whose value is `FOO=1`, `.` or
           `exec`, which made Perl use the shell.
@@ -218,8 +220,9 @@ simple variables into a list, so C<system "tar -czf $out $src"> becomes
 C<system 'tar', '-czf', $out, $src>. It declines a string with other shell
 syntax, whitespace other than spaces, or fewer than two words besides whole
 C<@array> words. It is unsafe because a variable or array element, alone or
-inside a word, is no longer split into words, an empty one becomes an empty argument, and shell
-syntax in a value (including a first word of C<FOO=1>, C<.> or C<exec>) is
-no longer interpreted.
+inside a word, is no longer split into words, an empty one becomes an empty
+argument, an array's elements are passed separately instead of joined with
+C<$">, and shell syntax in a value (including a first word of C<FOO=1>,
+C<.> or C<exec>) is no longer interpreted.
 
 =cut

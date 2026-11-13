@@ -11,3 +11,6 @@ system 'cp', @files, $dest; # expect: S008
 system 'cp', $x, $y; # expect: S008
 system 'cp', 'a b', $x; # expect: S008 - NBSP in a word
 system 'mv', $1, "$2x"; # expect: S008
+CORE::exec 'git', 'log', $ref; # expect: S008
+system 'cp', $Foo::src, $Foo::dest; # expect: S008
+system('tar', 'xf', $file) == 0 or die; # expect: S008
