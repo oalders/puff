@@ -12,3 +12,4 @@ system "cp a	b $x"; # expect: S008 - a tab
 system "rm $ x"; # expect: S008 - $ x is $x
 system "$cmd @args"; # expect: S008 - empty @args leaves one string
 system "@a @b"; # expect: S008
+system "exec $x y"; # expect: S008

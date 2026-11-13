@@ -62,21 +62,24 @@ sub explanation {
         be written `system { $path } $path`; parentheses change nothing.
 
         The fix rewrites `system "tar -czf $out $src"` as `system 'tar',
-        '-czf', $out, $src`, for `system` and `exec` (with or without a spawn
-        mode) whose argument is one "..." or `qq{...}` string. It splits the
-        string on spaces: a plain word becomes a '...' string, a whole `$var`
-        or `@array` the bare variable, and a word mixing text and variables
-        stays a "..." string. It declines when the string has fewer than two
-        words besides whole `@array` words (an empty array would leave one
-        string, which goes to the shell), whitespace other than spaces, a shell metacharacter other than
-        the `$` of a simple variable (so `${x}`, `$h{k}`, quotes, backslashes
-        and `2>&1` are declined), a first word of `.` or `exec`, a leading
-        `VAR=` assignment, or an `@` anywhere but a whole `@array` word.
+        '-czf', $out, $src`, for `system` (optionally after a Win32 spawn
+        mode) and `exec` whose argument is one "..." or `qq{...}` string. It
+        splits the string on spaces: a plain word becomes a '...' string, a
+        whole `$var` or `@array` the bare variable, and a word mixing text and
+        variables stays a "..." string. It declines when the string has fewer
+        than two words besides whole `@array` words (an empty array would
+        leave one string, which goes to the shell), whitespace other than
+        spaces, a shell metacharacter other than the `$` of a simple variable
+        (so `${x}`, `$h{k}`, quotes, backslashes and `2>&1` are declined), a
+        `$` not followed by a word character (`"$ x"`, `$$`), a first word of
+        `.` or `exec`, a leading `VAR=` assignment, or an `@` anywhere but a
+        whole `@array` word.
         Declined calls are reported as not fixable.
 
         The fix is unsafe because it changes behaviour:
         - a variable or array element holding several words (`my $opts =
-          '-v -n'`) arrives as one argument instead of being split;
+          '-v -n'`), even inside a word such as `--opt=$v`, arrives as one
+          argument instead of being split;
         - an empty or undef variable arrives as an empty argument instead of
           vanishing;
         - shell syntax inside a value (a glob, redirect or pipe) is no longer
@@ -214,8 +217,8 @@ The unsafe fix splits a C<system> or C<exec> string of plain words and
 simple variables into a list, so C<system "tar -czf $out $src"> becomes
 C<system 'tar', '-czf', $out, $src>. It declines a string with other shell
 syntax, whitespace other than spaces, or fewer than two words besides whole
-C<@array> words. It is unsafe because a variable or array element is no
-longer split into words, an empty one becomes an empty argument, and shell
+C<@array> words. It is unsafe because a variable or array element, alone or
+inside a word, is no longer split into words, an empty one becomes an empty argument, and shell
 syntax in a value (including a first word of C<FOO=1>, C<.> or C<exec>) is
 no longer interpreted.
 
