@@ -332,7 +332,7 @@ reported as `P001`:
 | S005 | TLSVerifyDisabled | Do not turn off TLS certificate or SSH host key verification | unsafe | [295](https://cwe.mitre.org/data/definitions/295.html) |
 | S006 | WeakHash | Do not use MD5, SHA-1 or `crypt` for security | none | [327](https://cwe.mitre.org/data/definitions/327.html), [328](https://cwe.mitre.org/data/definitions/328.html), [916](https://cwe.mitre.org/data/definitions/916.html) |
 | S007 | InsecureTempFile | Do not build a temporary file name yourself | none | [377](https://cwe.mitre.org/data/definitions/377.html) |
-| S008 | ShellCommand | Do not pass a command built at runtime to the shell | none | [78](https://cwe.mitre.org/data/definitions/78.html) |
+| S008 | ShellCommand | Do not pass a command built at runtime to the shell | unsafe | [78](https://cwe.mitre.org/data/definitions/78.html) |
 | S009 | WorldWritable | Do not make files world-writable | none | [732](https://cwe.mitre.org/data/definitions/732.html) |
 | S010 | PredictableToken | Do not hash the time, PID or `rand` to make a token | none | [340](https://cwe.mitre.org/data/definitions/340.html), [338](https://cwe.mitre.org/data/definitions/338.html) |
 | S011 | TimingCompare | Compare secrets in constant time | none | [208](https://cwe.mitre.org/data/definitions/208.html) |
@@ -489,7 +489,11 @@ constant string (`system("tar xf $file")`, `system($cmd)`), backticks and
 `qx{...}` that interpolate, and three-argument `open` with mode `-|` or `|-`
 and one non-constant command string. The list forms (`system('tar', 'xf',
 $file)`, `system(@cmd)`, `open($fh, '-|', 'git', 'log', $ref)`) are not
-reported. There is no fix. A constant command string with shell syntax is S018's.
+reported. The unsafe fix rewrites a `system` or `exec` string of plain words
+and simple variables as a list (`system "tar -czf $out $src"` becomes `system
+'tar', '-czf', $out, $src`); a variable is then no longer split into words or
+dropped when empty, an array is no longer joined with `$"`, and shell syntax
+in a value is no longer interpreted. A constant command string with shell syntax is S018's.
 
 **S009** reports `chmod` with a constant world-writable mode (`chmod 0777,
 $dir`, `chmod 0666, $file`), the same through a `->chmod` method (including
