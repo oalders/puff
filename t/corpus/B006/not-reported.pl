@@ -34,6 +34,9 @@ sub guarded {
     my $guard = guard { cleanup() };
     my $txn   = $schema->txn_scope_guard;
     my $sg    = Scope::Guard->new( sub { 1 } );
+    my $dir   = File::pushd::pushd( $path );
+    my $here  = pushd $path;
+    my $tmp   = tempd();
     return 1;
 }
 

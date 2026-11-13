@@ -14,7 +14,8 @@ sub fix_safety {'unsafe'}
 sub options {
     return {
         'allow-unused-subroutine-arguments' => 1,
-        'allow-if-computed-by'              => [qw( Scope::Guard guard scope_guard txn_scope_guard )],
+        'allow-if-computed-by'              =>
+            [qw( Scope::Guard guard scope_guard txn_scope_guard pushd tempd File::pushd::pushd File::pushd::tempd )],
     };
 }
 
@@ -61,11 +62,13 @@ sub explanation {
         in `my ( $self, $c ) = @_;`. Set it to `false` to report them.
 
         Option `allow-if-computed-by` (default `["Scope::Guard", "guard",
-        "scope_guard", "txn_scope_guard"]`): functions, methods and classes
-        whose result is kept for its side effects, such as a guard object
-        that does its work when it goes out of scope. A variable assigned
-        from a call to one of these (`guard { ... }`, `$schema->txn_scope_guard`
-        or `Scope::Guard->new(...)`) is not reported.
+        "scope_guard", "txn_scope_guard", "pushd", "tempd",
+        "File::pushd::pushd", "File::pushd::tempd"]`): functions, methods
+        and classes whose result is kept for its side effects, such as a
+        guard object that does its work when it goes out of scope. A
+        variable assigned from a call to one of these (`guard { ... }`,
+        `$schema->txn_scope_guard`, `Scope::Guard->new(...)` or File::pushd's
+        `pushd $dir`) is not reported.
         END
 }
 
